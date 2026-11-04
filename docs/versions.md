@@ -18,8 +18,11 @@ Python 3.15 (final 3.15.2) is rejected: `eccodes` publishes no `cp315` wheel (on
 | pydantic-core | 2.50.2 | pydantic_core-2.50.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl | pydantic_core-2.50.2-cp314-cp314-win_amd64.whl |
 | xarray | 2026.9.0 | pure Python: xarray-2026.9.0-py3-none-any.whl | same |
 | cfgrib | 0.9.15.1 | pure Python: cfgrib-0.9.15.1-py3-none-any.whl | same |
+| geographiclib | 2.1 | pure Python: geographiclib-2.1-py3-none-any.whl | same |
 
 Source: `https://pypi.org/pypi/<package>/json`.
+
+geographiclib 2.1 (MIT) was uploaded to PyPI 2025-08-21 (S0b Task 2); it is the newest release and well over 14 days old. The Python package has no rhumb-line module, so rhumb geometry is implemented in `domain/contracts/geo.py` on top of its `Geodesic`.
 
 - `.python-version`: `3.14` (latest 3.14 patch at time of check: 3.14.10, released 2026-10-25).
 - Docker base image uses 3.14.8 (the newest 3.14 patch image at least 14 days old).

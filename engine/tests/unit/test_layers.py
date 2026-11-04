@@ -13,6 +13,7 @@ PKG = "src/nautical_deliverance"
 
 DOMAIN_PURE = "domain is pure"
 NO_API = "persistence does not import api"
+CONTRACTS_FREE = "contracts and reference stay framework-free"
 
 
 def _lint(root: Path) -> tuple[int, str]:
@@ -36,12 +37,13 @@ def _copy_tree(tmp_path: Path) -> Path:
 
 
 @pytest.mark.req("S0-R05")
+@pytest.mark.req("S0b-R11")
 def test_layer_contracts_pass_on_clean_tree(tmp_path: Path) -> None:
     """The unmodified tree satisfies every contract."""
     code, output = _lint(_copy_tree(tmp_path))
 
     assert code == 0, output
-    assert "Contracts: 2 kept, 0 broken." in output
+    assert "Contracts: 3 kept, 0 broken." in output
 
 
 @pytest.mark.req("S0-R05")
@@ -53,6 +55,7 @@ def test_layer_contracts_pass_on_clean_tree(tmp_path: Path) -> None:
         ("domain", "nautical_deliverance.api", DOMAIN_PURE),
         ("domain", "nautical_deliverance.persistence", DOMAIN_PURE),
         ("persistence", "nautical_deliverance.api", NO_API),
+        ("domain/contracts", "pydantic", CONTRACTS_FREE),
     ],
 )
 def test_layer_contracts_reject_violation(
