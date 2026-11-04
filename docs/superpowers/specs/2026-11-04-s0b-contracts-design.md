@@ -1,6 +1,6 @@
 # S0b Contracts — Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-04
 - **Date:** 2026-11-04
 - **Parent:** [Program specification](2026-11-04-nautical-deliverance-program-design.md), build step 2 (D-023)
 - **Goal:** Define, implement and test the in-engine contracts between weather data (C1), vessel performance (C2) and route optimization (C3) — types, conventions and provider interfaces — so the three can be built one after another without rework. No C1/C2/C3 implementation.
