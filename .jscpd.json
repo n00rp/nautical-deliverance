@@ -1,0 +1,8 @@
+{
+  "path": ["engine/src", "web/src"],
+  "minTokens": 50,
+  "threshold": 0,
+  "ignore": ["**/*.test.ts", "**/*.test.tsx", "**/migrations/versions/**"],
+  "gitignore": true,
+  "reporters": ["console"]
+}

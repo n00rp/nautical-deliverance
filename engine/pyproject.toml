@@ -14,8 +14,16 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest", "pytest-cov", "hypothesis", "httpx",
-    "mypy", "ruff", "import-linter", "vulture",
+    "pytest",
+    "pytest-cov",
+    "hypothesis",
+    "httpx",
+    "mypy",
+    "ruff",
+    "import-linter",
+    "vulture",
+    "pip-licenses>=5.5.5",
+    "pip-audit>=2.10.1",
 ]
 
 [build-system]

@@ -25,7 +25,10 @@ ROOT = Path(__file__).parents[2]
 def owner_engine() -> Iterator[Engine]:
     """Engine as nd_owner on a freshly migrated database."""
     if not (APP_URL and OWNER_URL):
-        pytest.skip("ND_DATABASE_URL (nd_app) and ND_MIGRATION_DATABASE_URL (nd_owner) not set")
+        msg = "ND_DATABASE_URL (nd_app) and ND_MIGRATION_DATABASE_URL (nd_owner) not set"
+        if os.environ.get("ND_REQUIRE_DB") == "1":  # CI: a missing DB is a failure, not a skip
+            pytest.fail(msg)
+        pytest.skip(msg)
     host = make_url(OWNER_URL).host
     if host not in SAFE_HOSTS and os.environ.get("ND_ALLOW_DESTRUCTIVE_TESTS") != "1":
         pytest.fail(
