@@ -7,6 +7,7 @@ import types
 import typing
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
+from enum import StrEnum
 
 import numpy as np
 import numpy.typing as npt
@@ -33,13 +34,22 @@ def contract_dataclasses() -> list[type]:
     return found
 
 
+def _keys_carry_unit(key_type: object) -> bool:
+    """Return True for a StrEnum whose member values all end in a unit suffix."""
+    return (
+        isinstance(key_type, type)
+        and issubclass(key_type, StrEnum)
+        and all(m.value.endswith(UNIT_SUFFIXES) for m in key_type)
+    )
+
+
 def _is_numeric(tp: object) -> bool:
     if tp is float or tp == _ARRAY:
         return True
     args = typing.get_args(tp)
     origin = typing.get_origin(tp)
     if origin in (Mapping, dict):
-        return _is_numeric(args[-1])
+        return not _keys_carry_unit(args[0]) and _is_numeric(args[-1])
     if origin in (typing.Union, types.UnionType):
         return any(_is_numeric(a) for a in args)
     return False
@@ -85,3 +95,23 @@ def test_from_deg_not_confused_with_deg() -> None:
     """_from_deg is listed (and so matched) before _deg."""
     assert UNIT_SUFFIXES.index("_from_deg") < UNIT_SUFFIXES.index("_deg")
     assert "_from_deg" in UNIT_SUFFIXES
+
+
+@pytest.mark.req("S0b-R01")
+def test_enum_keyed_mapping_accepted_only_if_all_members_suffixed() -> None:
+    """A mapping keyed by a fully suffixed StrEnum is accepted; one unsuffixed member rejects it."""
+
+    class Good(StrEnum):
+        A = "a_mps"
+        B = "b_from_deg"
+
+    class Mixed(StrEnum):
+        A = "a_mps"
+        B = "b"
+
+    @dataclass
+    class Fixture:
+        ok: Mapping[Good, _ARRAY]
+        bad: Mapping[Mixed, _ARRAY]
+
+    assert unsuffixed_numeric_fields(Fixture) == ["bad"]
