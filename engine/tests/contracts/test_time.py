@@ -80,3 +80,13 @@ def test_nat_rejected() -> None:
     """NaT is not an instant."""
     with pytest.raises(InvalidInputError):
         from_datetime64(np.datetime64("NaT", "s"))
+
+
+@pytest.mark.req("S0b-R03")
+def test_sub_second_rejected() -> None:
+    """Microseconds are rejected, never silently truncated."""
+    dt = datetime(2026, 1, 1, 12, 0, 0, 1, tzinfo=UTC)
+    with pytest.raises(InvalidInputError):
+        to_datetime64(dt)
+    with pytest.raises(InvalidInputError):
+        to_datetime64_array([dt])

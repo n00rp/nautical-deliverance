@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 from geographiclib.geodesic import Geodesic
 
-from nautical_deliverance.domain.contracts.errors import InvalidInputError, InvalidPositionError
+from nautical_deliverance.domain.contracts.errors import (
+    ContractError,
+    InvalidInputError,
+    InvalidPositionError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -18,6 +22,8 @@ _E2: float = float(_GEOD.f * (2.0 - _GEOD.f))
 _POLE_DEG = 90.0
 _NEWTON_RTOL = 1e-15
 _NEWTON_MAX_ITER = 50
+_HALF_MERIDIAN_M = 20_003_932.0  # just above half the WGS84 meridian: no rhumb goes further
+_POLE_SLACK_DEG = 1e-9  # round-off allowed when a meridian leg lands exactly on a pole
 
 # Rhumb integrals use adaptive composite Gauss-Legendre: a 16-point rule on the whole interval is
 # compared with the sum of 16-point rules on its two halves; halving recurses until they agree to
@@ -138,22 +144,71 @@ def _rhumb_solve(a: Position, b: Position) -> _Rhumb:
     return _Rhumb(a.lat_deg, dphi_deg, dmu, dlon, dpsi, None)
 
 
-def _rhumb_point(a: Position, sol: _Rhumb, fraction: float) -> Position:
-    """Point at ``fraction`` of the leg; Newton on the meridian-distance progress."""
-    phi1, target = math.radians(sol.phi1_deg), fraction * sol.dmu_m
-    dphi = math.radians(sol.dphi_deg)
-    delta = fraction * dphi
+def _newton_delta(phi1: float, target_m: float, delta: float, scale: float) -> float:
+    """Solve integral of the meridian radius over [phi1, phi1 + delta] == ``target_m`` for delta.
+
+    ``delta`` is the starting guess; convergence is a step below ``_NEWTON_RTOL * scale``.
+    """
     for _ in range(_NEWTON_MAX_ITER):
-        err = target - _quad(lambda t: _meridian_radius_m(phi1 + t), 0.0, delta)
+        err = target_m - _quad(lambda t: _meridian_radius_m(phi1 + t), 0.0, delta)
         step = err / _meridian_radius_m(phi1 + delta)
         delta += step
-        if abs(step) <= _NEWTON_RTOL * abs(dphi):
-            break
+        if abs(step) <= _NEWTON_RTOL * scale:
+            return delta
+    msg = "rhumb point did not converge"
+    raise ContractError(msg)
+
+
+def _rhumb_point(a: Position, sol: _Rhumb, fraction: float) -> Position:
+    """Point at ``fraction`` of the leg; Newton on the meridian-distance progress."""
+    phi1 = math.radians(sol.phi1_deg)
+    dphi = math.radians(sol.dphi_deg)
+    delta = _newton_delta(phi1, fraction * sol.dmu_m, fraction * dphi, abs(dphi))
     lat = max(-_POLE_DEG, min(_POLE_DEG, a.lat_deg + math.degrees(delta)))
     if sol.lon_pole_deg is not None:
         return Position(lat, sol.lon_pole_deg)
     share = fraction if sol.dphi_deg == 0.0 else sol.psi_to(delta) / sol.dpsi_ratio
     return Position(lat, a.lon_deg + sol.dlon_deg * share)
+
+
+def _course_components(course_deg: float) -> tuple[float, float]:
+    """(cos, sin) of a course, exact for the cardinal courses (cos(90 deg) is not 0 in floats)."""
+    cardinal = {0.0: (1.0, 0.0), 90.0: (0.0, 1.0), 180.0: (-1.0, 0.0), 270.0: (0.0, -1.0)}
+    exact = cardinal.get(course_deg % 360.0)
+    return exact or (math.cos(math.radians(course_deg)), math.sin(math.radians(course_deg)))
+
+
+def _rhumb_destination(a: Position, course_deg: float, dist_m: float) -> Position:
+    """Direct rhumb problem: the meridian progress is ``dist * cos(course)``, solved by Newton."""
+    cos_c, sin_c = _course_components(course_deg)
+    north_m, east_m = dist_m * cos_c, dist_m * sin_c
+    phi1 = math.radians(a.lat_deg)
+    if abs(north_m) > _HALF_MERIDIAN_M:
+        msg = "the rhumb line passes the pole before the distance is used up"
+        raise InvalidInputError(msg)
+    if abs(a.lat_deg) == _POLE_DEG and east_m != 0.0:
+        msg = "a rhumb line leaving a pole must follow a meridian"
+        raise InvalidInputError(msg)
+    guess = north_m / _meridian_radius_m(phi1)
+    delta = _newton_delta(phi1, north_m, guess, abs(guess))
+    lat = a.lat_deg + math.degrees(delta)
+    if abs(lat) > _POLE_DEG:
+        if abs(lat) > _POLE_DEG + _POLE_SLACK_DEG:
+            msg = "the rhumb line passes the pole before the distance is used up"
+            raise InvalidInputError(msg)
+        lat = math.copysign(_POLE_DEG, lat)
+    if abs(lat) == _POLE_DEG or abs(a.lat_deg) == _POLE_DEG:
+        if east_m != 0.0:  # (a start at a pole was rejected above, so this is the arrival case)
+            msg = "a rhumb line reaches a pole only along a meridian"
+            raise InvalidInputError(msg)
+        return Position(lat, a.lon_deg)
+    if delta == 0.0:
+        dlon = east_m / _parallel_radius_m(phi1)
+    else:  # dlon = tan(course) * d(psi) = east * d(psi) / d(mu); both integrals are difference-free
+        dpsi = _quad(lambda t: _dpsi_dphi(phi1 + t), 0.0, delta)
+        dmu = _quad(lambda t: _meridian_radius_m(phi1 + t), 0.0, delta)
+        dlon = east_m * dpsi / dmu
+    return Position(lat, a.lon_deg + math.degrees(dlon))
 
 
 def _is_zero_length(a: Position, b: Position) -> bool:
@@ -196,3 +251,25 @@ def point_along(a: Position, b: Position, geometry: LegGeometry, fraction: float
         p = line.Position(fraction * r["s12"])
         return Position(p["lat2"], p["lon2"])
     return _rhumb_point(a, _rhumb_solve(a, b), fraction)
+
+
+def destination(
+    start: Position, course_deg: float, distance_m: float, geometry: LegGeometry
+) -> Position:
+    """Direct problem: the point reached from ``start`` after ``distance_m`` on ``course_deg``.
+
+    For `GREAT_CIRCLE` the course is the initial course (it changes along the path, and the path
+    may cross a pole); for `RHUMB_LINE` it is the constant course, and a path that would run past
+    a pole raises `InvalidInputError`. The inverse of `distance_m` / `initial_course_deg`.
+    """
+    if not (math.isfinite(course_deg) and math.isfinite(distance_m) and distance_m >= 0.0):
+        msg = (
+            f"course must be finite and distance finite and >= 0, got ({course_deg}, {distance_m})"
+        )
+        raise InvalidInputError(msg)
+    if distance_m == 0.0:
+        return start
+    if geometry is LegGeometry.GREAT_CIRCLE:
+        p = _GEOD.Direct(start.lat_deg, start.lon_deg, course_deg, distance_m)
+        return Position(p["lat2"], p["lon2"])
+    return _rhumb_destination(start, course_deg, distance_m)

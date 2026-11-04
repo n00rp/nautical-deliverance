@@ -20,16 +20,22 @@ meridian a rhumb line coincides with the geodesic.
 """
 
 import math
+from unittest import mock
 
 import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from nautical_deliverance.domain.contracts.errors import InvalidInputError, InvalidPositionError
+from nautical_deliverance.domain.contracts.errors import (
+    ContractError,
+    InvalidInputError,
+    InvalidPositionError,
+)
 from nautical_deliverance.domain.contracts.geo import (
     LegGeometry,
     Position,
+    destination,
     distance_m,
     initial_course_deg,
     point_along,
@@ -407,3 +413,114 @@ def test_pole_as_start_and_pole_to_pole(g: LegGeometry) -> None:
     assert 0.0 <= initial_course_deg(north, south, g) < FULL_TURN
     assert point_along(north, south, g, 1.0).lat_deg == pytest.approx(-90.0, abs=ANGLE_TOL)
     assert point_along(north, south, g, 0.5).lat_deg == pytest.approx(0.0, abs=1e-6)
+
+
+# --- rhumb course against the closed-form isometric latitude --------------------------------
+def isometric_latitude(lat_deg: float) -> float:
+    """Return psi = asinh(tan(phi)) - e * atanh(e * sin(phi)), the closed form on WGS84."""
+    phi, e = math.radians(lat_deg), math.sqrt(WGS84_E2)
+    return math.asinh(math.tan(phi)) - e * math.atanh(e * math.sin(phi))
+
+
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize(("a", "b"), LEGS)
+def test_rhumb_course_matches_closed_form_isometric_latitude(a: Position, b: Position) -> None:
+    """The course atan2(dlon, dpsi) with the closed-form psi agrees to 1e-9 degrees."""
+    dlon = math.radians((b.lon_deg - a.lon_deg + HALF_TURN) % FULL_TURN - HALF_TURN)
+    dpsi = isometric_latitude(b.lat_deg) - isometric_latitude(a.lat_deg)
+    expected = math.degrees(math.atan2(dlon, dpsi)) % FULL_TURN
+
+    assert angle_diff_deg(initial_course_deg(a, b, RHUMB), expected) < ANGLE_TOL
+
+
+# --- direct problem ------------------------------------------------------------------------
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize("g", GEOMETRIES)
+@pytest.mark.parametrize(("a", "b"), LEGS)
+def test_destination_round_trip(g: LegGeometry, a: Position, b: Position) -> None:
+    """destination(a, course, distance) reproduces b: positions to 1e-9 deg, length to 1 mm."""
+    dist = distance_m(a, b, g)
+    end = destination(a, initial_course_deg(a, b, g), dist, g)
+
+    assert end.lat_deg == pytest.approx(b.lat_deg, abs=ANGLE_TOL)
+    assert angle_diff_deg(end.lon_deg, b.lon_deg) < ANGLE_TOL
+    assert distance_m(a, end, g) == pytest.approx(dist, abs=MM)
+
+
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize("g", GEOMETRIES)
+def test_destination_across_antimeridian(g: LegGeometry) -> None:
+    """The leg 179E -> 179W is reproduced by the direct problem, longitude normalized."""
+    a, b = Position(10.0, 179.0), Position(10.0, -179.0)
+    end = destination(a, initial_course_deg(a, b, g), distance_m(a, b, g), g)
+
+    assert -HALF_TURN <= end.lon_deg < HALF_TURN
+    assert angle_diff_deg(end.lon_deg, -179.0) < ANGLE_TOL
+    assert end.lat_deg == pytest.approx(10.0, abs=ANGLE_TOL)
+
+
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize("g", GEOMETRIES)
+def test_destination_zero_distance_and_cardinal_courses(g: LegGeometry) -> None:
+    """Zero distance returns the start; due north / south follow the meridian."""
+    p = Position(12.5, -40.0)
+    assert destination(p, 123.0, 0.0, g) == p
+    north = destination(p, 0.0, 1_000_000.0, g)
+    south = destination(p, 180.0, 1_000_000.0, g)
+    assert angle_diff_deg(north.lon_deg, p.lon_deg) < ANGLE_TOL
+    assert angle_diff_deg(south.lon_deg, p.lon_deg) < ANGLE_TOL
+    assert distance_m(p, north, g) == pytest.approx(1_000_000.0, abs=MM)
+    assert distance_m(p, south, g) == pytest.approx(1_000_000.0, abs=MM)
+
+
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize("g", GEOMETRIES)
+def test_destination_poles(g: LegGeometry) -> None:
+    """A meridian leg reaches a pole exactly and leaves it along the start meridian."""
+    north_pole = Position(90.0, 0.0)
+    b = Position(60.0, 20.0)
+    to_pole = distance_m(b, north_pole, g)
+    end = destination(b, 0.0, to_pole, g)
+    assert end.lat_deg == pytest.approx(90.0, abs=ANGLE_TOL)
+
+    out = destination(north_pole, 180.0, to_pole, g)
+    assert out.lat_deg == pytest.approx(60.0, abs=ANGLE_TOL)
+    assert distance_m(north_pole, out, g) == pytest.approx(to_pole, abs=MM)
+
+
+@pytest.mark.req("S0b-R05")
+def test_destination_great_circle_crosses_the_pole() -> None:
+    """A great circle continues over the pole; the other side has the opposite longitude."""
+    gc = LegGeometry.GREAT_CIRCLE
+    start = Position(80.0, 10.0)
+    to_pole = distance_m(start, Position(90.0, 0.0), gc)
+    end = destination(start, 0.0, 2 * to_pole, gc)
+
+    assert end.lat_deg == pytest.approx(80.0, abs=ANGLE_TOL)
+    assert angle_diff_deg(end.lon_deg, -170.0) < ANGLE_TOL
+
+
+@pytest.mark.req("S0b-R05")
+def test_destination_rhumb_rejects_impossible_requests() -> None:
+    """Past the pole, off a pole on a slanted course, and bad numbers are rejected."""
+    rh = LegGeometry.RHUMB_LINE
+    with pytest.raises(InvalidInputError):
+        destination(Position(60.0, 0.0), 0.0, 4_000_000.0, rh)
+    with pytest.raises(InvalidInputError):
+        destination(Position(60.0, 0.0), 0.0, 3e7, rh)
+    with pytest.raises(InvalidInputError):
+        destination(Position(90.0, 0.0), 135.0, 1000.0, rh)
+    for dist, course in ((-1.0, 0.0), (math.nan, 0.0), (1.0, math.inf)):
+        with pytest.raises(InvalidInputError):
+            destination(Position(0.0, 0.0), course, dist, rh)
+
+
+@pytest.mark.req("S0b-R05")
+def test_rhumb_point_newton_exhaustion_raises() -> None:
+    """If Newton does not converge the failure is explicit, never a silent approximation."""
+    a, b = Position(10.0, 0.0), Position(50.0, 30.0)
+    with (
+        mock.patch("nautical_deliverance.domain.contracts.geo._NEWTON_MAX_ITER", 0),
+        pytest.raises(ContractError, match="did not converge"),
+    ):
+        point_along(a, b, RHUMB, 0.5)

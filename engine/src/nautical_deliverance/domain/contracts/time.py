@@ -24,8 +24,12 @@ def require_utc(dt: datetime) -> datetime:
 
 
 def to_datetime64(dt: datetime) -> np.datetime64:
-    """Aware datetime to `datetime64[s]` (UTC, truncated to seconds)."""
-    return np.datetime64(require_utc(dt).replace(tzinfo=None), "s")
+    """Aware datetime to `datetime64[s]` (UTC); sub-second instants are rejected, not truncated."""
+    utc = require_utc(dt)
+    if utc.microsecond:
+        msg = f"sub-second instants are not representable in datetime64[s], got {dt.isoformat()}"
+        raise InvalidInputError(msg)
+    return np.datetime64(utc.replace(tzinfo=None), "s")
 
 
 def from_datetime64(t: np.datetime64) -> datetime:

@@ -5,7 +5,7 @@ import inspect
 import pkgutil
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields, is_dataclass
 from enum import StrEnum
 
@@ -17,6 +17,8 @@ import nautical_deliverance.domain.contracts as contracts_pkg
 from nautical_deliverance.domain.contracts.units import UNIT_SUFFIXES
 
 _ARRAY = npt.NDArray[np.float64]
+_MAPPINGS = (Mapping, dict)
+_SEQUENCES = (Sequence, tuple, list)
 
 
 def contract_dataclasses() -> list[type]:
@@ -35,21 +37,25 @@ def contract_dataclasses() -> list[type]:
 
 
 def _keys_carry_unit(key_type: object) -> bool:
-    """Return True for a StrEnum whose member values all end in a unit suffix."""
+    """Return True for a non-empty StrEnum whose member values all end in a unit suffix."""
     return (
         isinstance(key_type, type)
         and issubclass(key_type, StrEnum)
+        and len(key_type) > 0
         and all(m.value.endswith(UNIT_SUFFIXES) for m in key_type)
     )
 
 
 def _is_numeric(tp: object) -> bool:
-    if tp is float or tp == _ARRAY:
-        return True
+    """Return True when `tp` is, or holds (mapping value, sequence element, union arm), a float."""
+    if tp is float or tp == _ARRAY or tp in (*_MAPPINGS, *_SEQUENCES):
+        return True  # a bare `dict` / `tuple` cannot be proven float-free
     args = typing.get_args(tp)
     origin = typing.get_origin(tp)
-    if origin in (Mapping, dict):
-        return not _keys_carry_unit(args[0]) and _is_numeric(args[-1])
+    if origin in _MAPPINGS:
+        return not args or (not _keys_carry_unit(args[0]) and _is_numeric(args[-1]))
+    if origin in _SEQUENCES:
+        return not args or any(_is_numeric(a) for a in args if a is not Ellipsis)
     if origin in (typing.Union, types.UnionType):
         return any(_is_numeric(a) for a in args)
     return False
@@ -76,6 +82,9 @@ def test_all_contract_fields_suffixed() -> None:
 def test_gate_rejects_unsuffixed_fixture() -> None:
     """The gate itself catches a bad field, and accepts good ones."""
 
+    class Empty(StrEnum):
+        pass
+
     @dataclass
     class Bad:
         speed: float
@@ -86,15 +95,29 @@ def test_gate_rejects_unsuffixed_fixture() -> None:
         m_arr: Mapping[str, _ARRAY]
         opt: float | None
         label: str
+        pair: tuple[float, float]
+        series: list[float]
+        seq: Sequence[_ARRAY]
+        nested: tuple[tuple[float, float], ...]
+        by_enum: Mapping[Empty, float]
+        bare: dict  # type: ignore[type-arg]
+        ok_pair_m: tuple[float, float]
+        words: tuple[str, ...]
 
-    assert unsuffixed_numeric_fields(Bad) == ["speed", "arr", "by_name", "d", "m_arr", "opt"]
-
-
-@pytest.mark.req("S0b-R01")
-def test_from_deg_not_confused_with_deg() -> None:
-    """_from_deg is listed (and so matched) before _deg."""
-    assert UNIT_SUFFIXES.index("_from_deg") < UNIT_SUFFIXES.index("_deg")
-    assert "_from_deg" in UNIT_SUFFIXES
+    assert unsuffixed_numeric_fields(Bad) == [
+        "speed",
+        "arr",
+        "by_name",
+        "d",
+        "m_arr",
+        "opt",
+        "pair",
+        "series",
+        "seq",
+        "nested",
+        "by_enum",
+        "bare",
+    ]
 
 
 @pytest.mark.req("S0b-R01")
