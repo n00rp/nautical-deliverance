@@ -191,9 +191,25 @@ jobs:
         if: always()
         run: docker compose -f infra/docker-compose.yml down --volumes
 
+  # req: S0-R16
+  readme:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: README has the required sections
+        run: |
+          for h in "## Prerequisites" "## Start the system" "## Run all checks" "## Development test users"; do
+            grep -qxF "$h" README.md || { echo "README.md is missing: $h"; exit 1; }
+          done
+      - name: Compose file is valid
+        run: docker compose -f infra/docker-compose.yml config --quiet
+
   # req: S0-R14
   ci-duration:
-    needs: [engine, web, traceability, security, smoke]
+    needs: [engine, web, traceability, security, smoke, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

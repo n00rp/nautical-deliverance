@@ -1,0 +1,25 @@
+# Weekly check that the repository merge settings still match D-043.
+# req: S0-R12
+name: Repository settings
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  merge-settings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Merge settings match
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ND_REPO: ${{ github.repository }}
+        run: bash tools/check_branch_protection.sh
