@@ -8,7 +8,7 @@
 | S0-R04 | engine/tests/db/test_rls.py, engine/tests/unit/test_db_engine.py |
 | S0-R05 | engine/tests/unit/test_layers.py, web/src/architecture.test.ts |
 | S0-R06 | .github/workflows/ci.yml |
-| S0-R07 | .github/workflows/ci.yml, engine/tests/unit/test_require_db.py |
+| S0-R07 | .github/workflows/ci.yml, engine/tests/unit/test_require_db.py, tools/test_check_coverage.py |
 | S0-R08 | .github/workflows/ci.yml |
 | S0-R09 | .github/workflows/ci.yml, tools/test_trace.py |
 | S0-R10 | .github/workflows/ci.yml, .github/workflows/codeql.yml, .github/workflows/image-scan-report.yml, tools/test_check_licenses.py |
