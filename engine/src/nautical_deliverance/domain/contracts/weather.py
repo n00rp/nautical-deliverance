@@ -9,6 +9,7 @@ no extrapolation (flagged per point).
 from collections.abc import Mapping  # noqa: TC003 - read at runtime by the suffix gate
 from dataclasses import dataclass
 from enum import StrEnum
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
@@ -62,7 +63,12 @@ DIRECTIONS: frozenset[WeatherVariable] = frozenset(
 
 
 class SampleQuality(StrEnum):
-    """Per-point quality of a sample (D-056)."""
+    """Per-point quality of a sample (D-056).
+
+    Providers set OK, OUT_OF_COVERAGE and OUT_OF_TIME_RANGE; when a point is both out of coverage
+    and out of time range, OUT_OF_COVERAGE wins. STALE is never set by a provider: the consumer
+    (C3) assigns it using the warn/block thresholds of D-056.
+    """
 
     OK = "ok"
     OUT_OF_COVERAGE = "out_of_coverage"
@@ -81,18 +87,38 @@ class WeatherSample:
     unavailable: frozenset[WeatherVariable]
 
     def __post_init__(self) -> None:
-        """Check lengths, NaN placement and that no required variable is missing."""
+        """Validate, then freeze: arrays become read-only copies and `values` a read-only view."""
         missing = (REQUIRED - self.values.keys()) | (self.unavailable & REQUIRED)
         if missing:
             raise MissingRequiredVariableError(frozenset(v.value for v in missing))
+        if both := self.unavailable & self.values.keys():
+            msg = f"variables both present and unavailable: {sorted(both)}"
+            raise InvalidInputError(msg)
         n = len(self.quality)
         if len(self.run_time) != n or any(len(a) != n for a in self.values.values()):
             msg = "sample arrays must have equal length"
+            raise InvalidInputError(msg)
+        if not np.isin(self.quality, [q.value for q in SampleQuality]).all():
+            msg = "quality contains unknown values"
             raise InvalidInputError(msg)
         not_ok = self.quality != SampleQuality.OK.value
         if any(not np.array_equal(np.isnan(a), not_ok) for a in self.values.values()):
             msg = "values must be NaN exactly where quality is not ok"
             raise InvalidInputError(msg)
+        if np.isnat(self.run_time[~not_ok]).any():
+            msg = "run_time must be set at ok points"
+            raise InvalidInputError(msg)
+        object.__setattr__(
+            self, "values", MappingProxyType({k: _readonly(a) for k, a in self.values.items()})
+        )
+        object.__setattr__(self, "quality", _readonly(self.quality))
+        object.__setattr__(self, "run_time", _readonly(self.run_time))
+
+
+def _readonly[T: np.generic](a: NDArray[T]) -> NDArray[T]:
+    copy = np.array(a, copy=True)
+    copy.setflags(write=False)
+    return copy
 
 
 class WeatherProvider(Protocol):
@@ -117,7 +143,10 @@ def validate_query(
     lon_deg: NDArray[np.float64],
     valid_time: NDArray[np.datetime64],
 ) -> None:
-    """Reject non-1-D, unequal-length, non-finite or non-`datetime64[s]` queries."""
+    """Reject non-arrays, non-1-D, unequal-length, non-finite or non-`datetime64[s]` queries."""
+    if not all(isinstance(a, np.ndarray) for a in (lat_deg, lon_deg, valid_time)):
+        msg = "query inputs must be numpy arrays"
+        raise InvalidInputError(msg)
     if not (lat_deg.ndim == lon_deg.ndim == valid_time.ndim == 1):
         msg = "query arrays must be 1-D"
         raise InvalidInputError(msg)

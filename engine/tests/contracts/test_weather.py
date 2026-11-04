@@ -81,3 +81,64 @@ def test_interpolate_direction_wraps_and_stays_in_range() -> None:
     out = interpolate_direction_deg(w, d)
     assert np.all((out >= 0.0) & (out < 360.0))  # noqa: PLR2004
     assert abs((out[0] + 180.0) % 360.0 - 180.0) < 1e-9  # noqa: PLR2004
+
+
+@pytest.mark.req("S0b-R07")
+def test_sample_is_immutable_after_construction() -> None:
+    """Arrays and mapping are read-only copies; the caller's arrays are not aliased."""
+    src = {v: np.array([1.0]) for v in REQUIRED}
+    s = WeatherSample(src, np.array(["ok"]), "s", _T.copy(), frozenset())
+    with pytest.raises(ValueError, match="read-only"):
+        s.values[WeatherVariable.WIND_U_MPS][0] = np.nan
+    with pytest.raises(ValueError, match="read-only"):
+        s.quality[0] = "stale"
+    with pytest.raises(ValueError, match="read-only"):
+        s.run_time[0] = np.datetime64("NaT", "s")
+    with pytest.raises(TypeError):
+        s.values[WeatherVariable.WIND_U_MPS] = _ONE  # type: ignore[index]
+    src[WeatherVariable.WIND_U_MPS][0] = 5.0
+    assert s.values[WeatherVariable.WIND_U_MPS][0] == 1.0
+
+
+@pytest.mark.req("S0b-R07")
+def test_sample_rejects_bad_quality_run_time_and_overlap() -> None:
+    """Unknown quality, NaT run time at an OK point and present+unavailable are rejected."""
+    with pytest.raises(InvalidInputError):
+        _sample(quality="bogus")
+    with pytest.raises(InvalidInputError):
+        WeatherSample(
+            dict.fromkeys(REQUIRED, _ONE),
+            np.array(["ok"]),
+            "s",
+            np.array(["NaT"], dtype="datetime64[s]"),
+            frozenset(),
+        )
+    opt = WeatherVariable.VISIBILITY_M
+    with pytest.raises(InvalidInputError):
+        _sample({**dict.fromkeys(REQUIRED, _ONE), opt: _ONE}, unavailable=frozenset({opt}))
+
+
+@pytest.mark.req("S0b-R07")
+def test_validate_query_rejects_non_arrays() -> None:
+    """Lists and scalars raise InvalidInputError rather than AttributeError."""
+    with pytest.raises(InvalidInputError):
+        validate_query([1.0], _ONE, _T)  # type: ignore[arg-type]
+    with pytest.raises(InvalidInputError):
+        validate_query(_ONE, _ONE, "2026")  # type: ignore[arg-type]
+
+
+@pytest.mark.req("S0b-R07")
+def test_out_of_coverage_takes_precedence_over_out_of_time() -> None:
+    """A point outside both coverage and time range is OUT_OF_COVERAGE."""
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from nautical_deliverance.domain.contracts.time import to_datetime64  # noqa: PLC0415
+    from tests.contracts.test_weather_conformance import GRID, _make  # noqa: PLC0415
+
+    late = to_datetime64(datetime(2030, 1, 1, tzinfo=UTC))
+    s = _make("uniform").sample(
+        np.array([GRID.lat_max_deg + 10]),
+        np.array([0.0]),
+        np.array([late], dtype="datetime64[s]"),
+    )
+    assert list(s.quality) == [SampleQuality.OUT_OF_COVERAGE.value]

@@ -55,6 +55,8 @@ class LegGeometry(StrEnum):
 
 
 def _wrap_lon(lon: float) -> float:
+    if -180.0 <= lon < 180.0:  # noqa: PLR2004 - in range: keep exact (wrapping adds ulp noise)
+        return lon
     wrapped = (lon + 180.0) % 360.0 - 180.0
     return -180.0 if wrapped >= 180.0 else wrapped  # noqa: PLR2004 - float rounding guard
 

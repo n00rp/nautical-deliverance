@@ -80,7 +80,11 @@ class UniformWeather:
             raise MissingRequiredVariableError(frozenset(v.value for v in missing))
         self._lat0, self._lat1 = lat_range_deg
         self._west = lon_range_deg[0]
-        self._width = (lon_range_deg[1] - lon_range_deg[0]) % _FULL_CIRCLE
+        width = (lon_range_deg[1] - lon_range_deg[0]) % _FULL_CIRCLE
+        # a full 360-degree span wraps: the east edge is the west node again
+        self._width = (
+            _FULL_CIRCLE if width == 0.0 and lon_range_deg[1] != lon_range_deg[0] else width
+        )
         self._step = grid_step_deg
         self._t0 = to_datetime64(time_range[0])
         self._t1 = to_datetime64(time_range[1])

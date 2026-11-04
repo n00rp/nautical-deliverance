@@ -52,9 +52,16 @@ class GridDescription:
     end: datetime
     time_step: timedelta
 
+    @property
+    def is_global(self) -> bool:
+        """True when the longitude span is the full circle (east edge == west node)."""
+        return self.lon_east_deg - self.lon_west_deg == _FULL_CIRCLE
+
 
 def wrap_lon(lon: float) -> float:
-    """Normalize a longitude to [-180, 180)."""
+    """Normalize a longitude to [-180, 180); values already in range are returned unchanged."""
+    if -180.0 <= lon < 180.0:  # noqa: PLR2004
+        return lon
     return (lon + 180.0) % 360.0 - 180.0
 
 
@@ -139,15 +146,13 @@ class WeatherProviderConformance:
         """One grid step beyond each spatial edge is NaN with OUT_OF_COVERAGE."""
         g = self.grid
         lat, lon, t = self._mid()
-        lats = _f(g.lat_min_deg - g.step_deg, g.lat_max_deg + g.step_deg, lat, lat)
-        lons = _f(
-            lon,
-            lon,
-            wrap_lon(g.lon_west_deg - g.step_deg),
-            wrap_lon(g.lon_east_deg + g.step_deg),
-        )
-        s = self.make_provider().sample(lats, lons, _t(t, t, t, t))
-        assert list(s.quality) == [SampleQuality.OUT_OF_COVERAGE.value] * 4
+        lats = [g.lat_min_deg - g.step_deg, g.lat_max_deg + g.step_deg]
+        lons = [lon, lon]
+        if not g.is_global:  # a global grid has no longitude edge
+            lats += [lat, lat]
+            lons += [wrap_lon(g.lon_west_deg - g.step_deg), wrap_lon(g.lon_east_deg + g.step_deg)]
+        s = self.make_provider().sample(_f(*lats), _f(*lons), _t(*([t] * len(lats))))
+        assert list(s.quality) == [SampleQuality.OUT_OF_COVERAGE.value] * len(lats)
         assert _all_nan(s)
 
     @pytest.mark.req("S0b-R07")
@@ -187,8 +192,18 @@ class WeatherProviderConformance:
         lat_n = round((g.lat_max_deg - g.lat_min_deg) / g.step_deg)
         lon_n = round(((g.lon_east_deg - g.lon_west_deg) % 360.0) / g.step_deg)
         t_n = round((g.end - g.start) / g.time_step)
-        lats = _f(*(g.lat_min_deg + g.step_deg * i for i in (0, lat_n, 1, lat_n // 2)))
-        lons = _f(*(wrap_lon(g.lon_west_deg + g.step_deg * j) for j in (0, lon_n, 1, lon_n // 2)))
+        lats = _f(
+            *(
+                g.lat_max_deg if i == lat_n else g.lat_min_deg + g.step_deg * i
+                for i in (0, lat_n, 1, lat_n // 2)
+            )
+        )
+        lons = _f(
+            *(
+                wrap_lon(g.lon_east_deg if j == lon_n else g.lon_west_deg + g.step_deg * j)
+                for j in (0, lon_n, 1, lon_n // 2)
+            )
+        )
         times = _t(*(g.start + g.time_step * k for k in (0, t_n, 1, t_n // 2)))
         s = provider.sample(lats, lons, times)
         assert list(s.quality) == [SampleQuality.OK.value] * 4
