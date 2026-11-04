@@ -15,6 +15,9 @@ Confirmed in the interview:
 | D-028 | Repository `n00rp/nautical-deliverance`; local working copy `C:\Programing\nautical deliverence`. |
 | D-029 | Monorepo with top-level `engine/`, `web/`, `infra/`, `reference-suite/`, `docs/`. |
 | D-043 | The account is on GitHub Free, where branch protection and rulesets do not apply to private repositories. Until the account is upgraded: CI runs every gate but cannot block a merge; "never merge with red CI" is a binding working rule for owner and Claude. Branch protection (original S0-R12) is restored on upgrade. Amends D-027 and D-013. |
+| D-044 | License allow-list (D-037) extended with MIT-0, CC0-1.0, BlueOak-1.0.0 and Python-2.0. GPL/AGPL remain blocked. |
+| D-045 | GitHub code scanning is unavailable for private repositories on GitHub Free, so the CodeQL workflow stays in the repository but runs only on manual dispatch until the account is upgraded; then it runs on every PR (amends S0-R10). |
+| D-046 | Trivy in CI blocks HIGH/CRITICAL findings that have a fix available (`--ignore-unfixed`). A scheduled weekly workflow reports all findings, including unfixed ones, so they stay visible. Amends D-037 for container images. |
 
 **Proposed — confirmed by the owner's approval of this spec:**
 

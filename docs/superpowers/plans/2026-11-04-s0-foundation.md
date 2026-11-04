@@ -262,14 +262,14 @@ Expected: one commit containing the files above plus existing `docs/superpowers/
 ### Task 9: GitHub repository, branch protection and README
 
 **Files:**
-- Create: `tools/check_branch_protection.sh`, `.github/workflows/protection.yml`
+- Create: `tools/check_branch_protection.sh`, `tools/test_check_branch_protection.py` (no workflow: GITHUB_TOKEN cannot read merge settings — owner-run check documented in README, ruling R18)
 - Modify: `README.md`
 
 **Interfaces:**
 - Consumes: status check names (Task 8), repo name `n00rp/nautical-deliverance` (D-028).
 
 - [ ] **Step 1: Write `README.md`** (S0-R16): prerequisites with versions from `docs/versions.md` (Docker Desktop + WSL2, uv, Node, pnpm); start: `docker compose -f infra/docker-compose.yml up --wait`; run checks locally (the gate lists of Tasks 2, 6, 3); dev-realm users table; "Not for navigation" note (D-018).
-- [ ] **Step 2: Write `tools/check_branch_protection.sh`** (`# req: S0-R12` at top; referenced by `protection.yml`, a `workflow_dispatch` + weekly workflow): reads `gh api repos/n00rp/nautical-deliverance` and asserts `allow_squash_merge == true`, `allow_merge_commit == false`, `allow_rebase_merge == false` (D-043: no branch-protection assertions on GitHub Free). Exit non-zero listing each mismatch.
+- [ ] **Step 2: Write `tools/check_branch_protection.sh`** (S0-R12 traced via its tagged tests; owner-run, documented in README): reads `gh api repos/n00rp/nautical-deliverance` and asserts `allow_squash_merge == true`, `allow_merge_commit == false`, `allow_rebase_merge == false` (D-043: no branch-protection assertions on GitHub Free). Exit non-zero listing each mismatch.
 - [ ] **Step 2b: Add a `readme` job to `ci.yml`** (`# req: S0-R16`): fails unless `README.md` contains the headings `## Prerequisites`, `## Start the system`, `## Run all checks`, `## Development test users`, and `docker compose -f infra/docker-compose.yml config` succeeds. The "works on a clean Windows machine" half of S0-R16 is Step 6.
 - [ ] **Step 3: Create the repo and push** (ask the owner before running — creates an external resource):
 ```bash

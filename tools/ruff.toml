@@ -1,0 +1,9 @@
+extend = "../engine/pyproject.toml"
+
+[lint]
+ignore = ["INP001"]  # scripts, not a package
+
+[lint.per-file-ignores]
+"test_*.py" = ["S101", "D103"]
+"conftest.py" = ["TC002"]  # pytest must be a runtime import for the hook annotation
+"trace.py" = ["A005"]  # name fixed by the plan; run as a script, never imported

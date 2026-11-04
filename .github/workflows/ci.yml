@@ -1,0 +1,241 @@
+# Quality, security and smoke gates (D-037, D-038). CI is the authority; hooks are only fast feedback.
+# req: S0-R14
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.13.4"
+  NODE_VERSION: "24.22.0"
+  # uv refuses to run or sync when uv.lock is out of date (S0-R15); never re-locks silently.
+  UV_LOCKED: "1"
+
+jobs:
+  # req: S0-R06 S0-R07 S0-R08 S0-R15
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # A missing database fails the DB tests instead of skipping them.
+      ND_REQUIRE_DB: "1"
+      # Dev defaults from infra/docker-compose.yml, not secrets.
+      ND_DATABASE_URL: postgresql+psycopg://nd_app:dev-app-password@127.0.0.1:5432/nd
+      ND_MIGRATION_DATABASE_URL: postgresql+psycopg://nd_owner:dev-owner-password@127.0.0.1:5432/nd
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Same digest-pinned image and role script as local dev (compose mounts infra/db/init).
+      - name: Start database
+        run: docker compose -f infra/docker-compose.yml up --detach --wait --wait-timeout 180 db
+      - name: Install
+        working-directory: engine
+        run: uv sync --locked
+      - name: Lint, format, types, layers, dead code
+        working-directory: engine
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy src tests
+          uv run lint-imports
+          uv run vulture src --min-confidence 80
+      - name: Lint and types for tools/
+        working-directory: engine
+        run: |
+          uv run ruff check ../tools
+          uv run ruff format --check ../tools
+          uv run mypy --strict ../tools
+      - name: Tests and coverage
+        working-directory: engine
+        run: |
+          uv run pytest --cov
+          uv run coverage json -o coverage.json
+          uv run python ../tools/check_coverage.py coverage.json
+      # jscpd is a locked devDependency of web/ (pnpm-lock.yaml), not an unlocked npx fetch.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - name: Duplication (jscpd, threshold 0)
+        run: pnpm --dir web run duplication
+
+  # req: S0-R06 S0-R07 S0-R15
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run depcruise
+      - run: pnpm run knip
+      - run: pnpm run test --coverage
+
+  # req: S0-R09
+  traceability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - run: uv sync --locked --project engine
+      - name: Tools tests
+        run: uv run --locked --project engine pytest tools -v
+      - name: Every requirement is covered
+        run: uv run --locked --project engine python tools/trace.py --check
+
+  # req: S0-R10
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans the full history
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Secret scan over full history (gitleaks v8.30.1)
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git --no-banner --redact --verbose /repo
+      - run: uv sync --locked
+        working-directory: engine
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+      - name: Python dependency vulnerabilities
+        working-directory: engine
+        run: uv run pip-audit
+      - name: JavaScript dependency vulnerabilities
+        working-directory: web
+        run: pnpm audit --audit-level high
+      - name: License allow-list
+        run: |
+          (cd engine && uv run pip-licenses --format=json --ignore-packages nautical-deliverance-engine --output-file "$RUNNER_TEMP/pip-licenses.json")
+          (cd web && pnpm licenses list --json > "$RUNNER_TEMP/pnpm-licenses.json")
+          uv run --locked --project engine python tools/check_licenses.py \
+            --pip "$RUNNER_TEMP/pip-licenses.json" --pnpm "$RUNNER_TEMP/pnpm-licenses.json"
+
+  # req: S0-R01 S0-R11
+  smoke:
+    needs: [engine, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ND_IMAGE_TAG: ${{ github.sha }}
+      ND_GIT_SHA: ${{ github.sha }}
+      # Trivy 0.76.1
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build images tagged with the commit
+        run: |
+          docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
+          docker build -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
+      - name: Scan images (Trivy, fixable HIGH and CRITICAL fail; D-046)
+        run: |
+          for name in engine web; do
+            docker save "nautical-deliverance/$name:$ND_IMAGE_TAG" -o "$RUNNER_TEMP/$name.tar"
+            docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image \
+              --input "/scan/$name.tar" --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          done
+      # --no-build: a missing or mistagged image fails here instead of being silently rebuilt.
+      - name: Start stack on the scanned images
+        run: |
+          start=$SECONDS
+          docker compose -f infra/docker-compose.yml up --detach --wait --wait-timeout 180 --no-build
+          echo "up --wait took $((SECONDS - start)) s (budget 180 s, S0-R01)"
+      - name: Smoke test
+        run: bash tools/smoke.sh
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down --volumes
+
+  # req: S0-R16
+  readme:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: README has the required sections
+        run: |
+          for h in "## Prerequisites" "## Start the system" "## Run all checks" "## Development test users"; do
+            grep -qxF "$h" README.md || { echo "README.md is missing: $h"; exit 1; }
+          done
+      - name: Compose file is valid
+        run: docker compose -f infra/docker-compose.yml config --quiet
+
+  # req: S0-R14
+  ci-duration:
+    needs: [engine, web, traceability, security, smoke, readme]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Fail if the run took more than 15 minutes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          started="$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}" --jq .run_started_at)"
+          elapsed=$(( $(date +%s) - $(date -d "$started" +%s) ))
+          echo "CI wall time so far: ${elapsed}s (limit 900s)"
+          [ "$elapsed" -le 900 ]

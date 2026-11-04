@@ -34,5 +34,12 @@ Dates are the Docker Hub / quay.io `last_updated` of the tag (registry tags are 
 | Keycloak | `quay.io/keycloak/keycloak:26.8.0` | 2026-10-10 | 26.8.1 tags pushed 2026-10-13 / 2026-10-31 (too recent). |
 | Node (LTS "Krypton", v24) | `node:24.22.0-alpine` | 2026-10-14 | Node 24.22.0 released 2026-10-14. Node 26 became LTS 2026-10-28 (too recent). |
 | nginx | `nginxinc/nginx-unprivileged:1.30.6-alpine` | 2026-10-19 | Stable 1.30 branch. |
-| Python image | `python:3.14.8-slim-trixie` | 2026-10-21 | Debian 13 (trixie). 3.14.9 pushed 2026-10-24 (too recent). |
+| Python image | `python:3.14.10-slim-trixie` | 2026-11-02 | Debian 13 (trixie). **Security exception (R14, 2026-11-04):** newer than 14 days, chosen over 3.14.8 because it is the newest rebuild of the same minor; digest `sha256:930e1abb...`. |
 | pnpm | `12.15.0` | 2026-10-21 | From registry.npmjs.org publish time. |
+| uv (engine image build) | `0.13.4` | 2026-10-20 | PyPI upload time. 0.13.5+ are newer than 14 days on 2026-11-04. |
+
+## Security exceptions (2026-11-04)
+
+Controller ruling R14: security beats the 14-day rule. Trivy (HIGH/CRITICAL, fixes available) was run against both images.
+- Engine: base moved 3.14.8 -> 3.14.10 (digest `fbecd461...` -> `930e1abb...`); pip (with vendored certifi/msgpack/urllib3/setuptools) is deleted from the runtime stage. Remaining findings are Debian 13.7 OS packages (util-linux family CVE-2026-76642/78408/78409/78410, ncurses CVE-2025-69720, libsqlite3 CVE-2026-119373, systemd CVE-2026-16742, libacl1 CVE-2026-54369, perl-base CVE-2026-9538). Debian's tracker marks them `affected`/`fix_deferred` with no fixed version, so no package upgrade exists yet (checked 2026-11-04 with a targeted `apt-get install --only-upgrade` in a trial build: versions unchanged, so the step was not kept). Trivy passes with `--ignore-unfixed`; revisit when Debian ships fixes.
+- Web: no newer `nginx-unprivileged` tag exists (1.30.6-alpine and 1.31.7-alpine3.24 carry the same alpine 3.24.2 findings), so curl, libcurl, freetype, fontconfig, brotli-libs and libexpat (unused for static serving) are removed with `apk del`. Trivy: clean.

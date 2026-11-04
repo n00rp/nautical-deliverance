@@ -1,0 +1,40 @@
+# Weekly visibility report of ALL image findings, including ones with no fix yet (D-046).
+# Never fails: the blocking gate is the smoke job in ci.yml.
+# req: S0-R10
+name: Image scan report
+
+on:
+  schedule:
+    - cron: "43 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image-scan-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Trivy 0.76.1
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build images
+        run: |
+          docker build -t nautical-deliverance/engine:report engine
+          docker build -t nautical-deliverance/web:report web
+      - name: Scan all HIGH and CRITICAL findings into the job summary
+        run: |
+          for name in engine web; do
+            docker save "nautical-deliverance/$name:report" -o "$RUNNER_TEMP/$name.tar"
+            {
+              echo "## $name image (all HIGH/CRITICAL, including unfixed)"
+              echo '```'
+              docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image \
+                --input "/scan/$name.tar" --severity HIGH,CRITICAL --exit-code 0 --format table
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done

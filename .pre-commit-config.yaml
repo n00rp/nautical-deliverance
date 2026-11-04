@@ -1,0 +1,31 @@
+# Fast local gates (D-039). CI stays the authority. Install: `uvx pre-commit install`.
+# Local hooks reuse the lockfile-pinned tool versions instead of a second copy.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # v8.30.1
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: uv run --frozen --project engine ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --frozen --project engine ruff format --check
+        language: system
+        types: [python]
+      - id: prettier
+        name: prettier
+        entry: pnpm --dir web run format:check
+        language: system
+        files: ^web/
+        pass_filenames: false
+      - id: eslint
+        name: eslint
+        entry: pnpm --dir web run lint
+        language: system
+        files: ^web/
+        pass_filenames: false
