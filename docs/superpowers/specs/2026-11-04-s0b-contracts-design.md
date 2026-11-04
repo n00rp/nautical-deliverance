@@ -22,6 +22,7 @@
 | D-057 | A `VesselSpec` contract: IMO number, length, beam, design draft (m), main-engine MCR (W), specific fuel oil consumption curve (kg/J, converted at the boundary from g/kWh), auxiliary load per operating state (W), and **safety limits**: max significant wave height (m), max wind speed (m/s), min under-keel clearance (m). E4 tests against these. |
 | D-058 | Contracts live in `nautical_deliverance.domain.contracts`, one module per area (`geo`, `time`, `units`, `weather`, `performance`, `route`, `errors`). Data types are frozen dataclasses; providers (`WeatherProvider`, `PerformanceModel`) are `typing.Protocol`. Only stdlib, NumPy and GeographicLib. Arrays are `float64`; time arrays are `datetime64[s]` in UTC, with a helper converting to/from aware `datetime` that rejects naive values (clarifies D-049). |
 | D-059 | Each Protocol has a reusable conformance test suite every future implementation must pass. S0b ships an analytical reference implementation (uniform fields, a simple performance model) that proves the suites work and later serves C3's level-1 analytical tests (D-024). |
+| D-061 | License allow-list (D-037/D-044) extended with 0BSD and Zlib (bundled components of NumPy). GPL/AGPL remain blocked. |
 | D-060 | Contracts are internal to the engine; no separate version numbering. A change needs a new confirmed decision and an updated spec; the conformance suites catch implementations that drift. |
 
 ## 2. Module layout
