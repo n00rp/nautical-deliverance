@@ -20,13 +20,17 @@ Versions are pinned in [docs/versions.md](docs/versions.md).
 docker compose -f infra/docker-compose.yml up --wait
 ```
 
+After a `git pull`, rebuild the images with `docker compose -f infra/docker-compose.yml up --wait --build`.
+
 No `infra/.env` is needed. Then open:
 
 - Web: http://localhost:8080
 - Engine: http://localhost:8000
 - Keycloak: http://localhost:8081
 
-The compose file is a dev/CI stack: dev passwords and a dev realm, not a production deployment.
+The compose file is a dev/CI stack: dev passwords and a dev realm, not a production deployment. Known gaps are listed in [docs/known-limitations.md](docs/known-limitations.md).
+
+Local UI development goes through the compose stack on http://localhost:8080: sign-in redirects are registered for that origin only, so `pnpm dev` on :5173 cannot sign in.
 
 ## Run all checks
 
@@ -35,13 +39,18 @@ CI (`.github/workflows/ci.yml`) is the authority; these are the same commands. R
 Engine, from `engine/`:
 
 ```bash
-uv sync --frozen
+uv sync --locked
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src tests
 uv run lint-imports
 uv run vulture src --min-confidence 80
 uv run pytest --cov
+uv run coverage json -o coverage.json
+uv run python ../tools/check_coverage.py coverage.json   # line AND branch >= 90 % (D-035)
+uv run ruff check ../tools
+uv run ruff format --check ../tools
+uv run mypy --strict ../tools
 ```
 
 The database tests need a running `db` service (`docker compose -f infra/docker-compose.yml up --detach --wait db`) and these variables. Use `127.0.0.1`, not `localhost`, on Windows:
@@ -69,8 +78,8 @@ pnpm run duplication
 Repository, from the root:
 
 ```bash
-uv run --frozen --project engine pytest tools -v
-uv run --frozen --project engine python tools/trace.py --check
+uv run --locked --project engine pytest tools -v
+uv run --locked --project engine python tools/trace.py --check
 bash tools/smoke.sh        # needs the stack from "Start the system"
 uvx pre-commit run --all-files
 ```
