@@ -23,6 +23,9 @@
 | D-058 | Contracts live in `nautical_deliverance.domain.contracts`, one module per area (`geo`, `time`, `units`, `weather`, `performance`, `route`, `errors`). Data types are frozen dataclasses; providers (`WeatherProvider`, `PerformanceModel`) are `typing.Protocol`. Only stdlib, NumPy and GeographicLib. Arrays are `float64`; time arrays are `datetime64[s]` in UTC, with a helper converting to/from aware `datetime` that rejects naive values (clarifies D-049). |
 | D-059 | Each Protocol has a reusable conformance test suite every future implementation must pass. S0b ships an analytical reference implementation (uniform fields, a simple performance model) that proves the suites work and later serves C3's level-1 analytical tests (D-024). |
 | D-061 | License allow-list (D-037/D-044) extended with 0BSD and Zlib (bundled components of NumPy). GPL/AGPL remain blocked. |
+| D-062 | Amends D-052: `WeatherSample` carries `source`, `run_time` and `quality` per **variable group** — `WIND` (u, v), `WAVES` (total sea, wind sea, swell), `CURRENT` (u, v), and one group per optional variable. The NaN rule applies per group. |
+| D-063 | Amends D-056: values are kept at `STALE` points; NaN only for `OUT_OF_COVERAGE` and `OUT_OF_TIME_RANGE`. Performance models accept `STALE` input; C3 decides warn vs block from the thresholds. |
+| D-064 | Amends D-054/D-057: `speed_for_power` and `power_for_speed` take a `fuel_type`; returned fuel rates are the mass of that fuel. `VesselSpec` holds one SFOC curve per `Consumer` at the ISO reference lower calorific value; conversion between fuel types happens in C2. |
 | D-060 | Contracts are internal to the engine; no separate version numbering. A change needs a new confirmed decision and an updated spec; the conformance suites catch implementations that drift. |
 
 ## 2. Module layout
