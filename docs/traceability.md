@@ -28,5 +28,5 @@
 | S0b-R08 | engine/tests/contracts/conformance_performance.py, engine/tests/contracts/test_performance_conformance.py |
 | S0b-R09 | engine/tests/contracts/test_performance_conformance.py, engine/tests/contracts/test_weather_conformance.py |
 | S0b-R10 | engine/tests/contracts/test_route.py |
-| S0b-R11 | engine/tests/unit/test_layers.py |
+| S0b-R11 | engine/tests/contracts/test_import_allowlist.py, engine/tests/unit/test_layers.py |
 | S0b-R12 | .github/workflows/ci.yml |

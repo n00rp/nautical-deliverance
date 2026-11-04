@@ -449,6 +449,11 @@ def _loose(r: PerformanceResult, **changes: Any) -> Any:  # noqa: ANN401
     return SimpleNamespace(**(fields | changes))
 
 
+def replace_len(condition: OperatingCondition) -> OperatingCondition:
+    """Return a condition with OK weather of the same length."""
+    return make_condition(len(condition))
+
+
 class _NoValidation(SimplePerformance):
     """Broken: coerces bad input instead of rejecting it."""
 
@@ -475,11 +480,6 @@ class _NoValidation(SimplePerformance):
         return super().speed_for_power(
             vessel, replace_len(condition), np.resize(x, len(condition)), FuelType.VLSFO
         )
-
-
-def replace_len(condition: OperatingCondition) -> OperatingCondition:
-    """Return a condition with OK weather of the same length."""
-    return make_condition(len(condition))
 
 
 class _NegativeFuel(SimplePerformance):

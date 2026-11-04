@@ -37,10 +37,11 @@ engine/src/nautical_deliverance/domain/contracts/
   time.py         UTC helpers (datetime <-> datetime64[s])
   geo.py          Position, LegGeometry, distance/course/point-along-leg
   errors.py       ContractError hierarchy
-  weather.py      WeatherVariable, SampleQuality, WeatherSample, WeatherProvider
+  weather.py      WeatherVariable, WeatherGroup, SampleQuality, WeatherSample, WeatherProvider
   performance.py  FuelType, Consumer, OperatingState, SafetyLimits, VesselSpec,
                   OperatingCondition, PerformanceResult, PerformanceModel
-  route.py        OperatingMode, Waypoint, RouteLeg, Route, DataQuality
+  route.py        OperatingMode, SafetyLimit, Waypoint, RouteLeg, Route, DataQuality
+  _values.py      value equality / hashing for types holding mappings (see 3.8)
 engine/src/nautical_deliverance/domain/reference/
   __init__.py
   uniform_weather.py      analytical WeatherProvider (D-059)
@@ -48,6 +49,7 @@ engine/src/nautical_deliverance/domain/reference/
 engine/tests/contracts/
   conformance_weather.py      reusable suite (parametrized by a provider factory)
   conformance_performance.py  reusable suite
+  weather_fixtures.py         shared reference grid and builder
   test_*.py                   unit tests + suites run against the reference implementations
 ```
 
@@ -60,36 +62,42 @@ New dependency: `geographiclib` (pure Python, MIT — on the D-037 allow-list).
 - Boundary conversions with exact constants: knots ↔ m/s (1 kn = 1852/3600 m/s), nautical miles ↔ m (1852 m), tonnes ↔ kg, kW ↔ W, g/kWh ↔ kg/J (1 g/kWh = 1/3.6e9 kg/J), hours ↔ s.
 
 ### 3.2 Time (K2)
-- `to_datetime64(dt: datetime) -> np.datetime64` and `from_datetime64(t: np.datetime64) -> datetime`; naive input raises `NaiveDatetimeError`; non-UTC aware input is converted to UTC.
+- `to_datetime64(dt: datetime) -> np.datetime64` and `from_datetime64(t: np.datetime64) -> datetime`; naive input raises `NaiveDatetimeError`; non-UTC aware input is converted to UTC; a sub-second instant raises `InvalidInputError` (rejected, not truncated).
 - Array variant for sequences.
 
 ### 3.3 Geometry (K1)
 - `Position(lat_deg, lon_deg)`: validates latitude, normalizes longitude to [−180, 180).
 - `LegGeometry` enum: `RHUMB_LINE`, `GREAT_CIRCLE`.
-- `distance_m(a, b, geometry)`, `initial_course_deg(a, b, geometry)`, `point_along(a, b, geometry, fraction)`, all via GeographicLib on WGS84.
+- `distance_m(a, b, geometry)`, `initial_course_deg(a, b, geometry)`, `point_along(a, b, geometry, fraction)` and the direct problem `destination(start, course_deg, distance_m, geometry) -> Position`, all on WGS84 (GeographicLib `Geodesic` for great circles; rhumb lines are hand-written on the ellipsoid because the Python GeographicLib has no `Rhumb`). A rhumb `destination` that would run past a pole raises `InvalidInputError`.
 
 ### 3.4 Errors (K7)
 `ContractError` ← `InvalidInputError` ← { `NaiveDatetimeError`, `InvalidPositionError` }; `ContractError` ← `MissingRequiredVariableError`; `ContractError` ← `DataBlockedError` (carries the reasons).
 
 ### 3.5 Weather (K4)
-- `WeatherVariable` enum with a `required: bool` attribute per member (D-051 set).
-- `SampleQuality` enum: `OK`, `OUT_OF_COVERAGE`, `OUT_OF_TIME_RANGE`, `STALE`.
-- `WeatherSample`: one `float64` array per available variable (NaN where quality ≠ OK), a `quality` array, `source: str`, `run_time` (`datetime64[s]` array, one per point), and `unavailable: frozenset[WeatherVariable]` for optional variables the provider lacks.
-- `WeatherProvider` Protocol: `sample(lat_deg, lon_deg, valid_time) -> WeatherSample` (equal-length 1-D arrays) and `sample_point(position, valid_time: datetime) -> WeatherSample`.
+- `WeatherVariable` enum (D-051 set); the frozenset `REQUIRED` holds the 13 required members, the rest are optional.
+- `WeatherGroup` enum (D-062): `WIND`, `WAVES`, `CURRENT`, `SEA_ICE`, `VISIBILITY`, `PRESSURE`; `GROUP_OF` maps every variable to its group; `REQUIRED_GROUPS` are wind, waves and current.
+- `SampleQuality` is an `IntEnum`: `OK = 0`, `OUT_OF_COVERAGE = 1`, `OUT_OF_TIME_RANGE = 2`, `STALE = 3`; arrays store the code as `uint8` (`SampleQuality(code)` gives the name). A point both out of coverage and out of time range is `OUT_OF_COVERAGE`. Providers never set `STALE`; the consumer (C3) does, from the warn/block thresholds.
+- `WeatherSample` (identity equality, see 3.8): `values: Mapping[WeatherVariable, float64 array]` (1-D); per **group** present: `quality: Mapping[WeatherGroup, uint8 array]`, `source: Mapping[WeatherGroup, str]` (non-empty), `run_time: Mapping[WeatherGroup, datetime64[s] array]`; and `unavailable: frozenset[WeatherVariable]`. Invariants: `values.keys() | unavailable` is every `WeatherVariable` and the two are disjoint (an optional variable cannot vanish; required ones are never unavailable); the mapping keys are exactly the groups of the delivered variables; a variable is NaN exactly where its group is `OUT_OF_COVERAGE` or `OUT_OF_TIME_RANGE` (D-063: `STALE` keeps its values); `run_time` is set wherever the group has values. `len(sample)` is the number of points. Arrays and mappings are read-only copies.
+- `WeatherProvider` Protocol: `sample(lat_deg, lon_deg, valid_time) -> WeatherSample` (equal-length 1-D arrays) and `sample_point(position, valid_time: datetime) -> WeatherSample`. `validate_query` rejects `|lat| > 90` with `InvalidPositionError`; longitudes are not range-checked, providers wrap them.
 - Interpolation rules (§1 D-052) are part of the contract and verified by the conformance suite.
 
 ### 3.6 Performance (K5)
 - `FuelType` enum (D-054), `Consumer` enum (`MAIN_ENGINE`, `AUXILIARY`), `OperatingState` enum (`AT_SEA`, `IN_PORT`).
-- `SafetyLimits(max_significant_wave_height_m, max_wind_speed_mps, min_under_keel_clearance_m)`, `VesselSpec` (D-057).
-- `OperatingCondition`: arrays `draft_fwd_m`, `draft_aft_m`, `heading_deg`, plus the `WeatherSample` at those points.
-- `PerformanceResult`: arrays `speed_through_water_mps`, `shaft_power_w`, `fuel_rate_kgps` per `Consumer`, `motion_risk_ratio` (0 = calm, 1 = at the vessel's limit).
-- `PerformanceModel` Protocol: `speed_for_power(vessel, condition, shaft_power_w) -> PerformanceResult` and `power_for_speed(vessel, condition, speed_through_water_mps) -> PerformanceResult`.
+- `SafetyLimits(max_significant_wave_height_m, max_wind_speed_mps, min_under_keel_clearance_m)`, `VesselSpec` (D-057, D-064): `sfoc_curve_kg_per_j` maps each `Consumer` to its own (load fraction, kg/J) curve at the ISO reference lower calorific value (42.7 MJ/kg, ISO 3046-1); the load fraction is power divided by `mcr_w`. Equality and hash are by value.
+- `OperatingCondition` (identity equality): arrays `draft_fwd_m`, `draft_aft_m`, `heading_deg`, plus the `WeatherSample` at those points. Water depth and under-keel clearance are not in it; C3 gets them from a separate depth provider (D-019).
+- `PerformanceResult` (identity equality): 1-D arrays `speed_through_water_mps`, `shaft_power_w`, `fuel_rate_kgps` per `Consumer` (the mass rate of the requested fuel), `motion_risk_ratio` (0 = calm, 1 = at the limit of the vessel). Power above MCR is returned as asked; C3 caps it.
+- `PerformanceModel` Protocol (D-064): `speed_for_power(vessel, condition, shaft_power_w, fuel_type) -> PerformanceResult` and `power_for_speed(vessel, condition, speed_through_water_mps, fuel_type) -> PerformanceResult`. `validate_performance_input` rejects a non-`FuelType`, and weather whose wind, waves or current group is not `OK` or `STALE` at every point (D-063); optional groups are ignored.
+- The reference model (`domain.reference.simple_performance`) holds illustrative lower calorific values (`REFERENCE_LCV_J_PER_KG` = 42.7e6 J/kg; HFO 40.2, VLSFO 41.0, ULSFO 41.5, MGO 42.7, LNG 49.1 MJ/kg) and converts fuel mass by equal energy; it uses the auxiliary curve for auxiliary fuel. C2 owns the real values and their sources.
 
 ### 3.7 Route (K6)
 - `OperatingMode` enum: `CONSTANT_POWER`, `CONSTANT_SPEED`, `FIXED_ARRIVAL`.
+- `SafetyLimit` enum: `MAX_SIGNIFICANT_WAVE_HEIGHT`, `MAX_WIND_SPEED`, `MIN_UNDER_KEEL_CLEARANCE`.
 - `Waypoint(position, eta: datetime)`.
-- `RouteLeg`: `start`, `end` (`Waypoint`), `geometry`, `speed_through_water_mps`, `speed_over_ground_mps`, `fuel_type`, `fuel_kg` per `Consumer`, `worst_significant_wave_height_m`, `worst_wind_speed_mps`, `limit_violations: frozenset[str]`.
-- `Route`: `legs`, `mode`, `forecast_runs` (source + run time pairs), `data_quality` (`OK` / `DEGRADED`), `quality_reasons: tuple[str, ...]`. Invariants: consecutive legs share waypoints; ETAs strictly increase.
+- `RouteLeg` (value equality): `start`, `end` (`Waypoint`), `geometry`, `speed_through_water_mps`, `speed_over_ground_mps`, `fuel_type`, `fuel_kg` (exactly one entry per `Consumer`), `worst_significant_wave_height_m`, `worst_wind_speed_mps`, `limit_violations: frozenset[SafetyLimit]` (any iterable of limits is normalized). Numbers are finite and non-negative; the end ETA is after the start ETA.
+- `Route`: `legs`, `mode`, `forecast_runs` (at least one; source + run time pairs, non-blank source), `data_quality` (`OK` / `DEGRADED`), `quality_reasons: tuple[str, ...]` (no blank entries). Invariants: consecutive legs share waypoints; ETAs strictly increase; all legs use one `LegGeometry` (D-055).
+
+### 3.8 Equality and hashing
+Types holding NumPy arrays (`WeatherSample`, `OperatingCondition`, `PerformanceResult`) use identity equality (`eq=False`), so `==` never raises on arrays. Value types holding mappings (`VesselSpec`, `RouteLeg`) compare and hash by content, recursing into nested mappings and tuples (`_values.ValueEquality`), so a `VesselSpec` is a valid `dict` key or `lru_cache` argument. All other contract types are plain frozen dataclasses.
 
 ## 4. Requirements
 
@@ -99,13 +107,13 @@ New dependency: `geographiclib` (pure Python, MIT — on the D-037 allow-list).
 | S0b-R02 | Boundary conversions exact | Round-trip kn↔m/s, nm↔m, t↔kg, kW↔W, g/kWh↔kg/J, h↔s for ≥ 1000 Hypothesis-generated values agrees within 1e-12 relative; 1 kn = 0.514444… m/s and 1 nm = 1852 m exactly. |
 | S0b-R03 | UTC enforced (D-049) | Naive `datetime` → `NaiveDatetimeError` in every contract constructor and helper taking an instant; aware non-UTC input is converted to the same UTC instant; `datetime` ↔ `datetime64[s]` round-trips exactly for ≥ 1000 generated instants. |
 | S0b-R04 | Longitude normalization and validation | `Position` maps any finite longitude to [−180, 180) (Hypothesis, ≥ 1000 cases); latitude outside [−90, 90] or non-finite values → `InvalidPositionError`. |
-| S0b-R05 | Geodesic correctness | `distance_m` and `initial_course_deg` for `GREAT_CIRCLE` and `RHUMB_LINE` match GeographicLib's published test cases (≥ 10 from its test set, documented source) within 1 mm and 1e-9°. |
+| S0b-R05 | Geodesic correctness | `distance_m` and `initial_course_deg` for `GREAT_CIRCLE` and `RHUMB_LINE` match GeographicLib's published test cases (≥ 10 from its test set, documented source) within 1 mm and 1e-9°; the direct problem `destination` reproduces `distance_m` / `initial_course_deg` legs within 1 mm and 1e-9°, and the rhumb course agrees with the closed-form isometric latitude to 1e-9°. |
 | S0b-R06 | Antimeridian | A leg 179° E → 179° W at equal latitude has distance equal to the 2° leg (not 358°) within 1 mm for both geometries; `point_along(…, 0.5)` lies at ±180° longitude. |
-| S0b-R07 | Weather conformance suite | A reusable suite checks for any `WeatherProvider`: output arrays match input length; required variables present or `MissingRequiredVariableError`; no extrapolation (points outside coverage/time → NaN + the right `SampleQuality`); directional interpolation via unit vectors (350° and 10° → 0°, not 180°); bilinear/linear interpolation reproduces values exactly at grid nodes and linear fields exactly in between; `run_time` and `source` set for every OK point; `sample_point` equals the vectorized result. |
-| S0b-R08 | Performance conformance suite | A reusable suite checks for any `PerformanceModel`: `power_for_speed(speed_for_power(P)) ≈ P` within 1e-6 relative over the valid range; outputs are finite and non-negative; fuel split per `Consumer` sums to the total; `motion_risk_ratio` in [0, 1]; array lengths preserved; invalid input → `InvalidInputError`. |
-| S0b-R09 | Reference implementations pass | The analytical `uniform_weather` and `simple_performance` implementations pass their conformance suites; the suites are proven to fail on a deliberately broken variant of each (e.g. extrapolating provider, inconsistent model). |
-| S0b-R10 | Route invariants | Constructing a `Route` with non-shared consecutive waypoints, non-increasing ETAs, or a `DEGRADED` quality without reasons raises `InvalidInputError`. |
-| S0b-R11 | Layer rules hold | `domain.contracts` and `domain.reference` import only stdlib, NumPy and geographiclib (import-linter contract proven to fail on a violating fixture). |
+| S0b-R07 | Weather conformance suite | A reusable suite checks for any `WeatherProvider`: output arrays match input length; required variables present or `MissingRequiredVariableError`; no extrapolation (points outside coverage/time → NaN + the right `SampleQuality`, per variable group); optional variables are present or unavailable, never missing; `uint8` quality codes and the group structure; directional interpolation via unit vectors (350° and 10° → 0°, not 180°); bilinear/linear interpolation reproduces values exactly at grid nodes and linear fields exactly in between; `run_time` and `source` set for every OK point of every group; global grids (longitude width 360, linear fields checked up to one step short of the wrap, the seam cell between the last and first column, queries at ±180); non-uniform valid times and separate latitude/longitude steps; `|lat| > 90` → `InvalidPositionError`; `sample_point` equals the vectorized result. |
+| S0b-R08 | Performance conformance suite | A reusable suite checks for any `PerformanceModel`: `power_for_speed(speed_for_power(P)) ≈ P` within 1e-6 relative over the valid range; outputs are finite and non-negative; fuel split per `Consumer` sums to the total; `motion_risk_ratio` in [0, 1]; array lengths preserved; every check runs for every `FuelType`; speed and power do not depend on the fuel type and fuel mass at equal power does not rise with the lower calorific value (HFO → VLSFO → ULSFO → MGO → LNG); speed rises monotonically with power; `STALE` weather is accepted; invalid input (including a non-`FuelType`) → `InvalidInputError`. |
+| S0b-R09 | Reference implementations pass | The analytical `uniform_weather` and `simple_performance` implementations pass their conformance suites; the suites are proven to fail on a deliberately broken variant of each (e.g. extrapolating, nearest-neighbour-in-time and non-wrapping providers, inconsistent model, fuel mass rising with LCV). |
+| S0b-R10 | Route invariants | Constructing a `Route` with non-shared consecutive waypoints, non-increasing ETAs, a `DEGRADED` quality without reasons, mixed leg geometries, an empty forecast-run list or a leg without every consumer's fuel raises `InvalidInputError`. |
+| S0b-R11 | Layer rules hold | `domain.contracts` and `domain.reference` import only stdlib, NumPy and geographiclib (an import-linter contract and an AST allow-list test over every import — stdlib, NumPy, GeographicLib and `nautical_deliverance.domain` only — both proven to fail on violating fixtures). |
 | S0b-R12 | Gates inherited | Coverage ≥ 90 % line and branch (D-035); mypy strict, Ruff, vulture, traceability all green; no change to S0 behaviour (existing tests pass unchanged). |
 
 ## 5. Out of scope
