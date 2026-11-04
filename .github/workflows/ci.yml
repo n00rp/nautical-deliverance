@@ -54,8 +54,14 @@ jobs:
       - name: Tests and coverage
         working-directory: engine
         run: uv run pytest --cov
+      # jscpd is a locked devDependency of web/ (pnpm-lock.yaml), not an unlocked npx fetch.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
       - name: Duplication (jscpd, threshold 0)
-        run: npx --yes jscpd@5.4.2
+        run: pnpm --dir web run duplication
 
   # req: S0-R06 S0-R07 S0-R15
   web:

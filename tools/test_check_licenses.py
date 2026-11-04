@@ -94,3 +94,15 @@ def test_approved_file_exempts_named_package(tmp_path: Path) -> None:
 def test_allows_trove_classifier_names(tmp_path: Path) -> None:
     pip = [_pip("a", "MIT License"), _pip("b", "Apache Software License"), _pip("c", "BSD License")]
     assert _run(tmp_path, pip, {}).returncode == 0
+
+
+@pytest.mark.req("S0-R10")
+def test_allows_lgpl_trove_classifiers_but_not_gpl(tmp_path: Path) -> None:
+    lgpl = [
+        "GNU Lesser General Public License v2 or later (LGPLv2+)",
+        "GNU Lesser General Public License v3 (LGPLv3)",
+        "GNU Lesser General Public License v3 or later (LGPLv3+)",
+    ]
+    assert _run(tmp_path, [_pip(f"l{i}", lic) for i, lic in enumerate(lgpl)], {}).returncode == 0
+    gpl = "GNU General Public License v3 (GPLv3)"
+    assert _run(tmp_path, [_pip("g", gpl)], {}).returncode == 1

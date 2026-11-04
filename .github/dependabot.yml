@@ -10,7 +10,11 @@ updates:
     schedule: { interval: weekly }
     cooldown: { default-days: 14 }
   - package-ecosystem: docker
-    directories: [/engine, /web, /infra]
+    directories: [/engine, /web]
+    schedule: { interval: weekly }
+    cooldown: { default-days: 14 }
+  - package-ecosystem: docker-compose
+    directory: /infra
     schedule: { interval: weekly }
     cooldown: { default-days: 14 }
   - package-ecosystem: github-actions

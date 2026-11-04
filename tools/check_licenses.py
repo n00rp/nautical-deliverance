@@ -26,6 +26,9 @@ TROVE = {
     "Python Software Foundation License": "PSF-2.0",
     "Mozilla Public License 2.0 (MPL 2.0)": "MPL-2.0",
     "ISC License (ISCL)": "ISC",
+    "GNU Lesser General Public License v2 or later (LGPLv2+)": "LGPL-2.1-or-later",
+    "GNU Lesser General Public License v3 (LGPLv3)": "LGPL-3.0-only",
+    "GNU Lesser General Public License v3 or later (LGPLv3+)": "LGPL-3.0-or-later",
 }
 TOKEN = re.compile(r"\(|\)|[^\s()]+")
 
