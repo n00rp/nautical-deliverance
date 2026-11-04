@@ -1,9 +1,10 @@
 # Conventional-commit PR titles (D-038). Reads the title only; never checks out PR code.
+# Plain pull_request (not _target): the base-branch workflow would not exist while main has no .github/.
 # req: S0-R13
 name: PR title
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, synchronize, reopened]
 
 permissions:

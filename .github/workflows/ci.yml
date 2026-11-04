@@ -13,6 +13,8 @@ permissions:
 env:
   UV_VERSION: "0.13.4"
   NODE_VERSION: "24.22.0"
+  # uv refuses to run or sync when uv.lock is out of date (S0-R15); never re-locks silently.
+  UV_LOCKED: "1"
 
 jobs:
   # req: S0-R06 S0-R07 S0-R08 S0-R15
@@ -39,10 +41,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       # Same digest-pinned image and role script as local dev (compose mounts infra/db/init).
       - name: Start database
-        run: docker compose -f infra/docker-compose.yml up --detach --wait db
+        run: docker compose -f infra/docker-compose.yml up --detach --wait --wait-timeout 180 db
       - name: Install
         working-directory: engine
-        run: uv sync --frozen
+        run: uv sync --locked
       - name: Lint, format, types, layers, dead code
         working-directory: engine
         run: |
@@ -51,9 +53,18 @@ jobs:
           uv run mypy src tests
           uv run lint-imports
           uv run vulture src --min-confidence 80
+      - name: Lint and types for tools/
+        working-directory: engine
+        run: |
+          uv run ruff check ../tools
+          uv run ruff format --check ../tools
+          uv run mypy --strict ../tools
       - name: Tests and coverage
         working-directory: engine
-        run: uv run pytest --cov
+        run: |
+          uv run pytest --cov
+          uv run coverage json -o coverage.json
+          uv run python ../tools/check_coverage.py coverage.json
       # jscpd is a locked devDependency of web/ (pnpm-lock.yaml), not an unlocked npx fetch.
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
@@ -103,11 +114,11 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: true
           cache-dependency-glob: engine/uv.lock
-      - run: uv sync --frozen --project engine
+      - run: uv sync --locked --project engine
       - name: Tools tests
-        run: uv run --frozen --project engine pytest tools -v
+        run: uv run --locked --project engine pytest tools -v
       - name: Every requirement is covered
-        run: uv run --frozen --project engine python tools/trace.py --check
+        run: uv run --locked --project engine python tools/trace.py --check
 
   # req: S0-R10
   security:
@@ -137,7 +148,7 @@ jobs:
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/repo \
             ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             git --no-banner --redact --verbose /repo
-      - run: uv sync --frozen
+      - run: uv sync --locked
         working-directory: engine
       - run: pnpm install --frozen-lockfile
         working-directory: web
@@ -151,7 +162,7 @@ jobs:
         run: |
           (cd engine && uv run pip-licenses --format=json --ignore-packages nautical-deliverance-engine --output-file "$RUNNER_TEMP/pip-licenses.json")
           (cd web && pnpm licenses list --json > "$RUNNER_TEMP/pnpm-licenses.json")
-          uv run --frozen --project engine python tools/check_licenses.py \
+          uv run --locked --project engine python tools/check_licenses.py \
             --pip "$RUNNER_TEMP/pip-licenses.json" --pnpm "$RUNNER_TEMP/pnpm-licenses.json"
 
   # req: S0-R01 S0-R11
@@ -181,7 +192,10 @@ jobs:
           done
       # --no-build: a missing or mistagged image fails here instead of being silently rebuilt.
       - name: Start stack on the scanned images
-        run: docker compose -f infra/docker-compose.yml up --detach --wait --no-build
+        run: |
+          start=$SECONDS
+          docker compose -f infra/docker-compose.yml up --detach --wait --wait-timeout 180 --no-build
+          echo "up --wait took $((SECONDS - start)) s (budget 180 s, S0-R01)"
       - name: Smoke test
         run: bash tools/smoke.sh
       - name: Stack logs on failure
