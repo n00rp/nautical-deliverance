@@ -19,5 +19,75 @@ services:
       timeout: 3s
       retries: 20
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.0@sha256:27b3230fbabb8c9ff3c66c864cf09dcd8a41aca82e5100679d109ef0eeb05741
+    command: ["start-dev", "--import-realm"]
+    environment:
+      # Pinned hostname => every token carries the same iss, whether fetched from the browser or
+      # from inside the compose network.
+      KC_HOSTNAME: http://localhost:8081
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${ND_KEYCLOAK_ADMIN_PASSWORD:?set in infra/.env}
+    volumes:
+      - ./keycloak/realm-dev.json:/opt/keycloak/data/import/realm-dev.json:ro
+    ports:
+      - "127.0.0.1:8081:8080"
+    healthcheck:
+      # No curl in the image: speak HTTP to the management port (9000) over bash /dev/tcp.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.0\r\n\r\n' >&3 &&
+          grep -q '"status": "UP"' <&3
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  engine:
+    image: nautical-deliverance/engine:${ND_IMAGE_TAG:-dev}
+    build:
+      context: ../engine
+    depends_on:
+      db:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    environment:
+      ND_GIT_SHA: ${ND_GIT_SHA:-dev}
+      ND_DATABASE_URL: postgresql+psycopg://nd_app:${ND_DB_APP_PASSWORD}@db:5432/nd
+      ND_MIGRATION_DATABASE_URL: postgresql+psycopg://nd_owner:${ND_DB_OWNER_PASSWORD}@db:5432/nd
+      ND_SEED_DEV_DATA: ${ND_SEED_DEV_DATA:-false}
+      ND_OIDC_ISSUER: http://localhost:8081/realms/nautical-deliverance
+      ND_OIDC_AUDIENCE: nd-api
+      ND_OIDC_JWKS_URL: http://keycloak:8080/realms/nautical-deliverance/protocol/openid-connect/certs
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  web:
+    image: nautical-deliverance/web:${ND_IMAGE_TAG:-dev}
+    build:
+      context: ../web
+    depends_on:
+      engine:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   db-data:
