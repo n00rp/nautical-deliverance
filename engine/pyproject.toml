@@ -2,7 +2,14 @@
 name = "nautical-deliverance-engine"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = ["fastapi", "uvicorn", "pydantic-settings"]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic-settings",
+    "sqlalchemy>=2.1.8",
+    "psycopg[binary]>=3.3.8",
+    "alembic>=1.20.1",
+]
 
 [dependency-groups]
 dev = [
@@ -48,7 +55,7 @@ markers = ["req(id): ties a test to a requirement id, e.g. S0-R02"]
 [tool.coverage.run]
 source = ["nautical_deliverance"]
 branch = true
-omit = ["src/nautical_deliverance/main.py"]
+omit = ["src/nautical_deliverance/main.py", "src/nautical_deliverance/persistence/migrations/*"]  # migrations run via alembic, verified by tests/db
 
 [tool.coverage.report]
 fail_under = 90
