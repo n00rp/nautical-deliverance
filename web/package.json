@@ -10,7 +10,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "depcruise": "depcruise src",
+    "knip": "knip",
     "test": "vitest run"
   },
   "dependencies": {

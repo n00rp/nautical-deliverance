@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { ApiError, fetchMe } from "./api";
@@ -94,6 +95,49 @@ describe("App", () => {
     await waitFor(() => {
       expect(window.location.search).toBe("");
     });
+    expect(auth.signinRedirectCallback).toHaveBeenCalledOnce();
+  });
+
+  it("[S0-R03] shows sign-in button with error so user can recover", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockRejectedValue(new ApiError(401));
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+  });
+
+  it("[S0-R03] cleans callback URL even when callback fails", async () => {
+    window.history.replaceState({}, "", "/?code=abc&state=xyz");
+    auth.signinRedirectCallback.mockRejectedValue(new Error("bad code"));
+    render(<App />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("bad code");
+    expect(window.location.search).toBe("");
+  });
+
+  it("[S0-R03] shows message when identity provider returns an error", async () => {
+    window.history.replaceState({}, "", "/?error=access_denied&state=xyz");
+    render(<App />);
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Sign-in was cancelled or denied.");
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeTruthy();
+    expect(window.location.search).toBe("");
+    expect(auth.signinRedirectCallback).not.toHaveBeenCalled();
+  });
+
+  it("[S0-R03] runs the callback exactly once under StrictMode", async () => {
+    window.history.replaceState({}, "", "/?code=abc&state=xyz");
+    auth.signinRedirectCallback.mockResolvedValue(user);
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue(me);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByText("Acme Shipping")).toBeTruthy();
     expect(auth.signinRedirectCallback).toHaveBeenCalledOnce();
   });
 });
