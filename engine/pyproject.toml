@@ -1,0 +1,77 @@
+[project]
+name = "nautical-deliverance-engine"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["fastapi", "uvicorn", "pydantic-settings"]
+
+[dependency-groups]
+dev = [
+    "pytest", "pytest-cov", "hypothesis", "httpx",
+    "mypy", "ruff", "import-linter", "vulture",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nautical_deliverance"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D203",   # conflicts with D211
+    "D213",   # conflicts with D212
+    "COM812", # conflicts with the formatter
+    "ISC001", # conflicts with the formatter
+    "CPY001", # no copyright headers in this project
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # assert is the pytest idiom
+
+[tool.mypy]
+strict = true
+plugins = []
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["ignore:Using .httpx. with .starlette.testclient. is deprecated"]
+markers = ["req(id): ties a test to a requirement id, e.g. S0-R02"]
+
+[tool.coverage.run]
+source = ["nautical_deliverance"]
+branch = true
+omit = ["src/nautical_deliverance/main.py"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+[tool.importlinter]
+root_package = "nautical_deliverance"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "domain is pure"
+type = "forbidden"
+source_modules = ["nautical_deliverance.domain"]
+forbidden_modules = [
+    "fastapi",
+    "sqlalchemy",
+    "nautical_deliverance.api",
+    "nautical_deliverance.persistence",
+]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "persistence does not import api"
+type = "forbidden"
+source_modules = ["nautical_deliverance.persistence"]
+forbidden_modules = ["nautical_deliverance.api"]
