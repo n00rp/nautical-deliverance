@@ -13,12 +13,15 @@ values are the worked examples of the RhumbSolve(1) manual page of GeographicLib
 (https://geographiclib.sourceforge.io/C++/doc/RhumbSolve.1.html): the JFK -> Changi inverse
 example (azimuth 103:34:58.2, 18523563 m) and the 9 intermediate waypoints of the "-L" example
 at 2000 km intervals. Those are printed to 0.1 arc-second and 1 m, so the rhumb tolerances are
-looser than the geodesic ones. Further exact checks: along the equator and along a meridian a
-rhumb line coincides with the geodesic.
+looser than the geodesic ones (they cannot be tightened: the page prints nothing finer). The
+spec tolerance (1 mm, 1e-9 deg) is instead proven by ``test_rhumb_matches_independent_integration``
+against a dense numerical integration. Further exact checks: along the equator and along a
+meridian a rhumb line coincides with the geodesic.
 """
 
 import math
 
+import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -303,3 +306,104 @@ def test_fraction_out_of_range_rejected(g: LegGeometry, fraction: float) -> None
     """Fractions outside [0, 1] or non-finite are rejected."""
     with pytest.raises(InvalidInputError):
         point_along(Position(0, 0), Position(1, 1), g, fraction)
+
+
+# --- rhumb verification against an independent integration -------------------------------
+WGS84_A = 6378137.0
+WGS84_E2 = 0.00669437999014131705  # f = 1/298.257223563, e2 = f * (2 - f)
+SIMPSON_POINTS = 200_001  # odd; >= 200k points per leg
+SMALL_DPHI_DEG = [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 0.0]
+RHUMB = LegGeometry.RHUMB_LINE
+MM = 1e-3
+
+
+def _simpson(y: np.ndarray, h: float) -> float:
+    return float(h / 3.0 * (y[0] + y[-1] + 4.0 * y[1:-1:2].sum() + 2.0 * y[2:-1:2].sum()))
+
+
+def reference_rhumb_length_m(a: Position, b: Position) -> float:
+    """Rhumb length by Simpson integration of ds = sqrt(dmu^2 + (N cos(phi) dlon)^2).
+
+    The path is parametrised by latitude; longitude is linear in the isometric latitude, so
+    dlon/dphi = k * dpsi/dphi with k = dlon / (total isometric-latitude change), the latter by
+    the same Simpson rule. This shares no code with the implementation under test.
+    """
+    dlon = math.radians((b.lon_deg - a.lon_deg + 180.0) % 360.0 - 180.0)
+    phi1, phi2 = math.radians(a.lat_deg), math.radians(b.lat_deg)
+    if phi1 == phi2:
+        return abs(WGS84_A * math.cos(phi1) / math.sqrt(1 - WGS84_E2 * math.sin(phi1) ** 2) * dlon)
+    phi = np.linspace(phi1, phi2, SIMPSON_POINTS)
+    h = (phi2 - phi1) / (SIMPSON_POINTS - 1)
+    w = 1.0 - WGS84_E2 * np.sin(phi) ** 2
+    dmu = WGS84_A * (1.0 - WGS84_E2) / w**1.5
+    dpsi = (1.0 - WGS84_E2) / (w * np.cos(phi))
+    k = dlon / _simpson(dpsi, h)
+    parallel = WGS84_A * np.cos(phi) / np.sqrt(w)
+    return abs(_simpson(np.sqrt(dmu**2 + (parallel * k * dpsi) ** 2), h))
+
+
+def _random_legs(count: int) -> list[tuple[Position, Position]]:
+    rng = np.random.default_rng(20261104)
+    legs = []
+    for i in range(count):
+        dphi = SMALL_DPHI_DEG[i % len(SMALL_DPHI_DEG)] if i % 3 else float(rng.uniform(0, 30))
+        lat1 = float(rng.uniform(-70, 70))
+        lon1 = float(rng.uniform(-180, 180))
+        dlon = float(rng.uniform(-20, 20))
+        sign = 1.0 if rng.random() < 0.5 else -1.0  # noqa: PLR2004
+        legs.append((Position(lat1, lon1), Position(lat1 + sign * dphi, lon1 + dlon)))
+    return legs
+
+
+LEGS = _random_legs(60)
+
+
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize(("a", "b"), LEGS)
+def test_rhumb_matches_independent_integration(a: Position, b: Position) -> None:
+    """Rhumb length agrees with dense numerical integration to 1 mm, down to dphi = 0."""
+    assert distance_m(a, b, RHUMB) == pytest.approx(reference_rhumb_length_m(a, b), abs=MM)
+
+
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize(("a", "b"), LEGS)
+def test_rhumb_round_trip(a: Position, b: Position) -> None:
+    """The end of the leg is reproduced, and the midpoint is half the length from the start."""
+    end = point_along(a, b, RHUMB, 1.0)
+    assert end.lat_deg == pytest.approx(b.lat_deg, abs=ANGLE_TOL)
+    assert angle_diff_deg(end.lon_deg, b.lon_deg) < ANGLE_TOL
+    mid = point_along(a, b, RHUMB, 0.5)
+    assert distance_m(a, mid, RHUMB) == pytest.approx(distance_m(a, b, RHUMB) / 2, abs=MM)
+
+
+@pytest.mark.req("S0b-R05")
+def test_rhumb_continuous_through_tiny_dphi() -> None:
+    """Length and midpoint longitude move smoothly as dphi shrinks to 0 (no threshold cliff)."""
+    a = Position(60.0, 10.0)
+    base = Position(60.0, 20.0)
+    d0 = distance_m(a, base, RHUMB)
+    lon0 = point_along(a, base, RHUMB, 0.5).lon_deg
+    for dphi in SMALL_DPHI_DEG:
+        b = Position(60.0 + dphi, 20.0)
+        rad = math.radians(dphi)
+        assert abs(distance_m(a, b, RHUMB) - d0) <= 2 * 6.4e6 * rad * 1.2 + MM
+        assert abs(point_along(a, b, RHUMB, 0.5).lon_deg - lon0) <= 10 * rad * 10 + ANGLE_TOL
+
+
+@pytest.mark.req("S0b-R04")
+@pytest.mark.parametrize("g", GEOMETRIES)
+def test_pole_as_start_and_pole_to_pole(g: LegGeometry) -> None:
+    """Legs starting at a pole and pole-to-pole legs are finite and reach their end."""
+    north, south = Position(90, 0), Position(-90, 0)
+    b = Position(60, 20)
+
+    assert distance_m(north, b, g) == pytest.approx(3_347_892.91, abs=1e-2)
+    assert 0.0 <= initial_course_deg(north, b, g) < FULL_TURN
+    end = point_along(north, b, g, 1.0)
+    assert end.lat_deg == pytest.approx(60.0, abs=ANGLE_TOL)
+    assert angle_diff_deg(end.lon_deg, 20.0) < ANGLE_TOL
+
+    assert distance_m(north, south, g) == pytest.approx(2 * 10_001_965.729, abs=1e-2)
+    assert 0.0 <= initial_course_deg(north, south, g) < FULL_TURN
+    assert point_along(north, south, g, 1.0).lat_deg == pytest.approx(-90.0, abs=ANGLE_TOL)
+    assert point_along(north, south, g, 0.5).lat_deg == pytest.approx(0.0, abs=1e-6)
