@@ -1,11 +1,18 @@
 """Reusable performance-model conformance suite (S0b-R08).
 
-Subclass `PerformanceModelConformance` and implement `make_model`, `make_vessel` and
-`make_condition(n)` (a condition with `n` points and OK weather). The suite uses plain `assert`
-/ numpy testing, so a broken model fails with `AssertionError`.
+Subclass `PerformanceModelConformance` and implement `make_model`, `make_vessel`,
+`make_condition(n)` (a condition with `n` points and OK weather), `make_stale_weather_condition(n)`
+(the same weather with every group STALE, values kept) and `make_bad_weather_condition(n)` (weather
+whose quality has NaN values). The suite uses plain `assert` / numpy testing, so a broken model
+fails with `AssertionError`.
+
+Fuel types: every check runs for every `FuelType`. Speed and shaft power must not depend on the
+fuel type, and fuel mass at equal power must not rise as the lower calorific value rises
+(`fuel_order_by_lcv`, increasing LCV: heavy fuel oil, the low-sulphur blends, gas oil, LNG).
 """
 
-from typing import TYPE_CHECKING
+from itertools import pairwise
+from typing import TYPE_CHECKING, ClassVar
 
 import numpy as np
 import pytest
@@ -15,6 +22,7 @@ from hypothesis import strategies as st
 from nautical_deliverance.domain.contracts.errors import InvalidInputError
 from nautical_deliverance.domain.contracts.performance import (
     Consumer,
+    FuelType,
     OperatingCondition,
     PerformanceModel,
     PerformanceResult,
@@ -28,6 +36,7 @@ if TYPE_CHECKING:
 
 _ROUND_TRIP_RTOL = 1e-6
 _FUEL_RTOL = 1e-12
+_FUEL = FuelType.VLSFO
 
 
 def _f(*vals: float) -> NDArray[np.float64]:
@@ -52,6 +61,14 @@ def total_fuel_kgps(result: PerformanceResult) -> NDArray[np.float64]:
 class PerformanceModelConformance:
     """Mixin of conformance tests; concrete subclasses supply the model and fixtures."""
 
+    fuel_order_by_lcv: ClassVar[tuple[FuelType, ...]] = (
+        FuelType.HFO,
+        FuelType.VLSFO,
+        FuelType.ULSFO,
+        FuelType.MGO,
+        FuelType.LNG,
+    )
+
     def make_model(self) -> PerformanceModel:
         """Return the model under test."""
         raise NotImplementedError
@@ -64,8 +81,12 @@ class PerformanceModelConformance:
         """Return a condition of `n` points with OK weather."""
         raise NotImplementedError
 
+    def make_stale_weather_condition(self, n: int) -> OperatingCondition:
+        """Return a condition of `n` points whose weather is STALE (values kept)."""
+        raise NotImplementedError
+
     def make_bad_weather_condition(self, n: int) -> OperatingCondition:
-        """Return a condition of `n` points whose weather quality is not OK."""
+        """Return a condition of `n` points whose weather quality is not OK or STALE."""
         raise NotImplementedError
 
     def _powers(self, *fractions: float) -> NDArray[np.float64]:
@@ -74,8 +95,11 @@ class PerformanceModelConformance:
     def _all_results(self) -> list[PerformanceResult]:
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(5)
         p = self._powers(0.05, 0.3, 0.6, 0.85, 1.0)
-        by_power = m.speed_for_power(v, c, p)
-        return [by_power, m.power_for_speed(v, c, by_power.speed_through_water_mps)]
+        results = []
+        for fuel in FuelType:
+            by_power = m.speed_for_power(v, c, p, fuel)
+            results += [by_power, m.power_for_speed(v, c, by_power.speed_through_water_mps, fuel)]
+        return results
 
     @pytest.mark.req("S0b-R08")
     @settings(max_examples=50, deadline=None)
@@ -85,13 +109,14 @@ class PerformanceModelConformance:
         self.check_round_trip(fractions)
 
     def check_round_trip(self, fractions: list[float]) -> None:
-        """Check the round-trip property for one batch (callable without Hypothesis)."""
+        """Check the round-trip property for one batch and every fuel (no Hypothesis needed)."""
         m, v = self.make_model(), self.make_vessel()
         c = self.make_condition(len(fractions))
         p = self._powers(*fractions)
-        speed = m.speed_for_power(v, c, p).speed_through_water_mps
-        back = m.power_for_speed(v, c, speed).shaft_power_w
-        np.testing.assert_allclose(back, p, rtol=_ROUND_TRIP_RTOL)
+        for fuel in FuelType:
+            speed = m.speed_for_power(v, c, p, fuel).speed_through_water_mps
+            back = m.power_for_speed(v, c, speed, fuel).shaft_power_w
+            np.testing.assert_allclose(back, p, rtol=_ROUND_TRIP_RTOL)
 
     @pytest.mark.req("S0b-R08")
     def test_outputs_finite_non_negative(self) -> None:
@@ -110,24 +135,59 @@ class PerformanceModelConformance:
         """Every consumer is reported, finite, non-negative, and each point is independent."""
         m, v = self.make_model(), self.make_vessel()
         p = self._powers(0.4, 0.9)
-        both = m.speed_for_power(v, self.make_condition(2), p)
-        assert set(both.fuel_rate_kgps) == set(Consumer)
-        assert all(
-            bool(np.isfinite(a).all() and (a >= 0.0).all()) for a in both.fuel_rate_kgps.values()
-        )
-        singles = [
-            m.speed_for_power(v, self.make_condition(1), p[i : i + 1]).fuel_rate_kgps
-            for i in range(2)
-        ]
-        for c in Consumer:
-            np.testing.assert_allclose(
-                both.fuel_rate_kgps[c], [s[c][0] for s in singles], rtol=_FUEL_RTOL
+        for fuel in FuelType:
+            both = m.speed_for_power(v, self.make_condition(2), p, fuel)
+            assert set(both.fuel_rate_kgps) == set(Consumer)
+            assert all(
+                bool(np.isfinite(a).all() and (a >= 0.0).all())
+                for a in both.fuel_rate_kgps.values()
             )
-        np.testing.assert_allclose(
-            total_fuel_kgps(both).sum(),
-            sum(float(np.sum(list(s.values()))) for s in singles),
-            rtol=_FUEL_RTOL,
-        )
+            singles = [
+                m.speed_for_power(v, self.make_condition(1), p[i : i + 1], fuel).fuel_rate_kgps
+                for i in range(2)
+            ]
+            for c in Consumer:
+                np.testing.assert_allclose(
+                    both.fuel_rate_kgps[c], [s[c][0] for s in singles], rtol=_FUEL_RTOL
+                )
+            np.testing.assert_allclose(
+                total_fuel_kgps(both).sum(),
+                sum(float(np.sum(list(s.values()))) for s in singles),
+                rtol=_FUEL_RTOL,
+            )
+
+    @pytest.mark.req("S0b-R08")
+    def test_fuel_mass_does_not_rise_with_calorific_value(self) -> None:
+        """At equal power a fuel with a higher lower calorific value needs no more mass."""
+        m, v, c = self.make_model(), self.make_vessel(), self.make_condition(4)
+        p = self._powers(0.1, 0.4, 0.7, 1.0)
+        rates = {f: m.speed_for_power(v, c, p, f).fuel_rate_kgps for f in self.fuel_order_by_lcv}
+        for lower, higher in pairwise(self.fuel_order_by_lcv):
+            for consumer in Consumer:
+                assert bool(
+                    (rates[higher][consumer] <= rates[lower][consumer] * (1 + _FUEL_RTOL)).all()
+                ), (lower, higher, consumer)
+
+    @pytest.mark.req("S0b-R08")
+    def test_speed_and_power_do_not_depend_on_fuel(self) -> None:
+        """Only the fuel mass changes with the fuel type; speed and power are hydrodynamics."""
+        m, v, c = self.make_model(), self.make_vessel(), self.make_condition(3)
+        p = self._powers(0.2, 0.5, 0.9)
+        base = m.speed_for_power(v, c, p, _FUEL)
+        base_back = m.power_for_speed(v, c, base.speed_through_water_mps, _FUEL)
+        for fuel in FuelType:
+            r = m.speed_for_power(v, c, p, fuel)
+            back = m.power_for_speed(v, c, base.speed_through_water_mps, fuel)
+            np.testing.assert_allclose(r.speed_through_water_mps, base.speed_through_water_mps)
+            np.testing.assert_allclose(r.motion_risk_ratio, base.motion_risk_ratio)
+            np.testing.assert_allclose(back.shaft_power_w, base_back.shaft_power_w)
+
+    @pytest.mark.req("S0b-R08")
+    def test_speed_rises_with_power(self) -> None:
+        """More shaft power never gives less speed through water."""
+        m, v, c = self.make_model(), self.make_vessel(), self.make_condition(20)
+        speed = m.speed_for_power(v, c, self._powers(*np.linspace(0.0, 1.0, 20)), _FUEL)
+        assert bool((np.diff(speed.speed_through_water_mps) >= 0.0).all())
 
     @pytest.mark.req("S0b-R08")
     def test_motion_risk_in_unit_interval(self) -> None:
@@ -140,8 +200,8 @@ class PerformanceModelConformance:
         """Every output array has the input length."""
         n = 4
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(n)
-        r = m.speed_for_power(v, c, self._powers(0.2, 0.4, 0.6, 0.8))
-        r2 = m.power_for_speed(v, c, r.speed_through_water_mps)
+        r = m.speed_for_power(v, c, self._powers(0.2, 0.4, 0.6, 0.8), _FUEL)
+        r2 = m.power_for_speed(v, c, r.speed_through_water_mps, _FUEL)
         for res in (r, r2):
             arrays = [
                 res.speed_through_water_mps,
@@ -149,34 +209,59 @@ class PerformanceModelConformance:
                 res.motion_risk_ratio,
                 *res.fuel_rate_kgps.values(),
             ]
-            assert all(len(a) == n for a in arrays)
+            assert all(a.ndim == 1 and len(a) == n for a in arrays)
 
     @pytest.mark.req("S0b-R08")
     def test_mismatched_lengths_rejected(self) -> None:
         """Input and condition of different lengths raise InvalidInputError."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(3)
         for bad in (_f(1.0, 2.0), _f(1.0, 2.0, 3.0, 4.0)):
-            _assert_rejected(m.speed_for_power, v, c, bad * 1e6)
-            _assert_rejected(m.power_for_speed, v, c, bad)
+            _assert_rejected(m.speed_for_power, v, c, bad * 1e6, _FUEL)
+            _assert_rejected(m.power_for_speed, v, c, bad, _FUEL)
 
     @pytest.mark.req("S0b-R08")
     def test_nan_speed_rejected(self) -> None:
         """NaN or infinite speeds (and powers) raise InvalidInputError."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(1)
         for bad in (np.nan, np.inf, -np.inf):
-            _assert_rejected(m.power_for_speed, v, c, _f(bad))
-            _assert_rejected(m.speed_for_power, v, c, _f(bad))
+            _assert_rejected(m.power_for_speed, v, c, _f(bad), _FUEL)
+            _assert_rejected(m.speed_for_power, v, c, _f(bad), _FUEL)
 
     @pytest.mark.req("S0b-R08")
     def test_negative_power_rejected(self) -> None:
         """Negative power (and speed) raises InvalidInputError."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(1)
-        _assert_rejected(m.speed_for_power, v, c, _f(-1.0))
-        _assert_rejected(m.power_for_speed, v, c, _f(-1.0))
+        _assert_rejected(m.speed_for_power, v, c, _f(-1.0), _FUEL)
+        _assert_rejected(m.power_for_speed, v, c, _f(-1.0), _FUEL)
+
+    @pytest.mark.req("S0b-R08")
+    def test_invalid_fuel_type_rejected(self) -> None:
+        """Anything but a FuelType raises InvalidInputError."""
+        m, v, c = self.make_model(), self.make_vessel(), self.make_condition(1)
+        for bad in ("coal", None):
+            _assert_rejected(m.speed_for_power, v, c, self._powers(0.5), bad)
+            _assert_rejected(m.power_for_speed, v, c, _f(5.0), bad)
 
     @pytest.mark.req("S0b-R08")
     def test_non_ok_weather_rejected(self) -> None:
         """Points without valid weather are rejected, never computed on NaN."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_bad_weather_condition(2)
-        _assert_rejected(m.power_for_speed, v, c, _f(5.0, 5.0))
-        _assert_rejected(m.speed_for_power, v, c, self._powers(0.5, 0.5))
+        _assert_rejected(m.power_for_speed, v, c, _f(5.0, 5.0), _FUEL)
+        _assert_rejected(m.speed_for_power, v, c, self._powers(0.5, 0.5), _FUEL)
+
+    @pytest.mark.req("S0b-R08")
+    def test_stale_weather_accepted(self) -> None:
+        """STALE weather keeps its values and is computed on (C3 decides warn or block)."""
+        m, v = self.make_model(), self.make_vessel()
+        c = self.make_stale_weather_condition(2)
+        p = self._powers(0.4, 0.9)
+        try:
+            by_power = m.speed_for_power(v, c, p, _FUEL)
+            by_speed = m.power_for_speed(v, c, by_power.speed_through_water_mps, _FUEL)
+        except InvalidInputError as exc:
+            msg = "STALE weather was rejected"
+            raise AssertionError(msg) from exc
+        for r in (by_power, by_speed):
+            assert bool(np.isfinite(r.speed_through_water_mps).all())
+            assert bool(np.isfinite(total_fuel_kgps(r)).all())
+        np.testing.assert_allclose(by_speed.shaft_power_w, p, rtol=_ROUND_TRIP_RTOL)

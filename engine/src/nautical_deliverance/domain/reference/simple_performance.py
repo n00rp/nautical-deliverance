@@ -2,18 +2,22 @@
 
 Shaft power: P(v) = k * v^3 + C_WAVE * Hs^2 * v, with k chosen so the calm-water term equals
 0.85 * MCR at the design speed. Hs is the total sea height of the condition's weather sample.
-Fuel: main engine = SFOC(P / MCR) * P; auxiliary = SFOC(aux / MCR) * aux (at-sea load); SFOC is
-linearly interpolated and clamped at the curve ends, also for loads above MCR. Draft and
-heading are unused. `speed_for_power` raises for power above P(2 * design speed).
+Fuel: main engine = SFOC(P / MCR) * P with the main-engine curve; auxiliary = SFOC(aux / MCR) * aux
+with the auxiliary curve and the at-sea load; SFOC is linearly interpolated and clamped at the
+curve ends, also for loads above MCR. Curves are at the ISO reference LCV; the mass of the chosen
+fuel is the reference mass times REFERENCE_LCV_J_PER_KG / LCV of that fuel (equal energy).
+Draft and heading are unused. `speed_for_power` raises for power above P(2 * design speed).
 """
 
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Final
 
 import numpy as np
 
 from nautical_deliverance.domain.contracts.errors import InvalidInputError
 from nautical_deliverance.domain.contracts.performance import (
     Consumer,
+    FuelType,
     OperatingCondition,
     OperatingState,
     PerformanceResult,
@@ -29,6 +33,20 @@ DESIGN_LOAD_RATIO = 0.85
 # Added wave resistance coefficient, W per (m^2 * m/s) of Hs^2 * v. Illustrative, not calibrated.
 C_WAVE = 2000.0
 _BISECTION_STEPS = 64  # the bracket 2 * design halves to ~1e-19 relative
+
+# Lower calorific values in J/kg. ILLUSTRATIVE round figures from typical marine-fuel data
+# (ISO 3046-1 reference 42.7 MJ/kg for distillate fuel; residual fuels about 40 MJ/kg; LNG about
+# 49 MJ/kg), NOT calibrated and not a source for C2. C2 owns the real values and their sources.
+REFERENCE_LCV_J_PER_KG: Final = 42.7e6
+LCV_J_PER_KG: Final = MappingProxyType(
+    {
+        FuelType.HFO: 40.2e6,
+        FuelType.VLSFO: 41.0e6,
+        FuelType.ULSFO: 41.5e6,
+        FuelType.MGO: 42.7e6,
+        FuelType.LNG: 49.1e6,
+    }
+)
 
 
 class SimplePerformance:
@@ -52,9 +70,10 @@ class SimplePerformance:
         vessel: VesselSpec,
         condition: OperatingCondition,
         shaft_power_w: NDArray[np.float64],
+        fuel_type: FuelType,
     ) -> PerformanceResult:
         """Invert the power law by bisection on [0, 2 * design speed] (power rises with speed)."""
-        validate_performance_input(condition, shaft_power_w, "shaft_power_w")
+        validate_performance_input(condition, shaft_power_w, "shaft_power_w", fuel_type)
         hs = condition.weather.values[WeatherVariable.TOTAL_SEA_HEIGHT_M]
         lo = np.zeros_like(shaft_power_w)
         hi = np.full_like(shaft_power_w, 2.0 * self._design)
@@ -71,19 +90,22 @@ class SimplePerformance:
             )
             raise InvalidInputError(msg)
         speed = np.where(shaft_power_w == 0.0, 0.0, 0.5 * (lo + hi))
-        return self._result(vessel, hs, speed, shaft_power_w)
+        return self._result(vessel, hs, speed, shaft_power_w, fuel_type)
 
     def power_for_speed(
         self,
         vessel: VesselSpec,
         condition: OperatingCondition,
         speed_through_water_mps: NDArray[np.float64],
+        fuel_type: FuelType,
     ) -> PerformanceResult:
         """Evaluate the power law at the given speeds."""
-        validate_performance_input(condition, speed_through_water_mps, "speed_through_water_mps")
+        validate_performance_input(
+            condition, speed_through_water_mps, "speed_through_water_mps", fuel_type
+        )
         hs = condition.weather.values[WeatherVariable.TOTAL_SEA_HEIGHT_M]
         power = self._power(vessel, hs, speed_through_water_mps)
-        return self._result(vessel, hs, speed_through_water_mps, power)
+        return self._result(vessel, hs, speed_through_water_mps, power, fuel_type)
 
     @staticmethod
     def _result(
@@ -91,12 +113,17 @@ class SimplePerformance:
         hs_m: NDArray[np.float64],
         speed: NDArray[np.float64],
         power: NDArray[np.float64],
+        fuel_type: FuelType,
     ) -> PerformanceResult:
-        loads, sfoc = zip(*vessel.sfoc_curve_kg_per_j, strict=True)
-        aux_w = vessel.auxiliary_load_w[OperatingState.AT_SEA]
-        main = np.interp(power / vessel.mcr_w, loads, sfoc) * power
-        aux = np.full_like(power, np.interp(aux_w / vessel.mcr_w, loads, sfoc) * aux_w)
+        def sfoc(consumer: Consumer, load_w: NDArray[np.float64]) -> NDArray[np.float64]:
+            loads, curve = zip(*vessel.sfoc_curve_kg_per_j[consumer], strict=True)
+            return np.asarray(np.interp(load_w / vessel.mcr_w, loads, curve))
+
+        to_fuel = REFERENCE_LCV_J_PER_KG / LCV_J_PER_KG[fuel_type]
+        aux_w = np.full_like(power, vessel.auxiliary_load_w[OperatingState.AT_SEA])
+        fuel = {
+            Consumer.MAIN_ENGINE: sfoc(Consumer.MAIN_ENGINE, power) * power * to_fuel,
+            Consumer.AUXILIARY: sfoc(Consumer.AUXILIARY, aux_w) * aux_w * to_fuel,
+        }
         risk = np.minimum(1.0, hs_m / vessel.safety_limits.max_significant_wave_height_m)
-        return PerformanceResult(
-            speed, power, {Consumer.MAIN_ENGINE: main, Consumer.AUXILIARY: aux}, risk
-        )
+        return PerformanceResult(speed, power, fuel, risk)

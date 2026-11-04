@@ -1,8 +1,16 @@
 """Performance contract: vessel description, operating condition, result and model protocol.
 
 A `PerformanceModel` converts between shaft power and speed through water at N operating points
-and reports fuel rate per consumer and a motion-risk ratio. Implementations must pass the
-conformance suite (S0b-R08).
+for a given fuel type, and reports fuel rate per consumer and a motion-risk ratio.
+Implementations must pass the conformance suite (S0b-R08).
+
+Fuel (D-064): `VesselSpec.sfoc_curve_kg_per_j` holds one curve per `Consumer`, measured on a fuel
+with the ISO reference lower calorific value (42.7 MJ/kg, ISO 3046-1). The model converts to the
+requested fuel type (the same energy needs less mass of a higher-LCV fuel); the returned fuel rates
+are the mass of that fuel. The conversion data belong to C2.
+
+Power above MCR is returned as asked, never capped: C3 enforces the MCR limit. The curve load
+fraction is shaft (or auxiliary) power divided by `mcr_w`.
 """
 
 import re
@@ -16,10 +24,12 @@ from typing import Protocol
 import numpy as np
 from numpy.typing import NDArray  # noqa: TC002 - read at runtime by the suffix gate
 
+from nautical_deliverance.domain.contracts._values import ValueEquality
 from nautical_deliverance.domain.contracts.errors import InvalidInputError
 from nautical_deliverance.domain.contracts.weather import (
-    SampleQuality,
+    REQUIRED_GROUPS,
     WeatherSample,
+    has_values,
 )
 
 _IMO_WEIGHTS = (7, 6, 5, 4, 3, 2)
@@ -88,21 +98,38 @@ def is_valid_imo(imo_number: str) -> bool:
     return sum(d * w for d, w in zip(digits, _IMO_WEIGHTS, strict=False)) % 10 == digits[-1]
 
 
-@dataclass(frozen=True, slots=True)
-class VesselSpec:
-    """Static vessel description. `sfoc_curve_kg_per_j` holds (load fraction, kg/J) pairs."""
+def _check_sfoc_curve(consumer: Consumer, curve: tuple[tuple[float, float], ...]) -> None:
+    loads = [p[0] for p in curve]
+    if len(loads) < 2:  # noqa: PLR2004
+        msg = f"sfoc curve of {consumer} needs at least 2 points"
+        raise InvalidInputError(msg)
+    increasing = all(a < b for a, b in pairwise(loads))
+    if not (increasing and loads[0] >= 0.0 and loads[-1] <= 1.0):
+        msg = f"sfoc curve of {consumer}: load fractions must be strictly increasing within [0, 1]"
+        raise InvalidInputError(msg)
+    _positive(**{f"sfoc[{consumer}][{i}]": p[1] for i, p in enumerate(curve)})
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class VesselSpec(ValueEquality):
+    """Static vessel description.
+
+    `sfoc_curve_kg_per_j` maps each `Consumer` to (load fraction, kg/J) pairs at the ISO reference
+    lower calorific value (D-064). Equality and hash are by value (mappings compared by content),
+    so a spec can be a `dict` key or `lru_cache` argument.
+    """
 
     imo_number: str
     length_m: float
     beam_m: float
     design_draft_m: float
     mcr_w: float
-    sfoc_curve_kg_per_j: tuple[tuple[float, float], ...]
+    sfoc_curve_kg_per_j: Mapping[Consumer, tuple[tuple[float, float], ...]]
     auxiliary_load_w: Mapping[OperatingState, float]
     safety_limits: SafetyLimits
 
     def __post_init__(self) -> None:
-        """Validate, then freeze `auxiliary_load_w` as a read-only view."""
+        """Validate, then freeze the mappings as read-only views."""
         if not is_valid_imo(self.imo_number):
             msg = f"invalid IMO number {self.imo_number!r}"
             raise InvalidInputError(msg)
@@ -112,29 +139,32 @@ class VesselSpec:
             design_draft_m=self.design_draft_m,
             mcr_w=self.mcr_w,
         )
-        loads = [p[0] for p in self.sfoc_curve_kg_per_j]
-        if len(loads) < 2:  # noqa: PLR2004
-            msg = "sfoc curve needs at least 2 points"
+        if self.sfoc_curve_kg_per_j.keys() != set(Consumer):
+            msg = "sfoc_curve_kg_per_j needs exactly one curve per Consumer"
             raise InvalidInputError(msg)
-        increasing = all(a < b for a, b in pairwise(loads))
-        if not (increasing and loads[0] >= 0.0 and loads[-1] <= 1.0):
-            msg = "sfoc curve load fractions must be strictly increasing within [0, 1]"
-            raise InvalidInputError(msg)
-        _positive(**{f"sfoc[{i}]": p[1] for i, p in enumerate(self.sfoc_curve_kg_per_j)})
+        curves = {
+            c: tuple((float(p[0]), float(p[1])) for p in curve)
+            for c, curve in self.sfoc_curve_kg_per_j.items()
+        }
+        for consumer, curve in curves.items():
+            _check_sfoc_curve(consumer, curve)
         if self.auxiliary_load_w.keys() != set(OperatingState):
             msg = "auxiliary_load_w needs exactly one entry per OperatingState"
             raise InvalidInputError(msg)
         if not all(np.isfinite(v) and v >= 0.0 for v in self.auxiliary_load_w.values()):
             msg = "auxiliary loads must be finite and non-negative"
             raise InvalidInputError(msg)
+        object.__setattr__(self, "sfoc_curve_kg_per_j", MappingProxyType(curves))
         object.__setattr__(self, "auxiliary_load_w", MappingProxyType(dict(self.auxiliary_load_w)))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class OperatingCondition:
     """Draft, heading and weather at N points (equal lengths).
 
-    Models may ignore draft and heading (the analytical reference does).
+    Models may ignore draft and heading (the analytical reference does). Water depth and
+    under-keel clearance are not part of the condition: C3 gets them from a separate depth
+    provider (D-019, one interface per data type). Equality is identity (the type holds arrays).
     """
 
     draft_fwd_m: NDArray[np.float64]
@@ -145,7 +175,7 @@ class OperatingCondition:
     def __post_init__(self) -> None:
         """Validate, then freeze arrays as read-only copies."""
         arrays = (self.draft_fwd_m, self.draft_aft_m, self.heading_deg)
-        n = len(self.weather.quality)
+        n = len(self.weather)
         if any(a.ndim != 1 or len(a) != n for a in arrays):
             msg = "condition arrays must be 1-D with the weather sample length"
             raise InvalidInputError(msg)
@@ -158,12 +188,15 @@ class OperatingCondition:
 
     def __len__(self) -> int:
         """Return the number of operating points."""
-        return len(self.weather.quality)
+        return len(self.weather)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class PerformanceResult:
-    """Model output at N points; one fuel-rate array per `Consumer`."""
+    """Model output at N points (1-D arrays); one fuel-rate array per `Consumer`.
+
+    Equality is identity (the type holds arrays).
+    """
 
     speed_through_water_mps: NDArray[np.float64]
     shaft_power_w: NDArray[np.float64]
@@ -171,13 +204,20 @@ class PerformanceResult:
     motion_risk_ratio: NDArray[np.float64]
 
     def __post_init__(self) -> None:
-        """Validate lengths and consumers, then freeze arrays and mapping."""
+        """Validate dimensions, lengths and consumers, then freeze arrays and mapping."""
         if self.fuel_rate_kgps.keys() != set(Consumer):
             msg = "fuel_rate_kgps needs exactly one entry per Consumer"
             raise InvalidInputError(msg)
-        n = len(self.speed_through_water_mps)
-        arrays = (self.shaft_power_w, self.motion_risk_ratio, *self.fuel_rate_kgps.values())
-        if any(len(a) != n for a in arrays):
+        arrays = (
+            self.speed_through_water_mps,
+            self.shaft_power_w,
+            self.motion_risk_ratio,
+            *self.fuel_rate_kgps.values(),
+        )
+        if any(a.ndim != 1 for a in arrays):
+            msg = "result arrays must be 1-D"
+            raise InvalidInputError(msg)
+        if any(len(a) != len(self.speed_through_water_mps) for a in arrays):
             msg = "result arrays must have equal length"
             raise InvalidInputError(msg)
         object.__setattr__(self, "speed_through_water_mps", _frozen(self.speed_through_water_mps))
@@ -191,11 +231,24 @@ class PerformanceResult:
 
 
 def validate_performance_input(
-    condition: OperatingCondition, values: NDArray[np.float64], name: str
+    condition: OperatingCondition,
+    values: NDArray[np.float64],
+    name: str,
+    fuel_type: FuelType,
 ) -> None:
-    """Shared call checks: 1-D float64, condition length, finite, non-negative, weather OK."""
+    """Shared call checks for every model.
+
+    `values` is a 1-D float64 array of the condition's length, finite and non-negative;
+    `fuel_type` a `FuelType`; and the wind, waves and current groups of the weather must be OK or
+    STALE at every point (D-063: STALE keeps its values, C3 decides whether to warn or block).
+    Out-of-coverage and out-of-time-range points carry NaN and are rejected. The optional groups
+    are not needed and are ignored.
+    """
     if not isinstance(values, np.ndarray) or values.dtype != np.float64 or values.ndim != 1:
         msg = f"{name} must be a 1-D float64 numpy array"
+        raise InvalidInputError(msg)
+    if not isinstance(fuel_type, FuelType):
+        msg = f"fuel_type must be a FuelType, got {fuel_type!r}"
         raise InvalidInputError(msg)
     if len(values) != len(condition):
         msg = f"{name} and condition must have equal length"
@@ -203,9 +256,10 @@ def validate_performance_input(
     if not (np.isfinite(values).all() and (values >= 0.0).all()):
         msg = f"{name} must be finite and non-negative"
         raise InvalidInputError(msg)
-    if (condition.weather.quality != SampleQuality.OK.value).any():
-        msg = "weather quality must be ok at every point"
-        raise InvalidInputError(msg)
+    for group in sorted(REQUIRED_GROUPS):
+        if not has_values(condition.weather.quality[group]).all():
+            msg = f"weather group {group} must be ok or stale at every point"
+            raise InvalidInputError(msg)
 
 
 class PerformanceModel(Protocol):
@@ -216,8 +270,12 @@ class PerformanceModel(Protocol):
         vessel: VesselSpec,
         condition: OperatingCondition,
         shaft_power_w: NDArray[np.float64],
+        fuel_type: FuelType,
     ) -> PerformanceResult:
-        """Speed through water achieved with the given shaft power at each point."""
+        """Speed through water achieved with the given shaft power at each point.
+
+        Power above MCR is not an error; the model reports what it implies and C3 caps it.
+        """
         ...
 
     def power_for_speed(
@@ -225,6 +283,7 @@ class PerformanceModel(Protocol):
         vessel: VesselSpec,
         condition: OperatingCondition,
         speed_through_water_mps: NDArray[np.float64],
+        fuel_type: FuelType,
     ) -> PerformanceResult:
         """Shaft power needed for the given speed through water at each point."""
         ...
