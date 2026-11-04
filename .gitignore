@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+web/dist/
+*.tsbuildinfo
+
+# Environment and secrets
+infra/.env
+
+# Coverage outputs
+.coverage
+.coverage.*
+coverage/
+coverage.xml
+htmlcov/
+
+# Tooling
+.superpowers/
