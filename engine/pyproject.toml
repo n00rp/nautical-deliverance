@@ -9,6 +9,7 @@ dependencies = [
     "sqlalchemy>=2.1.8",
     "psycopg[binary]>=3.3.8",
     "alembic>=1.20.1",
+    "pyjwt[crypto]>=2.15.1",
 ]
 
 [dependency-groups]
