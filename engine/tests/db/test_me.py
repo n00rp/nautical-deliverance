@@ -74,9 +74,26 @@ def test_me_records_last_seen(settings: Settings, owner_engine: Engine, app_engi
     assert last_seen() > first
 
 
+@pytest.mark.req("S0-R03")
 def test_me_org_not_in_db_403(settings: Settings, app_engine: Engine) -> None:
     """An org that is not visible under RLS is 403 with no other detail."""
     response = _client(settings, app_engine, uuid.uuid4(), uuid.uuid4()).get("/api/v1/me")
 
     assert response.status_code == HTTPStatus.FORBIDDEN
     assert set(response.json()) == {"detail"}
+
+
+@pytest.mark.req("S0-R03")
+def test_me_user_bound_to_other_org_403(
+    settings: Settings, owner_engine: Engine, app_engine: Engine
+) -> None:
+    """A sub already bound to another org is 403 without leaking the cause."""
+    org_a, org_b, user = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    _seed_org(owner_engine, org_a, "A")
+    _seed_org(owner_engine, org_b, "B")
+    assert _client(settings, app_engine, user, org_a).get("/api/v1/me").status_code == HTTPStatus.OK
+
+    response = _client(settings, app_engine, user, org_b).get("/api/v1/me")
+
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.json() == {"detail": "Organization not accessible"}

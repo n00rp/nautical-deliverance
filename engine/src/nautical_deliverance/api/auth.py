@@ -1,5 +1,6 @@
 """OIDC bearer-token authentication (Keycloak-issued RS256 JWTs)."""
 
+import json
 import uuid
 from typing import Annotated
 
@@ -52,7 +53,7 @@ def get_principal(
             leeway=_LEEWAY_SECONDS,
             options={"require": ["exp", "iss", "aud", "sub"]},
         )
-    except jwt.PyJWKClientConnectionError as exc:
+    except (jwt.PyJWKClientConnectionError, json.JSONDecodeError) as exc:  # JWKS down/garbage
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _IDP_DOWN) from exc
     except jwt.PyJWTError as exc:  # InvalidTokenError and unknown-key JWKS errors
         raise _unauthorized(_INVALID) from exc

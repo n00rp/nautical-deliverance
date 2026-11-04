@@ -1,5 +1,6 @@
 """Bearer-token authentication."""
 
+import json
 import time
 import uuid
 from http import HTTPStatus
@@ -11,8 +12,10 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 
 from nautical_deliverance.api.auth import get_principal
+from nautical_deliverance.api.me import get_me_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.main import create_app
 
@@ -192,3 +195,25 @@ def test_jwks_unreachable_503(settings: Settings) -> None:
 def test_unknown_signing_key_401(settings: Settings) -> None:
     """A kid the JWKS does not know is an invalid token."""
     _assert_401(_get(_client(settings, jwt.PyJWKClientError("no key")), _token(settings)))
+
+
+def test_jwks_malformed_json_503(settings: Settings) -> None:
+    """A JWKS endpoint returning garbage is 503, not a plain 500."""
+    err = json.JSONDecodeError("bad", "", 0)
+    response = _get(_client(settings, err), _token(settings))
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert set(response.json()) == {"detail"}
+
+
+def test_me_db_unavailable_503(settings: Settings) -> None:
+    """A database connection failure on /me is 503 with a JSON body."""
+    app = create_app(settings)
+    app.dependency_overrides[get_principal] = lambda: Principal(USER, ORG, frozenset())
+    app.dependency_overrides[get_me_engine] = lambda: create_engine(
+        "postgresql+psycopg://u:p@127.0.0.1:1/x", connect_args={"connect_timeout": 1}
+    )
+
+    response = TestClient(app).get("/api/v1/me")
+
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert set(response.json()) == {"detail"}
