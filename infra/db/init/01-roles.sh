@@ -14,4 +14,4 @@ SQL
 
 # PostGIS (D-033): mounting this directory hides the image's own init script, and nd_owner is not
 # a superuser, so create the extension here as the superuser.
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB"   -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c 'CREATE EXTENSION IF NOT EXISTS postgis;'
