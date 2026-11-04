@@ -1,0 +1,5 @@
+{
+  "entry": ["src/**/*.test.{ts,tsx}"],
+  "project": ["src/**"],
+  "ignoreDependencies": ["prettier"]
+}
