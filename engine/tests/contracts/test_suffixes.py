@@ -3,6 +3,7 @@
 import importlib
 import inspect
 import pkgutil
+import types
 import typing
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
@@ -20,8 +21,10 @@ _ARRAY = npt.NDArray[np.float64]
 def contract_dataclasses() -> list[type]:
     """Every dataclass defined in nautical_deliverance.domain.contracts.*."""
     found: list[type] = []
-    for info in pkgutil.walk_packages(contracts_pkg.__path__, f"{contracts_pkg.__name__}."):
-        mod = importlib.import_module(info.name)
+    names = [contracts_pkg.__name__]
+    names += [i.name for i in pkgutil.walk_packages(contracts_pkg.__path__, f"{names[0]}.")]
+    for name in names:
+        mod = importlib.import_module(name)
         found.extend(
             c
             for _, c in inspect.getmembers(mod, inspect.isclass)
@@ -33,7 +36,13 @@ def contract_dataclasses() -> list[type]:
 def _is_numeric(tp: object) -> bool:
     if tp is float or tp == _ARRAY:
         return True
-    return typing.get_origin(tp) is Mapping and typing.get_args(tp)[-1] is float
+    args = typing.get_args(tp)
+    origin = typing.get_origin(tp)
+    if origin in (Mapping, dict):
+        return _is_numeric(args[-1])
+    if origin in (typing.Union, types.UnionType):
+        return any(_is_numeric(a) for a in args)
+    return False
 
 
 def unsuffixed_numeric_fields(cls: type) -> list[str]:
@@ -63,9 +72,12 @@ def test_gate_rejects_unsuffixed_fixture() -> None:
         wind_mps: float
         arr: _ARRAY
         by_name: Mapping[str, float]
+        d: dict[str, float]
+        m_arr: Mapping[str, _ARRAY]
+        opt: float | None
         label: str
 
-    assert unsuffixed_numeric_fields(Bad) == ["speed", "arr", "by_name"]
+    assert unsuffixed_numeric_fields(Bad) == ["speed", "arr", "by_name", "d", "m_arr", "opt"]
 
 
 @pytest.mark.req("S0b-R01")

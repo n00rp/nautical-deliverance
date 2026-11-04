@@ -1,6 +1,6 @@
 """SI unit conversions and the unit-suffix list for contract field names."""
 
-from typing import Final
+from typing import Final, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,61 +30,69 @@ _W_PER_KW: Final = 1000.0
 _S_PER_HOUR: Final = 3600.0
 
 
+def _scale[T: Num](x: T, k: float) -> T:
+    return cast("T", x * k)
+
+
+def _unscale[T: Num](x: T, k: float) -> T:
+    return cast("T", x / k)
+
+
 def knots_to_mps[T: Num](x: T) -> T:
     """Knots to metres per second."""
-    return x * MPS_PER_KNOT  # type: ignore[return-value]
+    return _scale(x, MPS_PER_KNOT)
 
 
 def mps_to_knots[T: Num](x: T) -> T:
     """Metres per second to knots."""
-    return x / MPS_PER_KNOT  # type: ignore[return-value]
+    return _unscale(x, MPS_PER_KNOT)
 
 
 def nm_to_m[T: Num](x: T) -> T:
     """Nautical miles to metres."""
-    return x * M_PER_NM  # type: ignore[return-value]
+    return _scale(x, M_PER_NM)
 
 
 def m_to_nm[T: Num](x: T) -> T:
     """Metres to nautical miles."""
-    return x / M_PER_NM  # type: ignore[return-value]
+    return _unscale(x, M_PER_NM)
 
 
 def tonnes_to_kg[T: Num](x: T) -> T:
     """Tonnes to kilograms."""
-    return x * _KG_PER_TONNE  # type: ignore[return-value]
+    return _scale(x, _KG_PER_TONNE)
 
 
 def kg_to_tonnes[T: Num](x: T) -> T:
     """Kilograms to tonnes."""
-    return x / _KG_PER_TONNE  # type: ignore[return-value]
+    return _unscale(x, _KG_PER_TONNE)
 
 
 def kw_to_w[T: Num](x: T) -> T:
     """Kilowatts to watts."""
-    return x * _W_PER_KW  # type: ignore[return-value]
+    return _scale(x, _W_PER_KW)
 
 
 def w_to_kw[T: Num](x: T) -> T:
     """Watts to kilowatts."""
-    return x / _W_PER_KW  # type: ignore[return-value]
+    return _unscale(x, _W_PER_KW)
 
 
 def g_per_kwh_to_kg_per_j[T: Num](x: T) -> T:
     """Specific fuel consumption, g/kWh to kg/J."""
-    return x * KG_PER_J_PER_G_PER_KWH  # type: ignore[return-value]
+    return _scale(x, KG_PER_J_PER_G_PER_KWH)
 
 
 def kg_per_j_to_g_per_kwh[T: Num](x: T) -> T:
     """Specific fuel consumption, kg/J to g/kWh."""
-    return x / KG_PER_J_PER_G_PER_KWH  # type: ignore[return-value]
+    return _unscale(x, KG_PER_J_PER_G_PER_KWH)
 
 
 def hours_to_s[T: Num](x: T) -> T:
     """Hours to seconds."""
-    return x * _S_PER_HOUR  # type: ignore[return-value]
+    return _scale(x, _S_PER_HOUR)
 
 
 def s_to_hours[T: Num](x: T) -> T:
     """Seconds to hours."""
-    return x / _S_PER_HOUR  # type: ignore[return-value]
+    return _unscale(x, _S_PER_HOUR)

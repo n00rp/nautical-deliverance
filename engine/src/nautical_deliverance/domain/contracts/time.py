@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from nautical_deliverance.domain.contracts.errors import NaiveDatetimeError
+from nautical_deliverance.domain.contracts.errors import InvalidInputError, NaiveDatetimeError
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -30,6 +30,9 @@ def to_datetime64(dt: datetime) -> np.datetime64:
 
 def from_datetime64(t: np.datetime64) -> datetime:
     """`datetime64` to aware UTC datetime."""
+    if np.isnat(t):
+        msg = "NaT is not an instant"
+        raise InvalidInputError(msg)
     seconds = int(t.astype("datetime64[s]").astype(np.int64))
     return _EPOCH + timedelta(seconds=seconds)  # fromtimestamp fails <1970 on Windows
 

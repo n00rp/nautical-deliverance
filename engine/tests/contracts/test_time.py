@@ -1,19 +1,23 @@
 """Time helper tests."""
 
 from datetime import UTC, datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from nautical_deliverance.domain.contracts.errors import NaiveDatetimeError
+from nautical_deliverance.domain.contracts.errors import InvalidInputError, NaiveDatetimeError
 from nautical_deliverance.domain.contracts.time import (
     from_datetime64,
     require_utc,
     to_datetime64,
     to_datetime64_array,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 NAIVE = datetime(2026, 1, 1, 12)  # noqa: DTZ001 - the point of the test
 
@@ -23,7 +27,7 @@ NAIVE = datetime(2026, 1, 1, 12)  # noqa: DTZ001 - the point of the test
     "call",
     [require_utc, to_datetime64, lambda d: to_datetime64_array([d])],
 )
-def test_naive_rejected(call) -> None:  # type: ignore[no-untyped-def]  # noqa: ANN001
+def test_naive_rejected(call: Callable[[datetime], object]) -> None:
     """Every helper refuses naive datetimes."""
     with pytest.raises(NaiveDatetimeError):
         call(NAIVE)
@@ -52,3 +56,27 @@ def test_round_trip(dt: datetime) -> None:
     back = from_datetime64(to_datetime64(dt))
     assert back == dt
     assert back.tzinfo == UTC
+
+
+@pytest.mark.req("S0b-R03")
+@settings(max_examples=1000)
+@given(st.integers(-(2**34), 2**34))
+def test_reverse_round_trip(sec: int) -> None:
+    """datetime64[s] -> datetime -> datetime64[s] is the identity."""
+    t = np.datetime64(sec, "s")
+    assert to_datetime64(from_datetime64(t)) == t
+
+
+@pytest.mark.req("S0b-R03")
+def test_array_round_trip() -> None:
+    """The array path agrees with the scalar path."""
+    dts = [datetime(2026, 1, 1, h, tzinfo=UTC) for h in range(3)]
+    arr = to_datetime64_array(dts)
+    assert [from_datetime64(t) for t in arr] == dts
+
+
+@pytest.mark.req("S0b-R03")
+def test_nat_rejected() -> None:
+    """NaT is not an instant."""
+    with pytest.raises(InvalidInputError):
+        from_datetime64(np.datetime64("NaT", "s"))
