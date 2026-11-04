@@ -68,7 +68,6 @@ forbidden_modules = [
     "nautical_deliverance.api",
     "nautical_deliverance.persistence",
 ]
-allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "persistence does not import api"
