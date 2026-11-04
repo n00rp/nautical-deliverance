@@ -15,6 +15,7 @@ from nautical_deliverance.domain.contracts.route import (
     OperatingMode,
     Route,
     RouteLeg,
+    SafetyLimit,
     Waypoint,
 )
 
@@ -35,7 +36,7 @@ def leg(a: Waypoint, b: Waypoint, **overrides: Any) -> RouteLeg:  # noqa: ANN401
         7.0,
         7.5,
         FuelType.VLSFO,
-        {Consumer.MAIN_ENGINE: 1000.0},
+        {Consumer.MAIN_ENGINE: 1000.0, Consumer.AUXILIARY: 100.0},
         2.0,
         10.0,
         frozenset(),
@@ -73,9 +74,11 @@ def test_gap_between_legs_rejected() -> None:
 
 @pytest.mark.req("S0b-R10")
 def test_non_increasing_eta_rejected() -> None:
-    """A leg must end after it starts."""
+    """A leg must end after it starts: equal and earlier end times are both rejected."""
     with pytest.raises(InvalidInputError):
         leg(wp(0), wp(1, hours=0))
+    with pytest.raises(InvalidInputError):
+        leg(wp(0), wp(1, hours=-2))
 
 
 @pytest.mark.req("S0b-R10")
@@ -115,10 +118,76 @@ def test_empty_route_rejected() -> None:
     [
         {"speed_through_water_mps": -1.0},
         {"worst_wind_speed_mps": float("nan")},
-        {"fuel_kg": {Consumer.MAIN_ENGINE: -1.0}},
+        {"worst_significant_wave_height_m": float("nan")},
+        {"speed_over_ground_mps": float("nan")},
+        {"speed_over_ground_mps": float("inf")},
+        {"fuel_kg": {Consumer.MAIN_ENGINE: -1.0, Consumer.AUXILIARY: 1.0}},
+        {"fuel_kg": {Consumer.MAIN_ENGINE: float("nan"), Consumer.AUXILIARY: 1.0}},
+        {"fuel_kg": {Consumer.MAIN_ENGINE: 1.0}},
+        {"fuel_kg": {}},
+        {"fuel_kg": {"boiler": 1.0, Consumer.AUXILIARY: 1.0, Consumer.MAIN_ENGINE: 1.0}},
+        {"limit_violations": frozenset({"bogus"})},
     ],
 )
 def test_bad_leg_numbers_rejected(bad: dict[str, Any]) -> None:
     """Negative or non-finite numbers are rejected."""
     with pytest.raises(InvalidInputError):
         leg(wp(0), wp(1), **bad)
+
+
+@pytest.mark.req("S0b-R10")
+def test_one_geometry_per_route() -> None:
+    """Mixed rhumb-line and great-circle legs are rejected (D-055: the choice is per route)."""
+    with pytest.raises(InvalidInputError, match="geometry"):
+        route((leg(wp(0), wp(1)), leg(wp(1), wp(2), geometry=LegGeometry.GREAT_CIRCLE)))
+    gc = (leg(wp(0), wp(1), geometry=LegGeometry.GREAT_CIRCLE),)
+    assert route(gc).legs[0].geometry is LegGeometry.GREAT_CIRCLE
+
+
+@pytest.mark.req("S0b-R10")
+def test_forecast_runs_and_reasons_validated() -> None:
+    """An empty forecast-run list, blank reasons and a blank source are rejected."""
+    with pytest.raises(InvalidInputError):
+        route(forecast_runs=())
+    with pytest.raises(InvalidInputError):
+        route(data_quality=DataQuality.DEGRADED, quality_reasons=("  ",))
+    with pytest.raises(InvalidInputError):
+        route(data_quality=DataQuality.DEGRADED, quality_reasons=("stale", ""))
+    with pytest.raises(InvalidInputError):
+        ForecastRun(" ", _T0)
+
+
+@pytest.mark.req("S0b-R10")
+def test_limit_violations_are_normalized_to_a_frozenset() -> None:
+    """Any iterable of limits (also their names) becomes a frozenset of SafetyLimit."""
+    both = {SafetyLimit.MAX_WIND_SPEED, "max_significant_wave_height"}
+    got = leg(wp(0), wp(1), limit_violations=both)
+    assert got.limit_violations == {
+        SafetyLimit.MAX_WIND_SPEED,
+        SafetyLimit.MAX_SIGNIFICANT_WAVE_HEIGHT,
+    }
+    assert isinstance(got.limit_violations, frozenset)
+    assert {limit.value for limit in SafetyLimit} == {
+        "max_significant_wave_height",
+        "max_wind_speed",
+        "min_under_keel_clearance",
+    }
+
+
+@pytest.mark.req("S0b-R10")
+def test_leg_and_route_are_hashable_by_value() -> None:
+    """Equal legs hash alike despite the fuel mapping; different legs differ; routes hash too."""
+    a, b = leg(wp(0), wp(1)), leg(wp(0), wp(1))
+    assert a is not b
+    assert a == b
+    assert hash(a) == hash(b)
+    assert len({a, b}) == 1
+    swapped = leg(wp(0), wp(1), fuel_kg={Consumer.AUXILIARY: 100.0, Consumer.MAIN_ENGINE: 1000.0})
+    assert swapped == a
+    assert hash(swapped) == hash(a)
+    assert leg(wp(0), wp(1), fuel_kg={Consumer.MAIN_ENGINE: 1.0, Consumer.AUXILIARY: 100.0}) != a
+    assert leg(wp(0), wp(1), fuel_type=FuelType.MGO) != a
+    assert a != "leg"
+    assert route() == route()
+    assert hash(route()) == hash(route())
+    assert route() != route(mode=OperatingMode.CONSTANT_POWER)

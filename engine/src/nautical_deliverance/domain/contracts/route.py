@@ -8,9 +8,10 @@ from enum import StrEnum
 from itertools import pairwise
 from types import MappingProxyType
 
+from nautical_deliverance.domain.contracts._values import ValueEquality
 from nautical_deliverance.domain.contracts.errors import InvalidInputError
 from nautical_deliverance.domain.contracts.geo import LegGeometry, Position  # noqa: TC001 - gate
-from nautical_deliverance.domain.contracts.performance import Consumer, FuelType  # noqa: TC001
+from nautical_deliverance.domain.contracts.performance import Consumer, FuelType
 from nautical_deliverance.domain.contracts.time import require_utc
 
 
@@ -29,6 +30,14 @@ class DataQuality(StrEnum):
     DEGRADED = "degraded"
 
 
+class SafetyLimit(StrEnum):
+    """The vessel safety limits (D-057) a leg can violate; a valid route has none."""
+
+    MAX_SIGNIFICANT_WAVE_HEIGHT = "max_significant_wave_height"
+    MAX_WIND_SPEED = "max_wind_speed"
+    MIN_UNDER_KEEL_CLEARANCE = "min_under_keel_clearance"
+
+
 @dataclass(frozen=True, slots=True)
 class Waypoint:
     """A position with the time the vessel is there (aware UTC)."""
@@ -41,9 +50,13 @@ class Waypoint:
         object.__setattr__(self, "eta", require_utc(self.eta))
 
 
-@dataclass(frozen=True, slots=True)
-class RouteLeg:
-    """One leg between two waypoints with its speeds, fuel and worst weather."""
+@dataclass(frozen=True, slots=True, eq=False)
+class RouteLeg(ValueEquality):
+    """One leg between two waypoints with its speeds, fuel and worst weather.
+
+    `fuel_kg` has one entry per `Consumer`. `limit_violations` may be given as any iterable of
+    `SafetyLimit` and is stored as a frozenset. Equality and hash are by value.
+    """
 
     start: Waypoint
     end: Waypoint
@@ -54,12 +67,15 @@ class RouteLeg:
     fuel_kg: Mapping[Consumer, float]
     worst_significant_wave_height_m: float
     worst_wind_speed_mps: float
-    limit_violations: frozenset[str]
+    limit_violations: frozenset[SafetyLimit]
 
     def __post_init__(self) -> None:
-        """Validate time order and that all numbers are finite and non-negative."""
+        """Validate time order, consumers, violations and finite non-negative numbers."""
         if self.end.eta <= self.start.eta:
             msg = "leg end must be after leg start"
+            raise InvalidInputError(msg)
+        if self.fuel_kg.keys() != set(Consumer):
+            msg = "fuel_kg needs exactly one entry per Consumer"
             raise InvalidInputError(msg)
         numbers = (
             self.speed_through_water_mps,
@@ -71,6 +87,12 @@ class RouteLeg:
         if not all(math.isfinite(v) and v >= 0.0 for v in numbers):
             msg = "leg numbers must be finite and non-negative"
             raise InvalidInputError(msg)
+        try:
+            violations = frozenset(SafetyLimit(v) for v in self.limit_violations)
+        except ValueError as exc:
+            msg = f"unknown safety limit in limit_violations: {exc}"
+            raise InvalidInputError(msg) from exc
+        object.__setattr__(self, "limit_violations", violations)
         object.__setattr__(self, "fuel_kg", MappingProxyType(dict(self.fuel_kg)))
 
 
@@ -82,13 +104,20 @@ class ForecastRun:
     run_time: datetime
 
     def __post_init__(self) -> None:
-        """Normalize the run time to UTC; naive datetimes are rejected."""
+        """Normalize the run time to UTC (naive datetimes are rejected); the source is named."""
+        if not self.source.strip():
+            msg = "forecast run source must not be blank"
+            raise InvalidInputError(msg)
         object.__setattr__(self, "run_time", require_utc(self.run_time))
 
 
 @dataclass(frozen=True, slots=True)
 class Route:
-    """A contiguous sequence of legs; DEGRADED quality requires stated reasons."""
+    """A contiguous sequence of legs of one geometry; DEGRADED quality requires stated reasons.
+
+    A route is drawn with one `LegGeometry` throughout (D-055: the choice is per route) and
+    records at least one forecast run (C3 derives them from the weather samples it used).
+    """
 
     legs: tuple[RouteLeg, ...]
     mode: OperatingMode
@@ -97,13 +126,22 @@ class Route:
     quality_reasons: tuple[str, ...]
 
     def __post_init__(self) -> None:
-        """Validate contiguity and the quality/reasons coupling."""
+        """Validate contiguity, geometry, forecast runs and the quality/reasons coupling."""
         if not self.legs:
             msg = "a route needs at least one leg"
             raise InvalidInputError(msg)
         # Exact Waypoint equality: in a real route consecutive legs share the same objects.
         if any(a.end != b.start for a, b in pairwise(self.legs)):
             msg = "consecutive legs must share their waypoint"
+            raise InvalidInputError(msg)
+        if len({leg.geometry for leg in self.legs}) != 1:
+            msg = "all legs of a route must use the same geometry"
+            raise InvalidInputError(msg)
+        if not self.forecast_runs:
+            msg = "a route needs at least one forecast run"
+            raise InvalidInputError(msg)
+        if not all(r.strip() for r in self.quality_reasons):
+            msg = "quality reasons must not be blank"
             raise InvalidInputError(msg)
         if (self.data_quality is DataQuality.DEGRADED) != bool(self.quality_reasons):
             msg = "data quality is degraded if and only if reasons are given"
