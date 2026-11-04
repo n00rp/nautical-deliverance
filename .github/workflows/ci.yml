@@ -17,7 +17,7 @@ env:
   UV_LOCKED: "1"
 
 jobs:
-  # req: S0-R06 S0-R07 S0-R08 S0-R15
+  # req: S0-R06 S0-R07 S0-R08 S0-R15 S0b-R12
   engine:
     runs-on: ubuntu-latest
     timeout-minutes: 15
