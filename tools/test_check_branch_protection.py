@@ -12,7 +12,20 @@ import pytest
 SCRIPT = Path(__file__).parent / "check_branch_protection.sh"
 GOOD = {"allow_squash_merge": True, "allow_merge_commit": False, "allow_rebase_merge": False}
 
-pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+
+def _find_bash() -> str | None:
+    """Return a bash that can read native paths; on Windows the WSL launcher cannot."""
+    found = shutil.which("bash")
+    if sys.platform != "win32":
+        return found
+    if found and not any(wsl in found.lower() for wsl in ("system32", "windowsapps")):
+        return found
+    git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+    return str(git_bash) if git_bash.exists() else None
+
+
+BASH = _find_bash()
+pytestmark = pytest.mark.skipif(BASH is None, reason="needs a native bash (Git Bash on Windows)")
 
 
 JQ = (
@@ -50,7 +63,7 @@ def _run(tmp_path: Path, reply: str) -> subprocess.CompletedProcess[str]:
     shim.chmod(0o755)
     env = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"}
     return subprocess.run(  # noqa: S603
-        ["bash", str(SCRIPT)],  # noqa: S607
+        [str(BASH), str(SCRIPT)],
         capture_output=True,
         text=True,
         check=False,
