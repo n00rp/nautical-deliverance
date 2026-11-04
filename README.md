@@ -75,6 +75,10 @@ bash tools/smoke.sh        # needs the stack from "Start the system"
 uvx pre-commit run --all-files
 ```
 
+## Repository settings check
+
+After any change to the GitHub repository settings, run `bash tools/check_branch_protection.sh`. It asserts squash-only merging (`allow_squash_merge` true, `allow_merge_commit` and `allow_rebase_merge` false) on `n00rp/nautical-deliverance`; set `ND_REPO` to check another slug. It needs `gh auth login` with an account that has admin rights on the repo, because GitHub only returns these fields to admins, so it cannot run in CI with `GITHUB_TOKEN`. GitHub Free has no branch protection, so none is asserted (D-043).
+
 ## Development test users
 
 Realm `nautical-deliverance` in `infra/keycloak/realm-dev.json`. Test-only credentials: the password is the username.

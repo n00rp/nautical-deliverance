@@ -13,7 +13,7 @@
 | S0-R09 | .github/workflows/ci.yml, tools/test_trace.py |
 | S0-R10 | .github/workflows/ci.yml, .github/workflows/codeql.yml, .github/workflows/image-scan-report.yml, tools/test_check_licenses.py |
 | S0-R11 | .github/workflows/ci.yml |
-| S0-R12 | .github/workflows/protection.yml, tools/test_check_branch_protection.py |
+| S0-R12 | tools/test_check_branch_protection.py |
 | S0-R13 | .github/workflows/pr-title.yml |
 | S0-R14 | .github/workflows/ci.yml |
 | S0-R15 | .github/workflows/ci.yml |
