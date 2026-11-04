@@ -9,6 +9,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.engine import make_url
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 APP_URL = os.environ.get("ND_DATABASE_URL")
 OWNER_URL = os.environ.get("ND_MIGRATION_DATABASE_URL")
 
+SAFE_HOSTS = {"localhost", "127.0.0.1", "db"}
 ROOT = Path(__file__).parents[2]
 
 
@@ -24,6 +26,12 @@ def owner_engine() -> Iterator[Engine]:
     """Engine as nd_owner on a freshly migrated database."""
     if not (APP_URL and OWNER_URL):
         pytest.skip("ND_DATABASE_URL (nd_app) and ND_MIGRATION_DATABASE_URL (nd_owner) not set")
+    host = make_url(OWNER_URL).host
+    if host not in SAFE_HOSTS and os.environ.get("ND_ALLOW_DESTRUCTIVE_TESTS") != "1":
+        pytest.fail(
+            f"refusing to run 'alembic downgrade base' against host {host!r}; "
+            "use localhost/127.0.0.1/db or set ND_ALLOW_DESTRUCTIVE_TESTS=1"
+        )
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option(
         "script_location", str(ROOT / "src/nautical_deliverance/persistence/migrations")

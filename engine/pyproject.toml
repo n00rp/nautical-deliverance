@@ -53,9 +53,9 @@ filterwarnings = ["ignore:Using .httpx. with .starlette.testclient. is deprecate
 markers = ["req(id): ties a test to a requirement id, e.g. S0-R02"]
 
 [tool.coverage.run]
-source = ["nautical_deliverance"]
+source_dirs = ["src/nautical_deliverance"]
 branch = true
-omit = ["src/nautical_deliverance/main.py", "src/nautical_deliverance/persistence/migrations/*"]  # migrations run via alembic, verified by tests/db
+omit = ["src/nautical_deliverance/main.py"]
 
 [tool.coverage.report]
 fail_under = 90

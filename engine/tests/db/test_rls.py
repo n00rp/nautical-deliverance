@@ -56,6 +56,19 @@ def test_insert_for_other_org_rejected(app_engine: Engine, probe: Probe) -> None
 
 
 @pytest.mark.req("S0-R04")
+def test_update_cannot_move_row_to_other_org(app_engine: Engine, probe: Probe) -> None:
+    """WITH CHECK blocks re-assigning a row to another org."""
+    org_a, org_b = probe
+    with pytest.raises(DBAPIError), org_session(org_a, app_engine) as s:
+        s.execute(
+            text("UPDATE _rls_probe SET organization_id = :b WHERE organization_id = :a"),
+            {"a": org_a, "b": org_b},
+        )
+    assert _notes(app_engine, org_a) == ["a"]
+    assert _notes(app_engine, org_b) == ["b"]
+
+
+@pytest.mark.req("S0-R04")
 def test_no_org_set_sees_nothing(app_engine: Engine, probe: Probe) -> None:
     """Without an org setting (even after pool reuse) no rows are visible."""
     _notes(app_engine, probe[0])  # leaves an empty-string setting on a pooled connection
