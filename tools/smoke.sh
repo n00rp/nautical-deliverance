@@ -24,6 +24,9 @@ code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/heal
 [[ "$code" == 200 ]] && ok "GET /api/v1/health via web proxy = 200" || fail "health returned '$code'"
 code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/v1/health || true)"
 [[ "$code" == 200 ]] && ok "GET /api/v1/health on engine = 200" || fail "engine health returned '$code'"
+SHA="${ND_GIT_SHA:-dev}"  # same default as docker-compose.yml; CI sets the commit SHA
+ver="$(curl -sf http://localhost:8080/api/v1/health | json "d['version']" 2>/dev/null || true)"
+[[ "$ver" == "$SHA" ]] && ok "health version = $SHA" || fail "health version is '$ver', expected '$SHA'"
 
 token() { # token <user>: password == username (test-only realm)
   curl -sf "$ISSUER/protocol/openid-connect/token" -d grant_type=password -d client_id=nd-smoke \
