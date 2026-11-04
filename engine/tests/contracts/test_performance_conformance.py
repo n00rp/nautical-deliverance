@@ -543,6 +543,19 @@ class _InvertedLcv(SimplePerformance):
         return replace(r, fuel_rate_kgps={c: a * k for c, a in r.fuel_rate_kgps.items()})
 
 
+class _IgnoresFuel(SimplePerformance):
+    """Broken: the fuel type is validated but never used, so every fuel burns the same mass."""
+
+    def speed_for_power(
+        self,
+        vessel: VesselSpec,
+        condition: OperatingCondition,
+        shaft_power_w: NDArray[np.float64],
+        fuel_type: FuelType,  # noqa: ARG002 - ignoring it is the defect
+    ) -> PerformanceResult:
+        return super().speed_for_power(vessel, condition, shaft_power_w, FuelType.VLSFO)
+
+
 class _FuelChangesSpeed(SimplePerformance):
     """Broken: speed depends on the fuel type."""
 
@@ -674,6 +687,13 @@ def test_suite_fails_on_fuel_rising_with_calorific_value() -> None:
     """A model whose fuel mass rises with the calorific value fails the monotonic property."""
     with pytest.raises(AssertionError):
         _suite(_InvertedLcv).test_fuel_mass_does_not_rise_with_calorific_value()
+
+
+@pytest.mark.req("S0b-R09")
+def test_suite_fails_when_the_model_ignores_the_fuel_type() -> None:
+    """Equal fuel mass for fuels of different calorific value fails the strict LCV property."""
+    with pytest.raises(AssertionError):
+        _suite(_IgnoresFuel).test_fuel_mass_does_not_rise_with_calorific_value()
 
 
 @pytest.mark.req("S0b-R09")

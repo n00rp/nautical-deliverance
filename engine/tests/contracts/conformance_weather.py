@@ -398,3 +398,33 @@ class WeatherProviderConformance:
                 a, b = float(s.values[var][k]), float(ref.values[var][0])
                 diff = _angle_diff(a, b) if var in DIRECTIONS else abs(a - b)
                 assert diff < _TOL, (var, k, a, b)
+
+    @pytest.mark.req("S0b-R09")
+    def test_global_grid_interpolates_across_the_seam(self) -> None:
+        """On a global linear grid the seam cell blends the last column into the first."""
+        g = self.grid
+        if not g.is_global:
+            pytest.skip("grid is not global")
+        provider, _ = self.make_linear_provider()
+        lat, _, t = self._mid()
+        fractions = (
+            0.0,
+            0.25,
+            0.5,
+            0.75,
+        )  # of the seam cell, from the last column towards the first
+        lons = _f(
+            *(
+                wrap_lon(g.lon_west_deg + _FULL_CIRCLE - g.lon_step_deg * (1.0 - f))
+                for f in fractions
+            ),
+            g.lon_west_deg,
+        )
+        s = provider.sample(_f(*([lat] * 5)), lons, _t(*([t] * 5)))
+        assert _all_groups(s, _OK, 5)
+        for var, values in s.values.items():
+            if var in DIRECTIONS:
+                continue
+            last, first = float(values[0]), float(values[4])
+            for f, got in zip(fractions, values[:4], strict=True):
+                assert abs(float(got) - ((1.0 - f) * last + f * first)) < _TOL, (var, f)

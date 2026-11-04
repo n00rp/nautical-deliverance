@@ -27,12 +27,23 @@ _POLE_SLACK_DEG = 1e-9  # round-off allowed when a meridian leg lands exactly on
 
 # Rhumb integrals use adaptive composite Gauss-Legendre: a 16-point rule on the whole interval is
 # compared with the sum of 16-point rules on its two halves; halving recurses until they agree to
-# _QUAD_RTOL relative. 16-point GL is exact for polynomials of degree 31 and the integrands are
-# analytic away from the poles, so the accepted (halved) result is accurate to well below 1e-14.
-# Integrals run over the offset t from the start latitude so tiny legs never subtract latitudes.
+# _QUAD_RTOL, relative to the interval's own value or to its width share of the first-level
+# integral, whichever is looser (the second term is the absolute floor: the summed error stays
+# within 2 * _QUAD_RTOL * integral, and an interval is never forced below the round-off of its own
+# value). 16-point GL is exact for
+# polynomials of degree 31 and the integrands are analytic away from the poles. The interval list
+# is capped (_QUAD_MAX_INTERVALS): work is bounded, and exhausting it raises ContractError instead
+# of returning a value of unknown accuracy. Integrals run over the offset t from the start
+# latitude so tiny legs never subtract latitudes.
+# The only ill-conditioned integrand is 1/cos(phi) near a pole: cos(phi1 + t) loses all relative
+# precision there (phi near pi/2 carries an absolute error of 1e-16). _psi_increase therefore
+# integrates over the colatitude (cos phi = sin c), held to full relative precision, inside the
+# polar caps. This keeps the integrand well conditioned, so the quadrature converges instead of
+# bisecting to full depth. (The closed form asinh(tan phi) - e atanh(e sin phi) is no better:
+# tan phi suffers the same cancellation, and it subtracts two large values for short legs.)
 _GL_NODES, _GL_WEIGHTS = (a.tolist() for a in np.polynomial.legendre.leggauss(16))
 _QUAD_RTOL = 1e-14
-_QUAD_MAX_DEPTH = 40
+_QUAD_MAX_INTERVALS = 4000
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,14 +83,30 @@ def _gl(f: Callable[[float], float], t0: float, t1: float) -> float:
     return half * sum(w * f(mid + half * x) for x, w in zip(_GL_NODES, _GL_WEIGHTS, strict=True))
 
 
-def _quad(f: Callable[[float], float], t0: float, t1: float, depth: int = 0) -> float:
+def _quad(f: Callable[[float], float], t0: float, t1: float) -> float:
     """Integrate ``f`` over [t0, t1] (adaptive Gauss-Legendre, see module constants)."""
-    whole = _gl(f, t0, t1)
-    mid = (t0 + t1) / 2.0
-    halves = _gl(f, t0, mid) + _gl(f, mid, t1)
-    if depth >= _QUAD_MAX_DEPTH or abs(halves - whole) <= _QUAD_RTOL * abs(halves):
-        return halves
-    return _quad(f, t0, mid, depth + 1) + _quad(f, mid, t1, depth + 1)
+    if t0 == t1:
+        return 0.0
+    width = abs(t1 - t0)
+    todo = [(t0, t1)]
+    total = scale = 0.0
+    evaluated = 0
+    while todo:
+        a, b = todo.pop()
+        mid = (a + b) / 2.0
+        whole, left, right = _gl(f, a, b), _gl(f, a, mid), _gl(f, mid, b)
+        halves = left + right
+        if evaluated == 0:
+            scale = abs(halves)
+        evaluated += 1
+        if abs(halves - whole) <= _QUAD_RTOL * max(abs(halves), scale * abs(b - a) / width):
+            total += halves
+        elif evaluated + len(todo) >= _QUAD_MAX_INTERVALS:
+            msg = "rhumb integral did not converge within the interval budget"
+            raise ContractError(msg)
+        else:
+            todo += [(a, mid), (mid, b)]
+    return total
 
 
 def _meridian_radius_m(phi: float) -> float:
@@ -87,9 +114,32 @@ def _meridian_radius_m(phi: float) -> float:
     return float(_GEOD.a * (1.0 - _E2) / (1.0 - _E2 * math.sin(phi) ** 2) ** 1.5)
 
 
-def _dpsi_dphi(phi: float) -> float:
+def _dpsi_dphi(sin_phi: float, cos_phi: float) -> float:
     """Return d(psi)/d(phi), the isometric-latitude derivative."""
-    return (1.0 - _E2) / ((1.0 - _E2 * math.sin(phi) ** 2) * math.cos(phi))
+    return (1.0 - _E2) / ((1.0 - _E2 * sin_phi**2) * cos_phi)
+
+
+def _psi_increase(lat_deg: float, delta: float, end_lat_deg: float | None = None) -> float:
+    """Integral of d(psi)/d(phi) over [lat, lat + delta] (radians), well conditioned at poles.
+
+    Away from the poles integrate over the offset t (no latitude subtraction). Within 45 degrees
+    of a pole use the colatitude c (cos(phi) = sin(c) is then held to full relative precision,
+    which phi1 + t cannot do): over c itself between exact endpoints for a long leg, or over the
+    offset from the exact start colatitude for a leg short compared with its distance from the
+    pole. ``end_lat_deg`` gives the exact far end when the caller has it.
+    """
+    end_deg = lat_deg + math.degrees(delta) if end_lat_deg is None else end_lat_deg
+    sign = math.copysign(1.0, max(lat_deg, end_deg, key=abs))  # the pole this leg gets closest to
+    c1, c2 = (math.radians(_POLE_DEG - sign * x) for x in (lat_deg, end_deg))  # exact near a pole
+    near = min(c1, c2)  # c in (0, pi): the leg does not reach either pole
+    if 0.0 < near < math.pi / 4.0 and max(c1, c2) < math.pi and abs(c1 - c2) > 0.1 * near:
+        return sign * _quad(lambda c: _dpsi_dphi(math.cos(c), math.sin(c)), c2, c1)
+    if near < math.pi / 4.0:  # short leg near a pole: offset from the exact start colatitude
+        return _quad(
+            lambda t: _dpsi_dphi(math.cos(c1 - sign * t), math.sin(c1 - sign * t)), 0.0, delta
+        )
+    phi1 = math.radians(lat_deg)
+    return _quad(lambda t: _dpsi_dphi(math.sin(phi1 + t), math.cos(phi1 + t)), 0.0, delta)
 
 
 def _parallel_radius_m(phi: float) -> float:
@@ -110,8 +160,7 @@ class _Rhumb:
 
     def psi_to(self, delta_rad: float) -> float:
         """Isometric-latitude increase over the first ``delta_rad`` of the leg."""
-        phi1 = math.radians(self.phi1_deg)
-        return _quad(lambda t: _dpsi_dphi(phi1 + t), 0.0, delta_rad)
+        return _psi_increase(self.phi1_deg, delta_rad)
 
     @property
     def length_m(self) -> float:
@@ -140,7 +189,7 @@ def _rhumb_solve(a: Position, b: Position) -> _Rhumb:
     if abs(a.lat_deg) == _POLE_DEG or abs(b.lat_deg) == _POLE_DEG:
         pole_lon = b.lon_deg if abs(a.lat_deg) == _POLE_DEG else a.lon_deg
         return _Rhumb(a.lat_deg, dphi_deg, dmu, dlon, math.inf, pole_lon)
-    dpsi = _quad(lambda t: _dpsi_dphi(phi1 + t), 0.0, dphi)
+    dpsi = _psi_increase(a.lat_deg, dphi, b.lat_deg)
     return _Rhumb(a.lat_deg, dphi_deg, dmu, dlon, dpsi, None)
 
 
@@ -205,7 +254,7 @@ def _rhumb_destination(a: Position, course_deg: float, dist_m: float) -> Positio
     if delta == 0.0:
         dlon = east_m / _parallel_radius_m(phi1)
     else:  # dlon = tan(course) * d(psi) = east * d(psi) / d(mu); both integrals are difference-free
-        dpsi = _quad(lambda t: _dpsi_dphi(phi1 + t), 0.0, delta)
+        dpsi = _psi_increase(a.lat_deg, delta)
         dmu = _quad(lambda t: _meridian_radius_m(phi1 + t), 0.0, delta)
         dlon = east_m * dpsi / dmu
     return Position(lat, a.lon_deg + math.degrees(dlon))

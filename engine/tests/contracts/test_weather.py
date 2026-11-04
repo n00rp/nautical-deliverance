@@ -156,6 +156,8 @@ def test_sample_rejects_bad_arrays_and_keys() -> None:
         {"values": dict.fromkeys(REQUIRED, np.array([np.inf]))},
         {"values": {**dict.fromkeys(REQUIRED, _ONE), "bogus": _ONE}},
         {"quality_by_group": {g: np.array(["ok"]) for g in REQUIRED_GROUPS}},
+        {"quality_by_group": dict.fromkeys(REQUIRED_GROUPS, 0)},  # not an array: no len()
+        {"quality_by_group": {g: [0] for g in REQUIRED_GROUPS}},
         {"quality_by_group": {g: np.array([9], dtype=np.uint8) for g in REQUIRED_GROUPS}},
         {"quality_by_group": {g: np.array([0], dtype=np.int64) for g in REQUIRED_GROUPS}},
         {"quality_by_group": {WeatherGroup.WIND: _code()}},

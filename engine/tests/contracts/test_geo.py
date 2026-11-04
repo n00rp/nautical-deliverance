@@ -20,6 +20,7 @@ meridian a rhumb line coincides with the geodesic.
 """
 
 import math
+import time
 from unittest import mock
 
 import numpy as np
@@ -524,3 +525,85 @@ def test_rhumb_point_newton_exhaustion_raises() -> None:
         pytest.raises(ContractError, match="did not converge"),
     ):
         point_along(a, b, RHUMB, 0.5)
+
+
+# --- rhumb lines near the poles: bounded work, still 1 mm / 1e-9 deg --------------------------
+POLAR_LATS = [89.9, 89.97, 89.99, 89.999, -89.9, -89.97, -89.99, -89.999]
+POLAR_TIME_LIMIT_S = 1.0
+POLAR_COURSE_DEG = 45.0
+
+
+def _polar_reference_destination(a: Position, dist_m: float) -> Position:
+    """Solve the direct problem at course 45 deg in the colatitude (well conditioned).
+
+    Shares no code with the implementation: Simpson on ``c = 90 deg - |lat|`` plus bisection on the
+    meridian distance; longitude from ``dlon = tan(course) * dpsi``.
+    """
+    sign = math.copysign(1.0, a.lat_deg)
+    north = dist_m * math.cos(
+        math.radians(POLAR_COURSE_DEG)
+    )  # away from a south pole, towards a north pole
+    c1 = math.radians(90.0 - abs(a.lat_deg))
+
+    def integrals(
+        dc: float,
+    ) -> tuple[float, float]:  # (meridian distance, dpsi) for colat c1 -/+ dc
+        c = np.linspace(c1, c1 - sign * dc, SIMPSON_POINTS)
+        h = -sign * dc / (SIMPSON_POINTS - 1)
+        w = 1.0 - WGS84_E2 * np.cos(c) ** 2
+        return (
+            abs(_simpson(WGS84_A * (1.0 - WGS84_E2) / w**1.5, h)),
+            abs(_simpson((1.0 - WGS84_E2) / (w * np.sin(c)), h)),
+        )
+
+    lo, hi = 0.0, north / WGS84_A * 2.0
+    for _ in range(60):
+        mid = (lo + hi) / 2.0
+        lo, hi = (mid, hi) if integrals(mid)[0] < north else (lo, mid)
+    dc = (lo + hi) / 2.0
+    lat = sign * (90.0 - math.degrees(c1 - sign * dc))
+    dlon = math.tan(math.radians(POLAR_COURSE_DEG)) * integrals(dc)[1]
+    return Position(lat, a.lon_deg + math.degrees(dlon))
+
+
+@pytest.mark.req("S0b-R05")
+@pytest.mark.parametrize("lat", POLAR_LATS)
+def test_rhumb_near_pole_is_fast_and_accurate(lat: float) -> None:
+    """Slanted rhumb legs a few hundred metres from a pole: bounded time, 1 mm / 1e-9 deg."""
+    dist = 500.0 if abs(lat) < 89.98 else 100.0  # noqa: PLR2004 - keep the leg short of the pole
+    a = Position(lat, 10.0)
+    start = time.perf_counter()
+    b = destination(a, POLAR_COURSE_DEG, dist, RHUMB)
+    length = distance_m(a, b, RHUMB)
+    course = initial_course_deg(a, b, RHUMB)
+    mid = point_along(a, b, RHUMB, 0.5)
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < POLAR_TIME_LIMIT_S
+    for got, d in ((b, dist), (mid, dist / 2.0)):
+        ref = _polar_reference_destination(a, d)
+        assert abs(got.lat_deg - ref.lat_deg) < ANGLE_TOL
+        assert angle_diff_deg(got.lon_deg, ref.lon_deg) < ANGLE_TOL
+    assert abs(length - dist) < MM
+    assert angle_diff_deg(course, POLAR_COURSE_DEG) < ANGLE_TOL
+
+
+@pytest.mark.req("S0b-R05")
+def test_rhumb_inverse_near_pole_is_fast() -> None:
+    """The reported hanging inverse case completes quickly."""
+    start = time.perf_counter()
+    d = distance_m(Position(89.99, 0.0), Position(89.9903, 0.5), RHUMB)
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < POLAR_TIME_LIMIT_S
+    assert d > 0.0
+
+
+@pytest.mark.req("S0b-R05")
+def test_rhumb_integral_budget_exhaustion_raises() -> None:
+    """If the interval budget runs out the failure is explicit, never an inaccurate value."""
+    with (
+        mock.patch("nautical_deliverance.domain.contracts.geo._QUAD_MAX_INTERVALS", 1),
+        pytest.raises(ContractError, match="interval budget"),
+    ):
+        distance_m(Position(10.0, 0.0), Position(89.9999, 30.0), RHUMB)

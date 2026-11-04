@@ -31,7 +31,6 @@ from nautical_deliverance.domain.reference.uniform_weather import (
 from tests.contracts.conformance_weather import (
     Expected,
     WeatherProviderConformance,
-    wrap_lon,
 )
 from tests.contracts.weather_fixtures import BASE, GRID, RUN, make_uniform
 
@@ -234,6 +233,8 @@ def test_suite_fails_without_global_seam() -> None:
     suite = _broken(TestUniformWeatherGlobal, _NoSeam)
     with pytest.raises(AssertionError):
         suite.test_global_seam()
+    with pytest.raises(AssertionError):
+        suite.test_global_grid_interpolates_across_the_seam()
 
 
 @pytest.mark.req("S0b-R07")
@@ -249,19 +250,6 @@ def test_uniform_weather_constructor_checks() -> None:
         UniformWeather(BASE, *args[:2], g.times[::-1], RUN, 1.0, 1.0)
     with pytest.raises(InvalidInputError):
         UniformWeather(BASE, *args[:2], g.times[:1], RUN, 1.0, 1.0)
-
-
-@pytest.mark.req("S0b-R07")
-def test_global_grid_wraps_last_column_to_first() -> None:
-    """On a global linear grid the seam cell interpolates towards the first column's value."""
-    g = TestUniformWeatherGlobal.grid
-    lons = _f(*(wrap_lon(g.lon_west_deg + o) for o in (359.5, 359.0, 0.0)))
-    s = make_uniform("linear", grid=g).sample(
-        _f(41.0, 41.0, 41.0), lons, _t(g.start, g.start, g.start)
-    )
-    for var, values in s.values.items():
-        if var not in DIRECTIONS:
-            assert values[0] == pytest.approx((values[1] + values[2]) / 2)
 
 
 @pytest.mark.req("S0b-R07")

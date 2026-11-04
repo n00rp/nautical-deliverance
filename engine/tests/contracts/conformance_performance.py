@@ -69,6 +69,10 @@ class PerformanceModelConformance:
         FuelType.LNG,
     )
 
+    # consecutive pairs of `fuel_order_by_lcv` with equal LCV (compared non-strictly); none in the
+    # reference table
+    equal_lcv_pairs: ClassVar[frozenset[tuple[FuelType, FuelType]]] = frozenset()
+
     def make_model(self) -> PerformanceModel:
         """Return the model under test."""
         raise NotImplementedError
@@ -158,15 +162,22 @@ class PerformanceModelConformance:
 
     @pytest.mark.req("S0b-R08")
     def test_fuel_mass_does_not_rise_with_calorific_value(self) -> None:
-        """At equal power a fuel with a higher lower calorific value needs no more mass."""
+        """At equal power a fuel with a higher calorific value needs strictly less mass."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(4)
         p = self._powers(0.1, 0.4, 0.7, 1.0)
         rates = {f: m.speed_for_power(v, c, p, f).fuel_rate_kgps for f in self.fuel_order_by_lcv}
+        burning = 0
         for lower, higher in pairwise(self.fuel_order_by_lcv):
+            tied = (lower, higher) in self.equal_lcv_pairs
             for consumer in Consumer:
-                assert bool(
-                    (rates[higher][consumer] <= rates[lower][consumer] * (1 + _FUEL_RTOL)).all()
-                ), (lower, higher, consumer)
+                lo, hi = rates[lower][consumer], rates[higher][consumer]
+                if tied:  # equal calorific value: the same mass, up to round-off
+                    np.testing.assert_allclose(hi, lo, rtol=_FUEL_RTOL)
+                    continue
+                running = lo > 0.0  # a consumer that burns nothing cannot burn less
+                burning += int(running.sum())
+                assert bool((hi[running] < lo[running]).all()), (lower, higher, consumer)
+        assert burning or self.equal_lcv_pairs, "no consumer burned fuel at the tested powers"
 
     @pytest.mark.req("S0b-R08")
     def test_speed_and_power_do_not_depend_on_fuel(self) -> None:

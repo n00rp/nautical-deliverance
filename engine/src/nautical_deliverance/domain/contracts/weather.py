@@ -161,7 +161,7 @@ class WeatherSample:
         self._check_variables()
         groups = {GROUP_OF[v] for v in self.values}
         self._check_groups(groups)
-        n = len(next(iter(self.quality.values())))
+        n = _check_array("quality", next(iter(self.quality.values())), "uint8", None)
         for group in groups:
             self._check_group_arrays(group, n)
         for var, a in self.values.items():

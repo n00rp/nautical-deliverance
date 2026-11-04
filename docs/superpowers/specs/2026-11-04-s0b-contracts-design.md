@@ -68,7 +68,7 @@ New dependency: `geographiclib` (pure Python, MIT — on the D-037 allow-list).
 ### 3.3 Geometry (K1)
 - `Position(lat_deg, lon_deg)`: validates latitude, normalizes longitude to [−180, 180).
 - `LegGeometry` enum: `RHUMB_LINE`, `GREAT_CIRCLE`.
-- `distance_m(a, b, geometry)`, `initial_course_deg(a, b, geometry)`, `point_along(a, b, geometry, fraction)` and the direct problem `destination(start, course_deg, distance_m, geometry) -> Position`, all on WGS84 (GeographicLib `Geodesic` for great circles; rhumb lines are hand-written on the ellipsoid because the Python GeographicLib has no `Rhumb`). A rhumb `destination` that would run past a pole raises `InvalidInputError`.
+- `distance_m(a, b, geometry)`, `initial_course_deg(a, b, geometry)`, `point_along(a, b, geometry, fraction)` and the direct problem `destination(start, course_deg, distance_m, geometry) -> Position`, all on WGS84 (GeographicLib `Geodesic` for great circles; rhumb lines are hand-written on the ellipsoid because the Python GeographicLib has no `Rhumb`). A rhumb `destination` that would run past a pole raises `InvalidInputError`. A rhumb line can leave or reach a pole only along a meridian (course 0 or 180); any other course that would reach a pole raises `InvalidInputError`.
 
 ### 3.4 Errors (K7)
 `ContractError` ← `InvalidInputError` ← { `NaiveDatetimeError`, `InvalidPositionError` }; `ContractError` ← `MissingRequiredVariableError`; `ContractError` ← `DataBlockedError` (carries the reasons).
