@@ -3,7 +3,8 @@
 Shaft power: P(v) = k * v^3 + C_WAVE * Hs^2 * v, with k chosen so the calm-water term equals
 0.85 * MCR at the design speed. Hs is the total sea height of the condition's weather sample.
 Fuel: main engine = SFOC(P / MCR) * P; auxiliary = SFOC(aux / MCR) * aux (at-sea load); SFOC is
-linearly interpolated (clamped at the curve ends).
+linearly interpolated and clamped at the curve ends, also for loads above MCR. Draft and
+heading are unused. `speed_for_power` raises for power above P(2 * design speed).
 """
 
 from typing import TYPE_CHECKING
@@ -62,7 +63,15 @@ class SimplePerformance:
             below = self._power(vessel, hs, mid) < shaft_power_w
             lo = np.where(below, mid, lo)
             hi = np.where(below, hi, mid)
-        return self._result(vessel, hs, 0.5 * (lo + hi), shaft_power_w)
+        reachable = self._power(vessel, hs, np.full_like(shaft_power_w, 2.0 * self._design))
+        if (too_high := shaft_power_w > reachable).any():
+            msg = (
+                f"power unreachable at points {np.flatnonzero(too_high).tolist()}; "
+                f"maximum {reachable[too_high].tolist()} W"
+            )
+            raise InvalidInputError(msg)
+        speed = np.where(shaft_power_w == 0.0, 0.0, 0.5 * (lo + hi))
+        return self._result(vessel, hs, speed, shaft_power_w)
 
     def power_for_speed(
         self,

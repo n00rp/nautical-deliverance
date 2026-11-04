@@ -84,6 +84,7 @@ def is_valid_imo(imo_number: str) -> bool:
     if not re.fullmatch(r"[0-9]{7}", imo_number):
         return False
     digits = [int(c) for c in imo_number]
+    # strict=False: 6 weights pair with the first 6 of 7 digits; the 7th is the check digit
     return sum(d * w for d, w in zip(digits, _IMO_WEIGHTS, strict=False)) % 10 == digits[-1]
 
 
@@ -131,7 +132,10 @@ class VesselSpec:
 
 @dataclass(frozen=True, slots=True)
 class OperatingCondition:
-    """Draft, heading and weather at N points (equal lengths)."""
+    """Draft, heading and weather at N points (equal lengths).
+
+    Models may ignore draft and heading (the analytical reference does).
+    """
 
     draft_fwd_m: NDArray[np.float64]
     draft_aft_m: NDArray[np.float64]

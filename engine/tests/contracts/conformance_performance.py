@@ -22,6 +22,8 @@ from nautical_deliverance.domain.contracts.performance import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from numpy.typing import NDArray
 
 _ROUND_TRIP_RTOL = 1e-6
@@ -30,6 +32,16 @@ _FUEL_RTOL = 1e-12
 
 def _f(*vals: float) -> NDArray[np.float64]:
     return np.array(vals, dtype=np.float64)
+
+
+def _assert_rejected(call: Callable[..., object], *args: object) -> None:
+    """Fail with AssertionError unless `call(*args)` raises InvalidInputError."""
+    try:
+        call(*args)
+    except InvalidInputError:
+        return
+    msg = "invalid input was accepted"
+    raise AssertionError(msg)
 
 
 def total_fuel_kgps(result: PerformanceResult) -> NDArray[np.float64]:
@@ -50,6 +62,10 @@ class PerformanceModelConformance:
 
     def make_condition(self, n: int) -> OperatingCondition:
         """Return a condition of `n` points with OK weather."""
+        raise NotImplementedError
+
+    def make_bad_weather_condition(self, n: int) -> OperatingCondition:
+        """Return a condition of `n` points whose weather quality is not OK."""
         raise NotImplementedError
 
     def _powers(self, *fractions: float) -> NDArray[np.float64]:
@@ -90,12 +106,15 @@ class PerformanceModelConformance:
             assert all(bool(np.isfinite(a).all() and (a >= 0.0).all()) for a in arrays)
 
     @pytest.mark.req("S0b-R08")
-    def test_fuel_split_sums(self) -> None:
-        """Every consumer is reported and total fuel is additive over points (no cross-talk)."""
+    def test_fuel_reported_non_negative_and_point_independent(self) -> None:
+        """Every consumer is reported, finite, non-negative, and each point is independent."""
         m, v = self.make_model(), self.make_vessel()
         p = self._powers(0.4, 0.9)
         both = m.speed_for_power(v, self.make_condition(2), p)
         assert set(both.fuel_rate_kgps) == set(Consumer)
+        assert all(
+            bool(np.isfinite(a).all() and (a >= 0.0).all()) for a in both.fuel_rate_kgps.values()
+        )
         singles = [
             m.speed_for_power(v, self.make_condition(1), p[i : i + 1]).fuel_rate_kgps
             for i in range(2)
@@ -137,26 +156,27 @@ class PerformanceModelConformance:
         """Input and condition of different lengths raise InvalidInputError."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(3)
         for bad in (_f(1.0, 2.0), _f(1.0, 2.0, 3.0, 4.0)):
-            with pytest.raises(InvalidInputError):
-                m.speed_for_power(v, c, bad * 1e6)
-            with pytest.raises(InvalidInputError):
-                m.power_for_speed(v, c, bad)
+            _assert_rejected(m.speed_for_power, v, c, bad * 1e6)
+            _assert_rejected(m.power_for_speed, v, c, bad)
 
     @pytest.mark.req("S0b-R08")
     def test_nan_speed_rejected(self) -> None:
         """NaN or infinite speeds (and powers) raise InvalidInputError."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(1)
         for bad in (np.nan, np.inf, -np.inf):
-            with pytest.raises(InvalidInputError):
-                m.power_for_speed(v, c, _f(bad))
-            with pytest.raises(InvalidInputError):
-                m.speed_for_power(v, c, _f(bad))
+            _assert_rejected(m.power_for_speed, v, c, _f(bad))
+            _assert_rejected(m.speed_for_power, v, c, _f(bad))
 
     @pytest.mark.req("S0b-R08")
     def test_negative_power_rejected(self) -> None:
         """Negative power (and speed) raises InvalidInputError."""
         m, v, c = self.make_model(), self.make_vessel(), self.make_condition(1)
-        with pytest.raises(InvalidInputError):
-            m.speed_for_power(v, c, _f(-1.0))
-        with pytest.raises(InvalidInputError):
-            m.power_for_speed(v, c, _f(-1.0))
+        _assert_rejected(m.speed_for_power, v, c, _f(-1.0))
+        _assert_rejected(m.power_for_speed, v, c, _f(-1.0))
+
+    @pytest.mark.req("S0b-R08")
+    def test_non_ok_weather_rejected(self) -> None:
+        """Points without valid weather are rejected, never computed on NaN."""
+        m, v, c = self.make_model(), self.make_vessel(), self.make_bad_weather_condition(2)
+        _assert_rejected(m.power_for_speed, v, c, _f(5.0, 5.0))
+        _assert_rejected(m.speed_for_power, v, c, self._powers(0.5, 0.5))

@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -84,6 +85,10 @@ class TestSimplePerformance(PerformanceModelConformance):
         """Return a moderate sea state."""
         return make_condition(n)
 
+    def make_bad_weather_condition(self, n: int) -> OperatingCondition:
+        """Return points outside weather coverage."""
+        return make_condition(n, offset_deg=100.0)
+
 
 class _Inconsistent(SimplePerformance):
     """Broken: the two directions disagree by 1 %."""
@@ -151,16 +156,6 @@ def test_simple_performance_equations() -> None:
     assert calm.fuel_rate_kgps[Consumer.MAIN_ENGINE][0] == pytest.approx(
         sfoc_at_85 * calm.shaft_power_w[0]
     )
-
-
-@pytest.mark.req("S0b-R08")
-def test_non_ok_weather_rejected() -> None:
-    """A point without valid weather is rejected, never computed on NaN."""
-    model, vessel = SimplePerformance(_DESIGN_SPEED_MPS), make_vessel()
-    cond = make_condition(2, offset_deg=100.0)
-    assert (cond.weather.quality != "ok").all()
-    with pytest.raises(InvalidInputError):
-        model.power_for_speed(vessel, cond, np.array([5.0, 5.0]))
 
 
 @pytest.mark.req("S0b-R08")
@@ -254,3 +249,149 @@ def test_enums() -> None:
     """Enum values are lower-case."""
     assert [f.value for f in FuelType] == ["hfo", "vlsfo", "ulsfo", "mgo", "lng"]
     assert len(make_condition(4)) == len(make_condition(4).heading_deg)
+
+
+def _loose(r: PerformanceResult, **changes: Any) -> Any:  # noqa: ANN401
+    """Copy a result without PerformanceResult validation (for broken models)."""
+    fields = {
+        "speed_through_water_mps": r.speed_through_water_mps,
+        "shaft_power_w": r.shaft_power_w,
+        "fuel_rate_kgps": dict(r.fuel_rate_kgps),
+        "motion_risk_ratio": r.motion_risk_ratio,
+    }
+    return SimpleNamespace(**(fields | changes))
+
+
+class _NoValidation(SimplePerformance):
+    """Broken: coerces bad input instead of rejecting it."""
+
+    def power_for_speed(
+        self,
+        vessel: VesselSpec,
+        condition: OperatingCondition,
+        speed_through_water_mps: NDArray[np.float64],
+    ) -> PerformanceResult:
+        x = np.nan_to_num(np.abs(speed_through_water_mps), posinf=1.0)
+        return super().power_for_speed(vessel, replace_len(condition), np.resize(x, len(condition)))
+
+    def speed_for_power(
+        self,
+        vessel: VesselSpec,
+        condition: OperatingCondition,
+        shaft_power_w: NDArray[np.float64],
+    ) -> PerformanceResult:
+        x = np.nan_to_num(np.abs(shaft_power_w), posinf=1.0)
+        return super().speed_for_power(vessel, replace_len(condition), np.resize(x, len(condition)))
+
+
+def replace_len(condition: OperatingCondition) -> OperatingCondition:
+    """Return a condition with OK weather of the same length."""
+    return make_condition(len(condition))
+
+
+class _NegativeFuel(SimplePerformance):
+    """Broken: auxiliary fuel is negative."""
+
+    def speed_for_power(
+        self,
+        vessel: VesselSpec,
+        condition: OperatingCondition,
+        shaft_power_w: NDArray[np.float64],
+    ) -> PerformanceResult:
+        r = super().speed_for_power(vessel, condition, shaft_power_w)
+        fuel = dict(r.fuel_rate_kgps)
+        fuel[Consumer.AUXILIARY] = -fuel[Consumer.AUXILIARY]
+        return _loose(r, fuel_rate_kgps=fuel)  # type: ignore[no-any-return]
+
+
+class _MissingConsumer(SimplePerformance):
+    """Broken: no auxiliary fuel reported."""
+
+    def speed_for_power(
+        self,
+        vessel: VesselSpec,
+        condition: OperatingCondition,
+        shaft_power_w: NDArray[np.float64],
+    ) -> PerformanceResult:
+        r = super().speed_for_power(vessel, condition, shaft_power_w)
+        main = r.fuel_rate_kgps[Consumer.MAIN_ENGINE]
+        return _loose(r, fuel_rate_kgps={Consumer.MAIN_ENGINE: main})  # type: ignore[no-any-return]
+
+
+class _Coupled(SimplePerformance):
+    """Broken: fuel of each point depends on the mean power of the batch."""
+
+    def speed_for_power(
+        self,
+        vessel: VesselSpec,
+        condition: OperatingCondition,
+        shaft_power_w: NDArray[np.float64],
+    ) -> PerformanceResult:
+        r = super().speed_for_power(vessel, condition, shaft_power_w)
+        scale = 1.0 + shaft_power_w.mean() / vessel.mcr_w
+        return _loose(r, fuel_rate_kgps={c: a * scale for c, a in r.fuel_rate_kgps.items()})  # type: ignore[no-any-return]
+
+
+def _suite(model: type[SimplePerformance]) -> TestSimplePerformance:
+    class Broken(TestSimplePerformance):
+        def make_model(self) -> PerformanceModel:
+            return model(_DESIGN_SPEED_MPS)
+
+    return Broken()
+
+
+@pytest.mark.req("S0b-R09")
+def test_suite_fails_when_validation_skipped() -> None:
+    """A model that coerces bad input fails the length, NaN, negative and weather checks."""
+    suite = _suite(_NoValidation)
+    for check in (
+        suite.test_mismatched_lengths_rejected,
+        suite.test_nan_speed_rejected,
+        suite.test_negative_power_rejected,
+        suite.test_non_ok_weather_rejected,
+    ):
+        with pytest.raises(AssertionError):
+            check()
+
+
+@pytest.mark.req("S0b-R09")
+def test_suite_fails_on_negative_fuel() -> None:
+    """Negative fuel is rejected."""
+    with pytest.raises(AssertionError):
+        _suite(_NegativeFuel).test_outputs_finite_non_negative()
+
+
+@pytest.mark.req("S0b-R09")
+def test_suite_fails_on_missing_consumer() -> None:
+    """A result without every consumer is rejected."""
+    with pytest.raises(AssertionError):
+        _suite(_MissingConsumer).test_fuel_reported_non_negative_and_point_independent()
+
+
+@pytest.mark.req("S0b-R09")
+def test_suite_fails_on_coupled_points() -> None:
+    """A model whose result for a point depends on the other points is rejected."""
+    with pytest.raises(AssertionError):
+        _suite(_Coupled).test_fuel_reported_non_negative_and_point_independent()
+
+
+@pytest.mark.req("S0b-R08")
+def test_unreachable_and_zero_power() -> None:
+    """Power above P(2 * design) raises (no silent clamp); zero power gives speed exactly 0."""
+    model, vessel = SimplePerformance(_DESIGN_SPEED_MPS), make_vessel()
+    with pytest.raises(InvalidInputError, match="unreachable"):
+        model.speed_for_power(vessel, make_condition(2), np.array([1e6, 1e12]))
+    r = model.speed_for_power(vessel, make_condition(1), np.array([0.0]))
+    assert r.speed_through_water_mps[0] == 0.0
+
+
+@pytest.mark.req("S0b-R08")
+def test_sfoc_clamped_below_first_point_and_above_mcr() -> None:
+    """Below the first curve point and above MCR the SFOC end values apply."""
+    model, vessel = SimplePerformance(_DESIGN_SPEED_MPS), make_vessel()
+    first = vessel.sfoc_curve_kg_per_j[0][1]
+    low = model.speed_for_power(vessel, make_condition(1), np.array([0.05 * _MCR_W]))
+    assert low.fuel_rate_kgps[Consumer.MAIN_ENGINE][0] == pytest.approx(first * 0.05 * _MCR_W)
+    last = vessel.sfoc_curve_kg_per_j[-1][1]
+    high = model.speed_for_power(vessel, make_condition(1), np.array([1.2 * _MCR_W]))
+    assert high.fuel_rate_kgps[Consumer.MAIN_ENGINE][0] == pytest.approx(last * 1.2 * _MCR_W)
