@@ -30,7 +30,7 @@ The compose file is a dev/CI stack: dev passwords and a dev realm, not a product
 
 ## Run all checks
 
-CI (`.github/workflows/ci.yml`) is the authority; these are the same commands.
+CI (`.github/workflows/ci.yml`) is the authority; these are the same commands. Run them in Git Bash or WSL (they use `export` and `bash`).
 
 Engine, from `engine/`:
 
@@ -51,6 +51,8 @@ export ND_REQUIRE_DB=1
 export ND_DATABASE_URL=postgresql+psycopg://nd_app:dev-app-password@127.0.0.1:5432/nd
 export ND_MIGRATION_DATABASE_URL=postgresql+psycopg://nd_owner:dev-owner-password@127.0.0.1:5432/nd
 ```
+
+PowerShell equivalent: `$env:ND_REQUIRE_DB = "1"`, `$env:ND_DATABASE_URL = "..."`, `$env:ND_MIGRATION_DATABASE_URL = "..."` with the same values.
 
 Web, from `web/` (after `pnpm install --frozen-lockfile`):
 

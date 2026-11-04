@@ -5,21 +5,23 @@
 set -uo pipefail
 
 repo="${ND_REPO:-n00rp/nautical-deliverance}"
-if ! json="$(gh api "repos/$repo" 2>&1)"; then
-  echo "FAIL: cannot read repos/$repo (missing repo, or gh not installed/authenticated): $json" >&2
+# gh's built-in jq reads only top-level keys (nested objects such as `parent` repeat allow_*_merge).
+# A null or missing key prints as an empty field and counts as a mismatch.
+if ! out="$(gh api "repos/$repo" --jq '[.allow_squash_merge, .allow_merge_commit, .allow_rebase_merge] | @tsv' 2>&1)"; then
+  echo "FAIL: cannot read repos/$repo (missing repo, or gh not installed/authenticated): $out" >&2
   exit 2
 fi
+IFS=$'\t' read -r squash merge rebase <<<"$out"
 
 failures=0
-check() { # setting expected
-  actual="$(grep -Eo "\"$1\" *: *(true|false)" <<<"$json" | grep -Eo '(true|false)$' || echo missing)"
-  if [ "$actual" != "$2" ]; then
-    echo "FAIL: $1 is $actual, expected $2" >&2
+check() { # setting actual expected
+  if [ "$2" != "$3" ]; then
+    echo "FAIL: $1 is ${2:-missing}, expected $3" >&2
     failures=$((failures + 1))
   fi
 }
-check allow_squash_merge true
-check allow_merge_commit false
-check allow_rebase_merge false
+check allow_squash_merge "$squash" true
+check allow_merge_commit "$merge" false
+check allow_rebase_merge "$rebase" false
 
 [ "$failures" -eq 0 ] && echo "OK: merge settings of $repo match" || exit 1
