@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM python:3.14.8-slim-trixie@sha256:fbecd461fc72d21b2143c6eaba25143738079154a6d0ea3da3aec724f50eed4a AS build
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy
-RUN pip install --no-cache-dir uv==0.13.7
+RUN pip install --no-cache-dir uv==0.13.4
 WORKDIR /app
 COPY pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project

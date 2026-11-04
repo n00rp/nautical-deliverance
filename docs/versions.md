@@ -36,3 +36,4 @@ Dates are the Docker Hub / quay.io `last_updated` of the tag (registry tags are 
 | nginx | `nginxinc/nginx-unprivileged:1.30.6-alpine` | 2026-10-19 | Stable 1.30 branch. |
 | Python image | `python:3.14.8-slim-trixie` | 2026-10-21 | Debian 13 (trixie). 3.14.9 pushed 2026-10-24 (too recent). |
 | pnpm | `12.15.0` | 2026-10-21 | From registry.npmjs.org publish time. |
+| uv (engine image build) | `0.13.4` | 2026-10-20 | PyPI upload time. 0.13.5+ are newer than 14 days on 2026-11-04. |

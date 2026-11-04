@@ -5,17 +5,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE=(docker compose -f "$ROOT/infra/docker-compose.yml")
-[[ -f "$ROOT/infra/.env" ]] && COMPOSE+=(--env-file "$ROOT/infra/.env")
-TAG="${ND_IMAGE_TAG:-dev}"
+TAG="${ND_IMAGE_TAG:-dev}"  # same default as docker-compose.yml
 ISSUER="http://localhost:8081/realms/nautical-deliverance"
 failures=()
 
 fail() { failures+=("$1"); echo "FAIL: $1"; }
 ok() { echo "ok:   $1"; }
-check() { # check <description> <command...>
-  local desc="$1"; shift
-  if "$@" >/dev/null 2>&1; then ok "$desc"; else fail "$desc"; fi
-}
 
 start=$SECONDS
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 180
