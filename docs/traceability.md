@@ -18,3 +18,15 @@
 | S0-R14 | .github/workflows/ci.yml |
 | S0-R15 | .github/workflows/ci.yml |
 | S0-R16 | .github/workflows/ci.yml |
+| S0b-R01 | engine/tests/contracts/test_suffixes.py |
+| S0b-R02 | engine/tests/contracts/test_units.py |
+| S0b-R03 | engine/tests/contracts/test_time.py |
+| S0b-R04 | engine/tests/contracts/test_geo.py |
+| S0b-R05 | engine/tests/contracts/test_geo.py |
+| S0b-R06 | engine/tests/contracts/test_geo.py |
+| S0b-R07 | engine/tests/contracts/conformance_weather.py, engine/tests/contracts/test_weather.py, engine/tests/contracts/test_weather_conformance.py |
+| S0b-R08 | engine/tests/contracts/conformance_performance.py, engine/tests/contracts/test_performance_conformance.py |
+| S0b-R09 | engine/tests/contracts/test_performance_conformance.py, engine/tests/contracts/test_weather_conformance.py |
+| S0b-R10 | engine/tests/contracts/test_route.py |
+| S0b-R11 | engine/tests/unit/test_layers.py |
+| S0b-R12 | .github/workflows/ci.yml |
