@@ -1,12 +1,9 @@
 # req: S0-R10
 name: CodeQL
 
+# D-045: code scanning is unavailable on GitHub Free private repos. Enable pull_request/push triggers when the account is upgraded.
 on:
-  push:
-    branches: [main]
-  pull_request:
-  schedule:
-    - cron: "17 4 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read

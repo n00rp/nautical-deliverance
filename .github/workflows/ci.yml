@@ -172,12 +172,12 @@ jobs:
         run: |
           docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
           docker build -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
-      - name: Scan images (Trivy, HIGH and CRITICAL fail)
+      - name: Scan images (Trivy, fixable HIGH and CRITICAL fail; D-046)
         run: |
           for name in engine web; do
             docker save "nautical-deliverance/$name:$ND_IMAGE_TAG" -o "$RUNNER_TEMP/$name.tar"
             docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image \
-              --input "/scan/$name.tar" --severity HIGH,CRITICAL --exit-code 1
+              --input "/scan/$name.tar" --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
           done
       # --no-build: a missing or mistagged image fails here instead of being silently rebuilt.
       - name: Start stack on the scanned images

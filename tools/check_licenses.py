@@ -6,9 +6,11 @@ import re
 import sys
 from pathlib import Path
 
+# D-044 added MIT-0, CC0-1.0, BlueOak-1.0.0 and Python-2.0.
 # LGPL is allowed for unmodified dynamic use only.
 ALLOWED = {
-    "MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0", "MPL-2.0",
+    "MIT", "MIT-0", "CC0-1.0", "BlueOak-1.0.0", "Python-2.0",
+    "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "PSF-2.0", "MPL-2.0",
     "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later",
 }  # fmt: skip
 

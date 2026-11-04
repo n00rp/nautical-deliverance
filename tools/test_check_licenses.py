@@ -106,3 +106,14 @@ def test_allows_lgpl_trove_classifiers_but_not_gpl(tmp_path: Path) -> None:
     assert _run(tmp_path, [_pip(f"l{i}", lic) for i, lic in enumerate(lgpl)], {}).returncode == 0
     gpl = "GNU General Public License v3 (GPLv3)"
     assert _run(tmp_path, [_pip("g", gpl)], {}).returncode == 1
+
+
+@pytest.mark.req("S0-R10")
+def test_d044_extra_licenses_allowed_and_gpl_agpl_blocked(tmp_path: Path) -> None:
+    extra = ["MIT-0", "CC0-1.0", "BlueOak-1.0.0", "Python-2.0"]
+    assert _run(tmp_path, [_pip(f"p{i}", lic) for i, lic in enumerate(extra)], {}).returncode == 0
+    assert (
+        _run(tmp_path, [], {lic: [_pnpm(f"n{i}")] for i, lic in enumerate(extra)}).returncode == 0
+    )
+    for bad in ("GPL-2.0-only", "GPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later"):
+        assert _run(tmp_path, [_pip("bad", bad)], {}).returncode == 1
