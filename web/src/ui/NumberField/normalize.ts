@@ -33,8 +33,8 @@ export function normalizeDecimal(input: string, decimals: number): Result {
       if (tail === "" || (head.includes(other) && !groupsOk(head, other))) {
         return { error: INVALID };
       }
-      // A head of 0 (or none) cannot carry a thousands group, so 0.125 is a decimal.
-      const grouping = head !== "" && !head.startsWith("0");
+      // A head of only zeros (or none) cannot carry a thousands group, so 0.125 is a decimal.
+      const grouping = head !== "" && !/^0+$/.test(head);
       if (seps.length === 1 && tail.length === 3 && grouping) return { error: AMBIGUOUS };
       int = head.split(other).join("");
       frac = tail;

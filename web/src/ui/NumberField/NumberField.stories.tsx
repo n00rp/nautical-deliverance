@@ -1,9 +1,26 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { NumberField } from "./NumberField";
+import { useState } from "react";
+import { NumberField, type NumberFieldProps } from "./NumberField";
+
+// Keeps the value in state so the stories can be typed into by hand.
+function Stateful(props: NumberFieldProps) {
+  const [value, setValue] = useState(props.value);
+  return (
+    <NumberField
+      {...props}
+      value={value}
+      onChange={(v) => {
+        setValue(v);
+        props.onChange(v);
+      }}
+    />
+  );
+}
 
 const meta = {
   title: "UI/NumberField",
   component: NumberField,
+  render: (args) => <Stateful key={args.value} {...args} />,
   args: {
     id: "qty",
     label: "Quantity",

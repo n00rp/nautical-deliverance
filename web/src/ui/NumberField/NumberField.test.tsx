@@ -27,18 +27,30 @@ describe("normalizeDecimal", () => {
     expect(normalizeDecimal(input, 2)).toEqual({ value });
   });
 
-  it.each(["12abc", "-", ",", "1,234", "1.234", "12.", "1.2,3", "1,5,", "1.2.3,4", "1,2,3"])(
-    "[B1-R14] normalizeDecimal rejects %j",
-    (input) => {
-      expect(normalizeDecimal(input, 3)).toHaveProperty("error");
-    },
-  );
+  it.each([
+    "12abc",
+    "-",
+    ",",
+    "1,234",
+    "1.234",
+    "12.",
+    "1.2,3",
+    "1,5,",
+    "1.2.3,4",
+    "1,2,3",
+    "01,234",
+    "01.234",
+  ])("[B1-R14] normalizeDecimal rejects %j", (input) => {
+    expect(normalizeDecimal(input, 3)).toHaveProperty("error");
+  });
 
   it.each([
     ["0.123", "0.123"],
     ["0,125", "0.125"],
     [".125", "0.125"],
     ["-0,125", "-0.125"],
+    ["00,123", "0.123"],
+    ["00.125", "0.125"],
   ])("[B1-R14] a 0-led head is a decimal, never a thousands group: %j", (input, value) => {
     expect(normalizeDecimal(input, 3)).toEqual({ value });
   });
