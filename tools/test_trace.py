@@ -99,3 +99,34 @@ def test_web_test_names_reference_ids(tmp_path: Path) -> None:
     assert "S0-R04 | web/src/a.test.tsx" in (tmp_path / "docs/traceability.md").read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.req("B1-R15")
+def test_b_prefixed_ids_collected(tmp_path: Path) -> None:
+    _repo(
+        tmp_path,
+        ["B1-R01", "B1a-R02"],
+        {"web/src/a.test.ts": "it('[B1-R01] x', () => {});\nit('[B1a-R02] y', () => {});\n"},
+    )
+    result = _run(tmp_path)
+    assert result.returncode == 0, result.stderr
+    matrix = (tmp_path / "docs/traceability.md").read_text(encoding="utf-8")
+    assert "B1-R01 | web/src/a.test.ts" in matrix
+    assert "B1a-R02 | web/src/a.test.ts" in matrix
+
+
+@pytest.mark.req("B1-R15")
+def test_manual_traceability_spec_is_skipped(tmp_path: Path) -> None:
+    _repo(tmp_path, ["B1-R01"], {"web/src/a.test.ts": "it('[B1-R01] x', () => {});\n"})
+    design = "docs/superpowers/specs/design.md"
+    manual = "# D\n\n- **Traceability:** manual\n\n| B0-R01 | name | text |\n"
+    _write(tmp_path, design, manual)
+    assert _run(tmp_path).returncode == 0
+    assert "B0-R01" not in (tmp_path / "docs/traceability.md").read_text(encoding="utf-8")
+    # Without the marker the same row is a requirement and needs a test.
+    _write(tmp_path, design, "# D\n\n| B0-R01 | name | text |\n")
+    assert "B0-R01: no test" in _run(tmp_path).stderr
+    # A reference to an id defined only in a skipped spec is unknown.
+    _write(tmp_path, design, manual)
+    _write(tmp_path, "web/src/b.test.ts", "it('[B0-R01] y', () => {});\n")
+    assert "B0-R01: unknown requirement" in _run(tmp_path).stderr

@@ -14,6 +14,11 @@ const auth = vi.hoisted(() => ({
 vi.mock("./auth", () => ({ userManager: auth }));
 vi.mock("./api", async (orig) => ({ ...(await orig<typeof import("./api")>()), fetchMe: vi.fn() }));
 
+vi.mock("./masterApi", async (orig) => {
+  const { fakeApi } = await import("./admin/testSupport");
+  return { ...(await orig<typeof import("./masterApi")>()), createMasterApi: () => fakeApi() };
+});
+
 const user = { access_token: "tok", expired: false };
 const me = {
   user_id: "u-1",
@@ -27,6 +32,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   window.history.replaceState({}, "", "/");
+  window.location.hash = "";
 });
 
 describe("App", () => {
@@ -51,6 +57,15 @@ describe("App", () => {
     expect(await screen.findByText("Acme Shipping")).toBeTruthy();
     expect(screen.getByText("admin, viewer")).toBeTruthy();
     expect(fetchMe).toHaveBeenCalledWith("tok");
+  });
+
+  it("[S0-R03] drops roles the web does not know yet without crashing", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue({ ...me, roles: ["legacy_role"] });
+    render(<App />);
+
+    expect(await screen.findByText("Acme Shipping")).toBeTruthy();
+    expect(screen.queryByText("legacy_role")).toBeNull();
   });
 
   it("[S0-R03] shows error message when /me fails", async () => {
@@ -139,5 +154,28 @@ describe("App", () => {
 
     expect(await screen.findByText("Acme Shipping")).toBeTruthy();
     expect(auth.signinRedirectCallback).toHaveBeenCalledOnce();
+  });
+});
+
+describe("App master data", () => {
+  it("[B1-R11] signed-in users get the Master data nav and hash routing to the pages", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue(me);
+    window.location.hash = "#/admin/ports";
+    render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "Main" });
+    expect(nav.querySelectorAll("a")).toHaveLength(7);
+    expect(screen.getByText("Master data")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Ports" })).toBeTruthy();
+    expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Ports");
+  });
+
+  it("[B1-R11] without an admin route the signed-in user is pointed at the menu", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue(me);
+    render(<App />);
+
+    expect(await screen.findByText(/Choose a master-data page/)).toBeTruthy();
   });
 });

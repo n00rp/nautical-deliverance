@@ -13,6 +13,8 @@ build/
 # Node
 node_modules/
 web/dist/
+web/storybook-static/
+web/test-results/
 *.tsbuildinfo
 
 # Environment and secrets

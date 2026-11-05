@@ -6,3 +6,7 @@ it("[S0-R03] userManager uses authorization code flow with the configured client
   expect(userManager.settings.client_id).toBe("nd-web");
   expect(userManager.settings.response_type).toBe("code");
 });
+
+it("[B1-R11] userManager renews the access token silently", () => {
+  expect(userManager.settings.automaticSilentRenew).toBe(true);
+});

@@ -8,3 +8,13 @@ body {
   font-family: system-ui, sans-serif;
   line-height: 1.5;
 }
+
+/* Review Focus 5: no motion for users who ask for less. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}

@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   plugins: [react()],
   test: {
+    include: ["src/**/*.test.{ts,tsx}"],
     environment: "jsdom",
     env: {
       VITE_OIDC_AUTHORITY: "http://idp.test/realms/x",
@@ -12,8 +13,8 @@ export default defineConfig({
     },
     coverage: {
       provider: "v8",
-      include: ["src/**"],
-      exclude: ["src/main.tsx", "src/**/*.test.*"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/main.tsx", "src/**/*.test.*", "src/**/*.stories.tsx", "src/**/testSupport.ts"],
       thresholds: { lines: 90, branches: 90 },
     },
   },

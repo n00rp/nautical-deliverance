@@ -73,7 +73,18 @@ pnpm run depcruise
 pnpm run knip
 pnpm run test --coverage
 pnpm run duplication
+pnpm run stylelint
+pnpm run build-storybook
+pnpm run test:visual:docker                       # visual regression + axe, light and dark
 ```
+
+The visual baselines (`web/tests/visual/__screenshots__/`) are Linux-only and are produced only in the digest-pinned Playwright image used by CI (`web/scripts/visual-docker.sh`; needs Docker). After an intended visual change, regenerate and commit them with:
+
+```bash
+pnpm --dir web run test:visual:docker --update-snapshots
+```
+
+Pixel tolerance: at most 20 pixels may differ, per-pixel `threshold` 0.1, on the story root element (`maxDiffPixels` in `web/playwright.config.ts`). `pnpm run storybook` starts Storybook for development.
 
 Repository, from the root:
 
@@ -95,8 +106,10 @@ Realm `nautical-deliverance` in `infra/keycloak/realm-dev.json`. Test-only crede
 | Username / password | Organisation | Role |
 |---|---|---|
 | `admin@acme.test` | Acme | admin |
-| `route_analyst@acme.test` | Acme | route_analyst |
+| `bunker_buyer@acme.test` | Acme | bunker_buyer |
+| `operator@acme.test` | Acme | operator |
 | `viewer@acme.test` | Acme | viewer |
 | `admin@borealis.test` | Borealis | admin |
-| `route_analyst@borealis.test` | Borealis | route_analyst |
+| `bunker_buyer@borealis.test` | Borealis | bunker_buyer |
+| `operator@borealis.test` | Borealis | operator |
 | `viewer@borealis.test` | Borealis | viewer |

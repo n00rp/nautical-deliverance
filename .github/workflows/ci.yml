@@ -17,7 +17,7 @@ env:
   UV_LOCKED: "1"
 
 jobs:
-  # req: S0-R06 S0-R07 S0-R08 S0-R15
+  # req: S0-R06 S0-R07 S0-R08 S0-R15 B1-R16
   engine:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -74,7 +74,7 @@ jobs:
       - name: Duplication (jscpd, threshold 0)
         run: pnpm --dir web run duplication
 
-  # req: S0-R06 S0-R07 S0-R15
+  # req: S0-R06 S0-R07 S0-R15 B1-R12 B1-R16
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -97,9 +97,40 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run format:check
+      - run: pnpm run stylelint
       - run: pnpm run depcruise
       - run: pnpm run knip
       - run: pnpm run test --coverage
+
+  # req: B1-R13
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Baselines are Linux-only, produced in this exact image (Playwright 1.64.1).
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
+      options: --ipc=host
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: web/package.json
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build-storybook
+      - name: Visual regression and accessibility (light and dark)
+        run: pnpm run test:visual
+      - name: Upload diff images
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: visual-diffs
+          path: web/test-results
+          retention-days: 7
 
   # req: S0-R09
   traceability:
@@ -223,7 +254,7 @@ jobs:
 
   # req: S0-R14
   ci-duration:
-    needs: [engine, web, traceability, security, smoke, readme]
+    needs: [engine, web, visual, traceability, security, smoke, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

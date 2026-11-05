@@ -1,0 +1,132 @@
+.shell {
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-body);
+  font-size: var(--text-md);
+}
+
+.banner {
+  padding: var(--space-1) var(--space-4);
+  background-color: var(--color-banner);
+  color: var(--color-banner-fg);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-line);
+  background-color: var(--color-surface);
+}
+
+.brand {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.user {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.roles {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.menu {
+  display: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+}
+
+.menu:focus-visible,
+.nav a:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: 12.5rem minmax(0, 1fr);
+  gap: var(--space-5);
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.nav a,
+.disabled {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  color: var(--color-fg);
+  text-decoration: none;
+}
+
+.nav a:hover {
+  background-color: var(--color-info-soft);
+}
+
+.disabled {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.group {
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.main {
+  min-width: 0;
+}
+
+/* Review Focus 4: below 900 px the nav folds behind the menu button. */
+@media (max-width: 900px) {
+  .menu {
+    display: inline-block;
+  }
+
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nav {
+    display: none;
+  }
+
+  .nav.open {
+    display: flex;
+  }
+}

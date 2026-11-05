@@ -13,8 +13,12 @@
         "description": "admin role"
       },
       {
-        "name": "route_analyst",
-        "description": "route_analyst role"
+        "name": "bunker_buyer",
+        "description": "bunker_buyer role"
+      },
+      {
+        "name": "operator",
+        "description": "operator role"
       },
       {
         "name": "viewer",
@@ -59,11 +63,11 @@
       ]
     },
     {
-      "username": "route_analyst@acme.test",
-      "email": "route_analyst@acme.test",
+      "username": "bunker_buyer@acme.test",
+      "email": "bunker_buyer@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "route_analyst",
+      "firstName": "bunker_buyer",
       "lastName": "acme.test",
       "attributes": {
         "org_id": [
@@ -71,12 +75,35 @@
         ]
       },
       "realmRoles": [
-        "route_analyst"
+        "bunker_buyer"
       ],
       "credentials": [
         {
           "type": "password",
-          "value": "route_analyst@acme.test",
+          "value": "bunker_buyer@acme.test",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "operator@acme.test",
+      "email": "operator@acme.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "operator",
+      "lastName": "acme.test",
+      "attributes": {
+        "org_id": [
+          "11111111-1111-4111-8111-111111111111"
+        ]
+      },
+      "realmRoles": [
+        "operator"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "operator@acme.test",
           "temporary": false
         }
       ]
@@ -128,11 +155,11 @@
       ]
     },
     {
-      "username": "route_analyst@borealis.test",
-      "email": "route_analyst@borealis.test",
+      "username": "bunker_buyer@borealis.test",
+      "email": "bunker_buyer@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "route_analyst",
+      "firstName": "bunker_buyer",
       "lastName": "borealis.test",
       "attributes": {
         "org_id": [
@@ -140,12 +167,35 @@
         ]
       },
       "realmRoles": [
-        "route_analyst"
+        "bunker_buyer"
       ],
       "credentials": [
         {
           "type": "password",
-          "value": "route_analyst@borealis.test",
+          "value": "bunker_buyer@borealis.test",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "operator@borealis.test",
+      "email": "operator@borealis.test",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "operator",
+      "lastName": "borealis.test",
+      "attributes": {
+        "org_id": [
+          "22222222-2222-4222-8222-222222222222"
+        ]
+      },
+      "realmRoles": [
+        "operator"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "operator@borealis.test",
           "temporary": false
         }
       ]

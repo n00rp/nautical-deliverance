@@ -1,13 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ADMIN_NAV, configFor } from "./admin/configs";
+import { MasterDataPage } from "./admin/MasterDataPage";
+import { parseAdmin, useHash } from "./admin/routes";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
+import { createMasterApi, type TokenSource } from "./masterApi";
 import { PRODUCT_NAME } from "./productName";
+import { AppShell } from "./ui/AppShell/AppShell";
+import type { Role } from "./ui/RoleGate/RoleGate";
+import { ToastHost, ToastProvider } from "./ui/Toast/Toast";
+
+// The engine already drops unknown roles; this guard narrows the type for the web.
+const WEB_ROLES: readonly string[] = ["admin", "bunker_buyer", "operator", "viewer"];
+const isRole = (r: string): r is Role => WEB_ROLES.includes(r);
 
 type State =
   | { kind: "loading" }
   | { kind: "signedOut" }
   | { kind: "signedIn"; me: Me }
   | { kind: "error"; message: string };
+
+// The token is read per request: oidc-client-ts renews it in the background (about 5 min).
+const tokens: TokenSource = {
+  token: async () => (await userManager.getUser())?.access_token ?? "",
+  renew: async () => (await userManager.signinSilent())?.access_token ?? null,
+};
 
 function cleanUrl() {
   window.history.replaceState({}, document.title, window.location.pathname);
@@ -55,24 +72,40 @@ export function App() {
     };
   }, []);
 
+  const user =
+    state.kind === "signedIn"
+      ? { name: state.me.organization.name, roles: state.me.roles.filter(isRole) }
+      : null;
+  const signedIn = state.kind === "signedIn";
+  const api = useMemo(() => (signedIn ? createMasterApi(tokens) : null), [signedIn]);
+  const route = parseAdmin(useHash());
+
   return (
-    <main>
-      <h1>{PRODUCT_NAME}</h1>
-      {state.kind === "loading" && <p role="status">Loading…</p>}
-      {state.kind === "error" && <p role="alert">{state.message}</p>}
-      {(state.kind === "signedOut" || state.kind === "error") && (
-        <button type="button" onClick={() => void userManager.signinRedirect()}>
-          Sign in
-        </button>
-      )}
-      {state.kind === "signedIn" && (
-        <dl>
-          <dt>Organization</dt>
-          <dd>{state.me.organization.name}</dd>
-          <dt>Roles</dt>
-          <dd>{state.me.roles.join(", ")}</dd>
-        </dl>
-      )}
-    </main>
+    <ToastProvider>
+      <AppShell
+        productName={PRODUCT_NAME}
+        user={user}
+        nav={user ? ADMIN_NAV : []}
+        current={route ? `#/admin/${route.path}` : undefined}
+      >
+        {state.kind === "loading" && <p role="status">Loading…</p>}
+        {state.kind === "error" && <p role="alert">{state.message}</p>}
+        {(state.kind === "signedOut" || state.kind === "error") && (
+          <button type="button" onClick={() => void userManager.signinRedirect()}>
+            Sign in
+          </button>
+        )}
+        {user && api && route && (
+          <MasterDataPage
+            key={route.path}
+            config={configFor(route.path)}
+            api={api}
+            roles={user.roles}
+          />
+        )}
+        {user && !route && <p>Choose a master-data page from the menu.</p>}
+      </AppShell>
+      <ToastHost />
+    </ToastProvider>
   );
 }

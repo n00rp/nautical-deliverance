@@ -7,4 +7,5 @@ export const userManager = new UserManager({
   redirect_uri: `${window.location.origin}/`,
   response_type: "code",
   scope: "openid",
+  automaticSilentRenew: true,
 });

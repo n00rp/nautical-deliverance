@@ -1,0 +1,10 @@
+.note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--color-line);
+  border-radius: var(--radius);
+  background-color: var(--color-info-soft);
+  color: var(--color-fg);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}

@@ -1,6 +1,7 @@
 # B0 UX Concept — Specification
 
 - **Status:** Approved by owner 2026-11-05
+- **Traceability:** manual
 - **Date:** 2026-11-05
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md), build step B0 (D-076)
 - **Goal:** A clickable HTML prototype of the pilot 1 purchase flow, with demo data, that the brief's author reviews before anything is built. Design only — no backend, no persistence.
