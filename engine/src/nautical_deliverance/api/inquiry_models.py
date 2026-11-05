@@ -211,6 +211,6 @@ class InquiryListItem(BaseModel):
     port_time_zone: str
     eta: datetime | None
     buyer_name: str | None
-    rfq_total: int
-    rfq_sent: int
+    rfq_total: int | None  # null for the Operator: who was contacted stays hidden (R6)
+    rfq_sent: int | None
     eta_warning: bool

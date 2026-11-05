@@ -62,6 +62,7 @@ ETA_WARNING_WINDOW = timedelta(hours=48)
 LOCKED_MESSAGE = "Locked after Draft"
 OPERATOR_ROLES = frozenset({Role.OPERATOR, Role.ADMIN})
 BUYER_ROLES = frozenset({Role.BUNKER_BUYER, Role.ADMIN})
+RFQ_READERS = BUYER_ROLES | {Role.VIEWER}
 USER_ROLES = {"operator_id": OPERATOR_ROLES, "buyer_id": BUYER_ROLES}  # requester: any user
 MASTER: dict[str, tuple[Any, str]] = {
     "vessel_id": (Vessel, "vessel"),
@@ -247,6 +248,17 @@ def _eta_warning(state: str, eta: datetime | None, now: datetime) -> bool:
     return open_ and eta < now + ETA_WARNING_WINDOW
 
 
+def _sees_rfqs(principal: Principal) -> bool:
+    """Only RFQ readers may learn who or how many suppliers were contacted (R6)."""
+    return bool(RFQ_READERS & principal.roles)
+
+
+def _out(s: Session, inq: Inquiry, principal: Principal) -> InquiryOut:
+    """Return the inquiry record; the RFQ deadline is hidden from the Operator."""
+    hide = {} if _sees_rfqs(principal) else {"rfq_deadline": None}
+    return InquiryOut(**{**detail(s, inq), **hide})
+
+
 @router.get("", response_model=list[InquiryListItem])
 def list_inquiries(  # noqa: PLR0913, PLR0917
     principal: Reader,
@@ -263,8 +275,11 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
         rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
+        hide = {} if _sees_rfqs(principal) else {"rfq_total": None, "rfq_sent": None}
         return [
-            InquiryListItem(**r._asdict(), eta_warning=_eta_warning(r.status, r.eta, now))
+            InquiryListItem(
+                **{**r._asdict(), **hide}, eta_warning=_eta_warning(r.status, r.eta, now)
+            )
             for r in rows
         ]
 
@@ -273,7 +288,7 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
 def get_inquiry(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
     """One inquiry with lines, warnings and display names."""
     with scope(principal, engine) as s:
-        return InquiryOut(**detail(s, _load(s, inquiry_id)))
+        return _out(s, _load(s, inquiry_id), principal)
 
 
 def _create(  # noqa: PLR0913, PLR0917
@@ -331,7 +346,7 @@ def _create(  # noqa: PLR0913, PLR0917
             **(extra or {}),
         },
     )
-    return InquiryOut(**detail(s, inq))
+    return _out(s, inq, principal)
 
 
 @router.post("", response_model=InquiryOut, status_code=status.HTTP_201_CREATED)
@@ -369,7 +384,7 @@ def update_inquiry(
             if texts != old_texts:
                 changed["lines"] = texts
         if not changed:
-            return InquiryOut(**detail(s, inq))
+            return _out(s, inq, principal)
         locked = [k for k in changed if k in LOCKED_AFTER_DRAFT]
         if inq.status != Status.DRAFT and locked:
             raise HTTPException(
@@ -400,7 +415,7 @@ def update_inquiry(
             before=before,
             after=changed,
         )
-        return InquiryOut(**detail(s, inq))
+        return _out(s, inq, principal)
 
 
 def _change(  # noqa: PLR0913, PLR0917
@@ -427,7 +442,7 @@ def _change(  # noqa: PLR0913, PLR0917
         before=before,
         after=values,
     )
-    return InquiryOut(**detail(s, inq))
+    return _out(s, inq, principal)
 
 
 @router.post("/{inquiry_id}/take", response_model=InquiryOut)
@@ -438,7 +453,7 @@ def take_inquiry(
     with scope(principal, engine) as s:
         inq = _lock_open(s, inquiry_id, body.version)
         if inq.buyer_id == principal.user_id:
-            return InquiryOut(**detail(s, inq))
+            return _out(s, inq, principal)
         return _change(s, principal, now, inq, "take", {"buyer_id": principal.user_id})
 
 
@@ -488,4 +503,9 @@ def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> ob
             .where(AuditEntry.entity_type == "inquiry", AuditEntry.entity_id == inquiry_id)
             .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
         )
-        return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+        out = [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+        if _sees_rfqs(principal):
+            return out
+        for e in out:  # the RFQ deadline reveals that suppliers were contacted
+            e.changes.pop("rfq_deadline", None)
+        return [e for e in out if e.changes]
