@@ -40,6 +40,7 @@
   },
   "users": [
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000001",
       "username": "admin@acme.test",
       "email": "admin@acme.test",
       "emailVerified": true,
@@ -63,6 +64,7 @@
       ]
     },
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000002",
       "username": "bunker_buyer@acme.test",
       "email": "bunker_buyer@acme.test",
       "emailVerified": true,
@@ -86,6 +88,7 @@
       ]
     },
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000003",
       "username": "operator@acme.test",
       "email": "operator@acme.test",
       "emailVerified": true,
@@ -109,6 +112,7 @@
       ]
     },
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000004",
       "username": "viewer@acme.test",
       "email": "viewer@acme.test",
       "emailVerified": true,
@@ -132,6 +136,7 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000001",
       "username": "admin@borealis.test",
       "email": "admin@borealis.test",
       "emailVerified": true,
@@ -155,6 +160,7 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000002",
       "username": "bunker_buyer@borealis.test",
       "email": "bunker_buyer@borealis.test",
       "emailVerified": true,
@@ -178,6 +184,7 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000003",
       "username": "operator@borealis.test",
       "email": "operator@borealis.test",
       "emailVerified": true,
@@ -201,6 +208,7 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000004",
       "username": "viewer@borealis.test",
       "email": "viewer@borealis.test",
       "emailVerified": true,

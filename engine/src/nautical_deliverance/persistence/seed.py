@@ -24,15 +24,30 @@ Sources, retrieved 2026-11-05:
 
 import os
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from sqlalchemy import Connection, Engine, create_engine, text
+from sqlalchemy.orm import Session
+
+from nautical_deliverance.persistence.inquiry_repo import next_reference
 
 # Must match the `org_id` attributes of the users in infra/keycloak/realm-dev.json.
 DEV_ORGS = {
     uuid.UUID("11111111-1111-4111-8111-111111111111"): "Acme Shipping",
     uuid.UUID("22222222-2222-4222-8222-222222222222"): "Borealis Tankers",
 }
+
+# Must match `id`, `org_id`, names, e-mails and roles of infra/keycloak/realm-dev.json (the id is
+# the Keycloak `sub`, so a user's first login upserts onto the seeded row).
+DEV_USERS = tuple(
+    (uuid.UUID(f"{c * 8}-0000-4000-8000-{n:012d}"), org, f"{role} {dom}", f"{role}@{dom}", role)
+    for c, org, dom in (
+        ("a", uuid.UUID("11111111-1111-4111-8111-111111111111"), "acme.test"),
+        ("b", uuid.UUID("22222222-2222-4222-8222-222222222222"), "borealis.test"),
+    )
+    for n, role in enumerate(("admin", "bunker_buyer", "operator", "viewer"), 1)
+)  # fmt: skip
 
 PRODUCTS = (  # name, default unit (spec §3.1, per the brief)
     ("HSFO 3.5%", "mt"), ("VLSFO 0.5%", "mt"), ("DMA 0.1%", "mt"), ("Biofuel", "mt"),
@@ -388,11 +403,117 @@ def seed_demo_master(engine: Engine) -> None:
             _seed_counterparties(db, data)
 
 
+def _scope(conn: Connection, org: uuid.UUID) -> _Org:
+    conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
+    return _Org(conn, org)
+
+
+def seed_demo_users(engine: Engine, now: datetime | None = None) -> None:
+    """Insert the realm users (name = "firstName lastName"); safe to re-run."""
+    now = now or datetime.now(UTC)
+    with engine.begin() as conn:
+        for uid, org, name, email, role in DEV_USERS:
+            _scope(conn, org).put(
+                "INSERT INTO app_user (id, organization_id, last_seen_at, name, email, roles)"
+                " VALUES (:i, :o, :t, :n, :e, :r) ON CONFLICT (id) DO NOTHING",
+                i=uid,
+                t=now,
+                n=name,
+                e=email,
+                r=[role],
+            )
+
+
+# Demo inquiries per organization: (status, buyer?, vessel pick, port, reason, ETA hours from
+# the seed time, stay hours, lines (product, qty, unit, density), cancel reason). "bio_less" is
+# the first vessel without B24 approval (so B24 triggers the not-approved-fuel warning).
+_ISO = "ISO 8217:2024"
+_VL, _DMA = "VLSFO 0.5%", "DMA 0.1%"
+_INQUIRIES = (
+    ("draft", False, 0, "NLRTM", "Bunkers only", 30, 20, ((_VL, "500", "mt", None),), None),
+    ("draft", True, 1, "SGSIN", "Bunkers only", 120, 30,
+     ((_DMA, "120.5", "m3", "850.0"), (_VL, "800", "mt", None)), None),
+    ("draft", True, "bio_less", "GIGIB", "Working cargo", 150, 24,
+     (("B24", "300", "mt", None),), None),
+    ("rfq_sent", True, 3, "AEFJR", "Bunkers only", 72, 36,
+     (("HSFO 3.5%", "1200", "mt", None),), None),
+    ("offers_received", True, 4, "GRPIR", "Debunkering", 96, 28, ((_VL, "650", "mt", None),), None),
+    ("nominated", True, 5, "USHOU", "Bunkers only", 200, 40,
+     ((_VL, "900", "mt", None), (_DMA, "100", "mt", None)), None),
+    ("cancelled", True, 0, "BEANR", "Working cargo", 60, 24,
+     ((_DMA, "250", "mt", None),), "Voyage cancelled by charterer"),
+)  # fmt: skip
+
+
+def _seed_inquiry(  # noqa: PLR0913, PLR0917
+    db: _Org,
+    s: Session,
+    now: datetime,
+    n: int,
+    spec: tuple[Any, ...],
+    vessels: tuple[Any, ...],
+    users: dict[str, uuid.UUID],
+) -> None:
+    status, buyer, pick, port, reason, eta_h, stay_h, lines, cancel = spec
+    voyage = f"DEMO-{n}"  # marker: a present voyage means this inquiry was already seeded
+    if db.conn.execute(text("SELECT 1 FROM inquiry WHERE voyage = :v"), {"v": voyage}).first():
+        return
+    vessel = next(v for v in vessels if "B24" not in v[6]) if pick == "bio_less" else vessels[pick]
+    iid = db.one(
+        "INSERT INTO inquiry (organization_id, reference, status, vessel_id, legal_entity_id,"
+        " port_id, bunkering_reason_id, voyage, operator_id, requester_id, buyer_id, eta, etd,"
+        " cancel_reason, created_by, created_at, updated_at) VALUES (:o, :ref, :st,"
+        " (SELECT id FROM vessel WHERE imo = :imo),"
+        " (SELECT id FROM legal_entity WHERE code = :le), (SELECT id FROM port WHERE locode = :lc),"
+        " (SELECT id FROM bunkering_reason WHERE name = :br), :v, :op, :op, :by, :eta, :etd,"
+        " :cr, :op, :now, :now) RETURNING id",
+        ref=next_reference(s, db.org, now),
+        st=status,
+        imo=vessel[1],
+        le=vessel[5],
+        lc=port,
+        br=reason,
+        v=voyage,
+        op=users["operator"],
+        by=users["bunker_buyer"] if buyer else None,
+        eta=now + timedelta(hours=eta_h),
+        etd=now + timedelta(hours=eta_h + stay_h),
+        cr=cancel,
+        now=now,
+    )
+    for pos, (product, qty, unit, density) in enumerate(lines, 1):
+        db.put(
+            "INSERT INTO inquiry_line (organization_id, inquiry_id, position, product_id,"
+            " quantity, unit, density, iso_spec_version_id) VALUES (:o, :i, :p,"
+            " (SELECT id FROM product WHERE name = :pr), :q, :u, :d,"
+            " (SELECT id FROM iso_spec_version WHERE name = :iso))",
+            i=iid, p=pos, pr=product, q=qty, u=unit, d=density, iso=_ISO,
+        )  # fmt: skip
+
+
+def seed_demo_inquiries(engine: Engine, now: datetime | None = None) -> None:
+    """Insert demo users and each organization's demo inquiries (ETAs relative to ``now``).
+
+    Needs seed_demo_master first. Non-draft statuses are written directly (no transition API
+    yet). Like the master seed this writes no audit entries (B1-D12); safe to re-run.
+    """
+    now = now or datetime.now(UTC)
+    seed_demo_users(engine, now)
+    with engine.begin() as conn:
+        for org, data in ORG_DATA.items():
+            db = _scope(conn, org)
+            users = {role: uid for uid, o, _n, _e, role in DEV_USERS if o == org}
+            s = Session(conn)
+            for n, spec in enumerate(_INQUIRIES, 1):
+                _seed_inquiry(db, s, now, n, spec, data["vessels"], users)
+
+
 def main() -> None:
     """Seed using the owner URL from the environment."""
     engine = create_engine(os.environ["ND_MIGRATION_DATABASE_URL"])
     seed_dev_orgs(engine)
     seed_demo_master(engine)
+    seed_demo_inquiries(engine)
 
 
 if __name__ == "__main__":  # pragma: no cover
