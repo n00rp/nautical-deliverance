@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { describe } from "../admin/errors";
+import { goInquiry } from "../admin/routes";
 import {
   STATUS_LABEL,
   type InquiryApi,
@@ -74,10 +75,6 @@ const COLUMNS = [
   },
 ];
 
-const open = (sub: string) => {
-  window.location.hash = `#/inquiries/${sub}`;
-};
-
 /** The start page: every inquiry the caller may see, filtered and sorted by the engine (B2-R12). */
 export function WorkList({ api, roles }: WorkListProps) {
   const toast = useToast();
@@ -87,6 +84,7 @@ export function WorkList({ api, roles }: WorkListProps) {
   const [mine, setMine] = useState(false);
   const [sort, setSort] = useState<Sort>("eta");
   const [rows, setRows] = useState<InquiryListItem[] | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -106,10 +104,13 @@ export function WorkList({ api, roles }: WorkListProps) {
     void (async () => {
       try {
         const loaded = await api.listInquiries(params);
-        if (live) setRows(loaded);
+        if (!live) return;
+        setRows(loaded);
+        setFailed(false);
       } catch (e) {
         if (!live) return;
         setRows([]);
+        setFailed(true);
         toast(describe(e), "crit");
       }
     })();
@@ -123,7 +124,7 @@ export function WorkList({ api, roles }: WorkListProps) {
       <Button
         variant="primary"
         onClick={() => {
-          open("new");
+          goInquiry("new");
         }}
       >
         New inquiry
@@ -153,10 +154,17 @@ export function WorkList({ api, roles }: WorkListProps) {
         loading={rows === null}
         rowKey={(r) => r.id}
         onRowSelect={(r) => {
-          open(r.id);
+          goInquiry(r.id);
         }}
         empty={
-          <EmptyState title="No inquiries" body="Nothing matches this filter." action={create} />
+          failed ? (
+            <EmptyState
+              title="Could not load inquiries"
+              body="Change the filter or reload the page to try again."
+            />
+          ) : (
+            <EmptyState title="No inquiries" body="Nothing matches this filter." />
+          )
         }
         columns={COLUMNS}
       />

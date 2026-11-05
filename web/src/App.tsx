@@ -5,6 +5,7 @@ import { parseAdmin, parseInquiries, useHash } from "./admin/routes";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
 import type { TokenSource } from "./http";
+import { InquiryPage } from "./inquiries/InquiryPage";
 import { WorkList } from "./inquiries/WorkList";
 import { createInquiryApi } from "./inquiryApi";
 import { createMasterApi } from "./masterApi";
@@ -114,8 +115,16 @@ export function App() {
         {user && inquiryApi && inquiries && !inquiries.id && (
           <WorkList api={inquiryApi} roles={user.roles} />
         )}
-        {user && inquiries?.id && <p>Inquiry details are not available yet.</p>}
-        {user && !route && !inquiries && <p>Choose a master-data page from the menu.</p>}
+        {user && api && inquiryApi && inquiries?.id && (
+          <InquiryPage
+            key={inquiries.id}
+            id={inquiries.id}
+            api={inquiryApi}
+            master={api}
+            roles={user.roles}
+          />
+        )}
+        {user && !route && !inquiries && <p>Page not found. Choose a page from the menu.</p>}
       </AppShell>
       <ToastHost />
     </ToastProvider>

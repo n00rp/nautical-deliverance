@@ -19,10 +19,13 @@ vi.mock("./masterApi", async (orig) => {
   return { ...(await orig<typeof import("./masterApi")>()), createMasterApi: () => fakeApi() };
 });
 
-vi.mock("./inquiryApi", async (orig) => ({
-  ...(await orig<typeof import("./inquiryApi")>()),
-  createInquiryApi: () => ({ listInquiries: () => Promise.resolve([]) }),
-}));
+vi.mock("./inquiryApi", async (orig) => {
+  const { inquiryApi } = await import("./inquiries/pageSupport");
+  return {
+    ...(await orig<typeof import("./inquiryApi")>()),
+    createInquiryApi: () => ({ ...inquiryApi(), listInquiries: () => Promise.resolve([]) }),
+  };
+});
 
 const user = { access_token: "tok", expired: false };
 const me = {
@@ -183,7 +186,7 @@ describe("App master data", () => {
     window.location.hash = "#/nowhere";
     render(<App />);
 
-    expect(await screen.findByText(/Choose a master-data page/)).toBeTruthy();
+    expect(await screen.findByText(/Page not found/)).toBeTruthy();
   });
 });
 
@@ -198,12 +201,24 @@ describe("App inquiries", () => {
     expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Inquiries");
   });
 
-  it("[B2-R12] an inquiry id route shows the placeholder until the form exists", async () => {
+  it.each(["", "#/", "#/inquiries", "#/inquiries/"])(
+    "[B2-R12] the hash %j opens the work list",
+    async (hash) => {
+      auth.getUser.mockResolvedValue(user);
+      vi.mocked(fetchMe).mockResolvedValue(me);
+      window.location.hash = hash;
+      render(<App />);
+
+      expect(await screen.findByRole("heading", { name: "Inquiries" })).toBeTruthy();
+    },
+  );
+
+  it("[B2-R13] an inquiry id route opens the inquiry page", async () => {
     auth.getUser.mockResolvedValue(user);
     vi.mocked(fetchMe).mockResolvedValue(me);
     window.location.hash = "#/inquiries/new";
     render(<App />);
 
-    expect(await screen.findByText(/not available yet/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "New inquiry" })).toBeTruthy();
   });
 });

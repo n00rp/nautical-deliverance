@@ -9,4 +9,9 @@ describe("LockedNote", () => {
     render(<LockedNote what="prices and offers" />);
     expect(screen.getByText("Hidden for your role: prices and offers")).toBeTruthy();
   });
+
+  it("[B2-R13] locked note: shows a custom message", () => {
+    render(<LockedNote message="Locked after Draft — duplicate to change scope" />);
+    expect(screen.getByText("Locked after Draft — duplicate to change scope")).toBeTruthy();
+  });
 });

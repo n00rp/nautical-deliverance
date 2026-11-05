@@ -147,6 +147,7 @@ describe("WorkList", () => {
   it("[B2-R12] shows the empty state", async () => {
     setup([]);
     expect(await screen.findByText("No inquiries")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "New inquiry" })).toHaveLength(1);
   });
 
   it("[B2-R12] a failed load shows a toast", async () => {
@@ -158,5 +159,8 @@ describe("WorkList", () => {
       </ToastProvider>,
     );
     expect(await screen.findByText("boom")).toBeTruthy();
+    // A failure is not an empty result.
+    expect(await screen.findByText("Could not load inquiries")).toBeTruthy();
+    expect(screen.queryByText("No inquiries")).toBeNull();
   });
 });

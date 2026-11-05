@@ -20,9 +20,13 @@ describe("admin routes", () => {
 
   it("[B2-R12] parses the inquiry hashes, with the empty hash as the start page", () => {
     expect(parseInquiries("")).toEqual({ id: undefined });
+    expect(parseInquiries("#")).toEqual({ id: undefined });
+    expect(parseInquiries("#/")).toEqual({ id: undefined });
     expect(parseInquiries("#/inquiries")).toEqual({ id: undefined });
+    expect(parseInquiries("#/inquiries/")).toEqual({ id: undefined });
     expect(parseInquiries("#/inquiries/new")).toEqual({ id: "new" });
     expect(parseInquiries("#/inquiries/abc")).toEqual({ id: "abc" });
     expect(parseInquiries("#/admin/ports")).toBeNull();
+    expect(parseInquiries("#/inquiries/a/b")).toBeNull();
   });
 });
