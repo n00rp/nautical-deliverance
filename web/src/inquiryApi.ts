@@ -32,9 +32,9 @@ export type InquiryListItem = {
   port_time_zone: string;
   eta: string | null;
   buyer_name: string | null;
-  /** RFQs that are not withdrawn, and how many of those have been sent. */
-  rfq_total: number;
-  rfq_sent: number;
+  /** RFQs that are not withdrawn, and how many of those have been sent; null for the Operator. */
+  rfq_total: number | null;
+  rfq_sent: number | null;
   eta_warning: boolean;
 };
 
@@ -117,6 +117,9 @@ export type Inquiry = {
   internal_comments: string | null;
   cancel_reason: string | null;
   rfq_deadline: string | null;
+  /** Null for the Operator, like rfq_deadline: who was contacted stays hidden. */
+  rfq_total: number | null;
+  rfq_sent: number | null;
   created_at: string;
   created_by: string;
   updated_at: string;
@@ -125,6 +128,9 @@ export type Inquiry = {
 };
 
 export type DirectoryUser = { id: string; name: string; email: string; roles: Role[] };
+
+/** The statuses in which the engine accepts new RFQs. */
+export const SUPPLIER_STATES: InquiryStatus[] = ["draft", "rfq_sent", "offers_received"];
 
 /** Typed client for /api/v1/inquiries and /api/v1/users. */
 export function createInquiryApi(auth: TokenSource) {

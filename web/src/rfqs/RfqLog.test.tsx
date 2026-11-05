@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
+import { inquiry } from "../inquiries/pageSupport";
 import type { Role } from "../ui/RoleGate/RoleGate";
 import { ToastHost, ToastProvider } from "../ui/Toast/Toast";
 import { RfqLog } from "./RfqLog";
@@ -263,6 +264,14 @@ describe("RfqLog", () => {
     expect(screen.getByRole("link", { name: "Select suppliers" }).getAttribute("href")).toBe(
       "#/inquiries/i1/suppliers",
     );
+  });
+
+  it("[B3-R13] Select suppliers is offered only while the inquiry accepts RFQs", async () => {
+    const api = logApi(all);
+    vi.spyOn(api, "getInquiry").mockResolvedValue(inquiry({ status: "nominated" }));
+    setup(["bunker_buyer"], all, api);
+    await screen.findByRole("link", { name: "Back to inquiry" });
+    expect(screen.queryByRole("link", { name: "Select suppliers" })).toBeNull();
   });
 
   it("[B3-R13] a failed load shows an error state", async () => {

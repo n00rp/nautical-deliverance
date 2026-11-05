@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { describe } from "../admin/errors";
 import { useReload } from "../admin/useReload";
-import { STATUS_LABEL, type Inquiry, type InquiryApi } from "../inquiryApi";
+import { STATUS_LABEL, SUPPLIER_STATES, type Inquiry, type InquiryApi } from "../inquiryApi";
 import type { RfqApi, RfqItem } from "../rfqApi";
 import { Button } from "../ui/Button/Button";
 import { DateTimeField } from "../ui/DateTimeField/DateTimeField";
@@ -203,7 +203,7 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
           <a className={page.back} href={`#/inquiries/${inquiryId}`}>
             Back to inquiry
           </a>
-          {canWrite && (
+          {canWrite && SUPPLIER_STATES.includes(inquiry.status) && (
             <a className={page.back} href={`#/inquiries/${inquiryId}/suppliers`}>
               Select suppliers
             </a>

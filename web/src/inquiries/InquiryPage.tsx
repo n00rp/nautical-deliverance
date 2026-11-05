@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { describe, useFail } from "../admin/errors";
 import { goInquiry } from "../admin/routes";
-import { STATUS_LABEL, type Inquiry, type InquiryApi, type InquiryBody } from "../inquiryApi";
+import {
+  STATUS_LABEL,
+  SUPPLIER_STATES,
+  type Inquiry,
+  type InquiryApi,
+  type InquiryBody,
+} from "../inquiryApi";
 import type { MasterApi } from "../masterApi";
 import { Button } from "../ui/Button/Button";
 import { EmptyState } from "../ui/EmptyState/EmptyState";
@@ -49,8 +55,13 @@ async function loadRefs(api: InquiryApi, master: Pick<MasterApi, "list">): Promi
   };
 }
 
-/** The statuses in which the engine accepts new RFQs. */
-const SUPPLIER_STATES: Inquiry["status"][] = ["draft", "rfq_sent", "offers_received"];
+const READERS: Role[] = ["admin", "bunker_buyer", "viewer"];
+const WRITERS: Role[] = ["admin", "bunker_buyer"];
+
+/** Writers can always open the log; readers only once there is an RFQ to read. */
+const showLog = (rec: Inquiry, roles: Role[]) =>
+  roles.some((r) => WRITERS.includes(r)) ||
+  (roles.some((r) => READERS.includes(r)) && (rec.rfq_total ?? 0) > 0);
 
 /** Create, edit and act on one inquiry (B2-R13). */
 export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
@@ -138,6 +149,11 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
       <div className={css.title}>
         <h2 className={css.heading}>{rec ? rec.reference : "New inquiry"}</h2>
         {rec && <StatusPill status={STATUS_LABEL[rec.status]} />}
+        {rec && showLog(rec, roles) && (
+          <a className={css.link} href={`#/inquiries/${rec.id}/rfqs`}>
+            RFQs
+          </a>
+        )}
       </div>
       {rec?.cancel_reason && <p className={css.info}>{`Cancelled: ${rec.cancel_reason}`}</p>}
       <InquiryForm

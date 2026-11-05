@@ -45,13 +45,48 @@ describe("WorkList", () => {
     expect(row.getByText("Bea Buyer")).toBeTruthy();
   });
 
-  it("[B3-R13] next step of a draft: assign a buyer, create RFQs, or how many are sent", async () => {
-    setup([item("1", { buyer_name: null }), item("2"), item("3", { rfq_total: 3, rfq_sent: 1 })]);
+  it("[B3-R13] next step of a draft: assign a buyer or create RFQs", async () => {
+    setup([item("1", { buyer_name: null }), item("2")]);
     const next = async (n: string) =>
       within(await screen.findByRole("row", { name: new RegExp(`INQ-2611-00${n}`) }));
     expect((await next("1")).getByText("Assign buyer")).toBeTruthy();
     expect((await next("2")).getByText("Create RFQs")).toBeTruthy();
-    expect((await next("3")).getByText("1 of 3 RFQs sent")).toBeTruthy();
+  });
+
+  it("[B3-R13] after the first send the next step counts the drafts that remain", async () => {
+    setup([
+      item("1", { status: "rfq_sent", rfq_total: 3, rfq_sent: 1 }),
+      item("2", { status: "offers_received", rfq_total: 2, rfq_sent: 1 }),
+      item("3", { status: "rfq_sent", rfq_total: 2, rfq_sent: 2 }),
+    ]);
+    const next = async (n: string) =>
+      within(await screen.findByRole("row", { name: new RegExp(`INQ-2611-00${n}`) }));
+    expect((await next("1")).getByText("1 of 3 RFQs sent")).toBeTruthy();
+    expect((await next("2")).getByText("1 of 2 RFQs sent")).toBeTruthy();
+    expect((await next("3")).queryByText(/RFQs sent/)).toBeNull(); // all sent: the status label
+    expect((await next("3")).getAllByText("RFQ sent")).toHaveLength(2);
+  });
+
+  it("[B3-R13] the RFQ progress links straight to the RFQ log", async () => {
+    setup([item("1", { status: "rfq_sent", rfq_total: 3, rfq_sent: 1 })]);
+    const link = await screen.findByRole("link", { name: "1 of 3 RFQs sent" });
+    expect(link.getAttribute("href")).toBe("#/inquiries/1/rfqs");
+    await userEvent.click(link);
+    expect(window.location.hash).toBe("#/inquiries/1/rfqs");
+  });
+
+  it("[B3-R03] the Operator sees no RFQ counts, only the status", async () => {
+    setup(
+      [
+        item("1", { status: "rfq_sent", rfq_total: null, rfq_sent: null }),
+        item("2", { rfq_total: null, rfq_sent: null }),
+      ],
+      ["operator"],
+    );
+    expect(await screen.findByRole("row", { name: /INQ-2611-001/ })).toBeTruthy();
+    expect(screen.queryByText(/RFQs sent/)).toBeNull();
+    expect(screen.queryByText("Create RFQs")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("[B2-R12] next step: cancelled shows a dash", async () => {

@@ -218,7 +218,7 @@ export function InquiryForm({ rec, refs, roles, onCreate, onPatch, onFail }: Inq
           {when("eta", "ETA")}
           {when("etd", "ETD")}
           {text("agent_name", "Agent name", readOnly, SENT_TO_SUPPLIERS)}
-          {text("agent_email", "Agent e-mail", readOnly, SENT_TO_SUPPLIERS)}
+          {text("agent_email", "Agent e-mail", readOnly)}
           {sel(
             "bunkering_reason_id",
             "Bunkering reason",
