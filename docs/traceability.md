@@ -35,9 +35,9 @@
 | B2-R15 | .github/workflows/ci.yml |
 | B3-R01 | engine/tests/db/test_rfq_api.py, engine/tests/db/test_rfq_schema.py |
 | B3-R02 | engine/tests/db/test_rfq_api.py, engine/tests/db/test_rfq_schema.py |
-| B3-R03 | engine/tests/db/test_rfq_api.py |
+| B3-R03 | engine/tests/db/test_rfq_api.py, web/src/inquiries/WorkList.test.tsx |
 | B3-R04 | engine/tests/db/test_rfq_api.py |
-| B3-R05 | engine/tests/db/test_rfq_api.py, engine/tests/unit/test_rfq_domain.py |
+| B3-R05 | engine/tests/db/test_master_api.py, engine/tests/db/test_rfq_api.py, engine/tests/unit/test_rfq_domain.py |
 | B3-R06 | engine/tests/db/test_rfq_api.py, engine/tests/unit/test_rfq_domain.py |
 | B3-R07 | engine/tests/unit/test_rfq_domain.py |
 | B3-R08 | engine/tests/db/test_rfq_actions.py, engine/tests/db/test_rfq_api.py |
