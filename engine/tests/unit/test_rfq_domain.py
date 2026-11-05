@@ -75,6 +75,15 @@ def test_golden_render() -> None:
 
 
 @pytest.mark.req("B3-R07")
+@pytest.mark.parametrize("buyer", ["", "Bunker desk"])
+def test_signature_without_buyer_name_is_desk_once(buyer: str) -> None:
+    """No buyer name (or the desk itself): the signature is 'Bunker desk', printed once."""
+    _, body = render_rfq(_ctx(buyer_name=buyer))
+    assert body.endswith("Kind regards,\nBunker desk")
+    assert body.count("Bunker desk") == 1
+
+
+@pytest.mark.req("B3-R07")
 def test_missing_eta_etd_agent_to_be_advised() -> None:
     """Absent ETA/ETD/agent print as to be advised."""
     _, body = render_rfq(_ctx(eta=None, etd=None, agent_name=None))

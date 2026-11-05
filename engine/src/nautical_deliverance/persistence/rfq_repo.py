@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from nautical_deliverance.domain.rfq import RfqContext, RfqLine, build_mailto, render_rfq
+from nautical_deliverance.domain.rfq import RfqContext, RfqLine, RfqStatus, build_mailto, render_rfq
 from nautical_deliverance.persistence.inquiry_repo import line_rows
 from nautical_deliverance.persistence.master_repo import counterparties_covering
 from nautical_deliverance.persistence.models import (
@@ -25,9 +25,13 @@ if TYPE_CHECKING:
     import uuid
     from collections.abc import Collection
 
+    from sqlalchemy import ColumnElement
     from sqlalchemy.orm import Session
 
-BUNKER_DESK = "Bunker desk"
+
+def is_active_rfq() -> ColumnElement[bool]:
+    """Return the one definition of an active RFQ: anything not withdrawn."""
+    return Rfq.status != RfqStatus.WITHDRAWN.value
 
 
 def build_context(session: Session, rfq: Rfq) -> RfqContext:
@@ -65,7 +69,7 @@ def build_context(session: Session, rfq: Rfq) -> RfqContext:
         response_deadline=rfq.response_deadline,
         recipient_name=contact.name,
         recipient_email=contact.email,
-        buyer_name=(buyer.name or buyer.email) if buyer else BUNKER_DESK,
+        buyer_name=(buyer.name if buyer else None) or "",
     )
 
 
@@ -145,10 +149,12 @@ def suggestions(session: Session, inquiry: Inquiry) -> dict[str, list[dict[str, 
     for cp_id, product_id in session.execute(
         select(Coverage.counterparty_id, Coverage.product_id)
         .join(Product, Product.id == Coverage.product_id)
+        .join(Port, Port.id == Coverage.port_id)
         .where(
             Coverage.port_id == inquiry.port_id,
             Coverage.active,
             Product.active,
+            Port.active,
             Coverage.product_id.in_(wanted),
         )
         .order_by(Product.name, Product.id)
@@ -163,9 +169,7 @@ def suggestions(session: Session, inquiry: Inquiry) -> dict[str, list[dict[str, 
         contacts[contact.counterparty_id].append(contact)
     active_rfq = dict(
         session.execute(
-            select(Rfq.counterparty_id, Rfq.id).where(
-                Rfq.inquiry_id == inquiry.id, Rfq.status != "withdrawn"
-            )
+            select(Rfq.counterparty_id, Rfq.id).where(Rfq.inquiry_id == inquiry.id, is_active_rfq())
         ).all()
     )
 

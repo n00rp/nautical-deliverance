@@ -100,7 +100,7 @@ def _check_recipients(s: Session, inquiry_id: uuid.UUID, recipients: Sequence[Re
     active = set(
         s.scalars(
             select(Rfq.counterparty_id).where(
-                Rfq.inquiry_id == inquiry_id, Rfq.status != "withdrawn"
+                Rfq.inquiry_id == inquiry_id, rfq_repo.is_active_rfq()
             )
         )
     )

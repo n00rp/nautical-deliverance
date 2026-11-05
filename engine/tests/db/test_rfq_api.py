@@ -51,7 +51,6 @@ type Json = Any
 DEADLINE = "2026-11-10T08:00:00Z"
 V2 = 2
 PAST = "2026-11-01T08:00:00Z"
-PRIVATE_LABELS = ("internal_comments", "cancel_reason", "operator_name", "requester_name")
 
 
 def _add(s: Any, model: type, **kw: Any) -> uuid.UUID:  # noqa: ANN401
@@ -282,6 +281,8 @@ def test_suggestions_exclude_inactive(  # noqa: PLR0913, PLR0917
     deactivate(world, app_engine, *target)
     s = admin.api(f"/inquiries/{inq['id']}/suggestions")
     assert groups(s) == expected
+    if what == "port":
+        assert all(e["covered_product_ids"] == [] for e in s["not_listed"])
     if what == "contact":
         assert [c["id"] for c in s["covers_all"][0]["contacts"]] == [str(world.ct["a1"])]
 
@@ -394,21 +395,45 @@ def test_context_fields_pinned(admin: Rc, inq: Json, world: SimpleNamespace) -> 
         assert ctx.recipient_email == "a1@alpha.example"
 
 
+# FORBIDDEN keys with no DB column or table behind them (a marker cannot be planted).
+NO_SOURCE = frozenset(
+    {"recipient_count", "price_expectation", "offer_price", "decision_rationale", "comparison_note"}
+)
+# Which counterparty legitimately owns a marker (its own preview may show it).
+OWNER = {
+    "recipient_counterparty_name": "Alpha", "other_cp_name_1": "Beta", "other_cp_name_2": "Gamma",
+    "other_contact_email_1": "Beta", "other_contact_email_2": "Gamma",
+    "other_contact_name": "Gamma",
+}  # fmt: skip
+
+
 @pytest.mark.req("B3-R06")
 def test_preview_has_no_forbidden_data(admin: Rc, world: SimpleNamespace) -> None:
-    """Marker strings in every forbidden source, and the other recipients, never reach a preview."""
-    mk = {
-        k: f"MK-{k.upper()}-ZZ"
-        for k in (*PRIVATE_LABELS, "legal_entity_name", "voyage", "agent_email")
-    }
+    """A marker in every forbidden source with a DB counterpart never reaches another preview."""
+    mk = {k: f"MK-{k.upper()}-ZZ" for k in NEVER if k not in NO_SOURCE}
+    mk["other_contact_email_1"] = "mk-other1@mk-one.example"
+    mk["other_contact_email_2"] = "mk-other2@mk-two.example"
+    assert set(mk) | NO_SOURCE == set(NEVER)
     viewer = world.users[Role.VIEWER].user_id
     i = admin.inquiry(
         internal_comments=mk["internal_comments"], voyage=mk["voyage"],
         agent_email="x@mk-agent.example", requester_id=str(viewer),
     )  # fmt: skip
-    pairs = [("Alpha", "a1"), ("Beta", "b1"), ("Gamma", "c1")]
-    items = admin.make(i["id"], *pairs)
+    admin.make(i["id"], ("Alpha", "a1"), ("Beta", "b1"), ("Gamma", "c1"))
+    names = {"Alpha": "recipient_counterparty_name", "Beta": "other_cp_name_1",
+             "Gamma": "other_cp_name_2"}  # fmt: skip
     with org_session(world.org, admin.engine) as s:
+        for cp, key in names.items():
+            s.execute(
+                update(Counterparty).where(Counterparty.id == world.cp[cp]).values(name=mk[key])
+            )
+        for ct, key in (("b1", "other_contact_email_1"), ("c1", "other_contact_email_2")):
+            s.execute(update(Contact).where(Contact.id == world.ct[ct]).values(email=mk[key]))
+        s.execute(
+            update(Contact)
+            .where(Contact.id == world.ct["c1"])
+            .values(name=mk["other_contact_name"])
+        )
         s.execute(update(AppUser).where(AppUser.id == viewer).values(name=mk["requester_name"]))
         op = world.users[Role.OPERATOR].user_id
         s.execute(update(AppUser).where(AppUser.id == op).values(name=mk["operator_name"]))
@@ -418,17 +443,14 @@ def test_preview_has_no_forbidden_data(admin: Rc, world: SimpleNamespace) -> Non
             .values(status="cancelled", cancel_reason=mk["cancel_reason"])
         )  # fmt: skip
     mk["agent_email"] = "mk-agent.example"
-    others = {"Alpha Marine", "Beta Marine", "Gamma Marine"}
-    for item in items:
+    for item in admin.api(f"/inquiries/{i['id']}/rfqs"):
+        mine = next(c for c, k in names.items() if item["counterparty_name"] == mk[k])
         p = admin.api(f"/rfqs/{item['id']}/preview")
         text_ = "\n".join(str(v) for v in p.values())
-        for value in mk.values():
-            assert value not in text_
-        for other in others - {item["counterparty_name"]}:
-            assert other not in text_
-        for key in ("a1@alpha", "b1@beta", "c1@gamma"):
-            assert (key in text_) == (item["email"].startswith(key))
-        assert "Name a1" not in text_ or item["contact_name"] == "Name a1"
+        for key, value in mk.items():
+            if OWNER.get(key) != mine:
+                assert value not in text_, (mine, key)
+        assert item["email"] in text_
 
 
 # --- B3-R01: validation --------------------------------------------------------------------------
@@ -614,10 +636,10 @@ def test_patch_rules(admin: Rc, inq: Json, world: SimpleNamespace) -> None:
     r = admin.http.patch(url, json={"version": 1, "response_deadline": new})
     assert r.status_code == OK
     assert r.json()["response_deadline"].startswith("2026-11-12T10:00:00")
-    assert (
-        admin.http.patch(url, json={"version": 1, "response_deadline": DEADLINE}).status_code
-        == CONFLICT
-    )
+    stale = admin.http.patch(url, json={"version": 1, "response_deadline": DEADLINE})
+    assert (stale.status_code, stale.json()) == (
+        CONFLICT, {"detail": "Record was changed by someone else"}
+    )  # fmt: skip
     for field, value, message in (
         ("response_deadline", PAST, "Must be in the future"),
         ("contact_id", str(world.ct["b1"]), "Contact belongs to another counterparty"),

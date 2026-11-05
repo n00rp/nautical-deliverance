@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 MAILTO_MAX = 1800
 TBA = "to be advised"
+DESK = "Bunker desk"
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
@@ -67,7 +68,7 @@ class RfqContext:
     response_deadline: datetime
     recipient_name: str
     recipient_email: str
-    buyer_name: str
+    buyer_name: str  # "" when the buyer has no name; the signature is then just the desk
 
 
 def format_instant(dt: datetime, tz: str) -> str:
@@ -97,6 +98,7 @@ def render_rfq(ctx: RfqContext) -> tuple[str, str]:
     def when(dt: datetime | None) -> str:
         return TBA if dt is None else format_instant(dt, tz)
 
+    signature = "\n".join(dict.fromkeys(n for n in (ctx.buyer_name, DESK) if n))
     subject = f"RFQ {ctx.reference} – {ctx.vessel_name} – {ctx.port_name}"  # noqa: RUF001
     products = "\n".join(_line(x) for x in ctx.lines)
     body = (
@@ -111,7 +113,7 @@ def render_rfq(ctx: RfqContext) -> tuple[str, str]:
         "surveyor, other), offer validity, payment terms, delivery window and method, "
         "and the physical supplier if you are a trader.\n\n"
         f"Response requested by {when(ctx.response_deadline)}.\n\n"
-        f"Kind regards,\n{ctx.buyer_name}\nBunker desk"
+        f"Kind regards,\n{signature}"
     )
     return subject, body
 
