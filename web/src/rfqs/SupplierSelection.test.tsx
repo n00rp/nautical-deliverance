@@ -107,11 +107,18 @@ describe("SupplierSelection", () => {
         ],
       },
     });
-    await screen.findByRole("button", { name: "Create 1 RFQ drafts" });
+    await screen.findByRole("button", { name: "Create 1 RFQ draft" });
     expect(row("Beta Marine").getByText("RFQ sent")).toBeTruthy();
     expect(box("Beta Marine").checked).toBe(false);
     expect(box("Beta Marine").disabled).toBe(true);
     expect(row("Beta Marine").getByRole("combobox").hasAttribute("disabled")).toBe(true);
+  });
+
+  it("[B3-R13] a single draft is announced in the singular", async () => {
+    setup();
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Select Beta Marine" }));
+    await userEvent.click(screen.getByRole("button", { name: "Create 1 RFQ draft" }));
+    expect(await screen.findByText("Created 1 RFQ draft")).toBeTruthy();
   });
 
   it("[B3-R13] a supplier without a usable contact cannot be selected", async () => {

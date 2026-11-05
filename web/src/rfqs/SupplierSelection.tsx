@@ -36,6 +36,8 @@ function defaultDeadline(inq: Inquiry, now = Date.now()): string {
   return eta - now >= 72 * HOUR_MS ? iso(eta - 48 * HOUR_MS) : "";
 }
 
+/** "1 RFQ draft", "2 RFQ drafts". */
+const drafts = (n: number) => `${String(n)} RFQ ${n === 1 ? "draft" : "drafts"}`;
 const unusable = (s: Suggestion) => s.active_rfq_id !== null || s.contacts.length === 0;
 const contactLabel = (c: Suggestion["contacts"][number]) => `${c.name} (${c.email})`;
 
@@ -174,7 +176,7 @@ function SelectionForm({ inquiry, suggestions, rfqs, api, onFail }: FormProps) {
           contact_id: contact[s.counterparty_id] ?? "",
         })),
       });
-      toast(`Created ${String(chosen.length)} RFQ drafts`, "ok");
+      toast(`Created ${drafts(chosen.length)}`, "ok");
       goInquiry(`${inquiry.id}/rfqs`);
     } finally {
       inflight.current = false;
@@ -244,7 +246,7 @@ function SelectionForm({ inquiry, suggestions, rfqs, api, onFail }: FormProps) {
       ) : (
         <div>
           <Button type="submit" variant="primary" loading={busy} disabled={n === 0 || !deadline}>
-            {`Create ${String(n)} RFQ drafts`}
+            {`Create ${drafts(n)}`}
           </Button>
         </div>
       )}
