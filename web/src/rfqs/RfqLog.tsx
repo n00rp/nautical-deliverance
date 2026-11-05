@@ -64,6 +64,7 @@ function RfqActions({ rfq, api, timeZone, onDone, onFail }: ActionsProps) {
     setPending(true);
     call()
       .then(() => {
+        setDeadline(null);
         onDone(message);
       })
       .catch((e: unknown) => {
@@ -168,7 +169,9 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
           api.getInquiry(inquiryId),
           api.listRfqs(inquiryId),
         ]);
-        if (live) setData({ inquiry, rfqs });
+        if (!live) return;
+        setData({ inquiry, rfqs });
+        setFailed(false);
       } catch (e) {
         if (!live) return;
         setFailed(true);
@@ -182,7 +185,7 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
   }, [api, inquiryId, allowed, tick, toast]);
 
   if (!allowed) return <LockedNote what="the RFQ log" />;
-  if (failed)
+  if (failed && !data)
     return <EmptyState title="Could not load RFQs" body="Reload the page to try again." />;
   if (!data) return <p role="status">Loading…</p>;
 
@@ -256,10 +259,11 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
           }}
         >
           {open && (
-            <RfqPreview rfq={open} api={api}>
+            <>
+              <RfqPreview key={open.id} rfq={open} api={api} />
               {canWrite && (
                 <RfqActions
-                  key={`${open.id}:${String(open.version)}`}
+                  key={open.id}
                   rfq={open}
                   api={api}
                   timeZone={zone}
@@ -270,7 +274,7 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
                   }}
                 />
               )}
-            </RfqPreview>
+            </>
           )}
         </DetailPanel>
       </div>

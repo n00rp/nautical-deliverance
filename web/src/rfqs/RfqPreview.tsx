@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { describe } from "../admin/errors";
 import type { RfqApi, RfqItem, RfqPreview as Preview } from "../rfqApi";
 import { Button } from "../ui/Button/Button";
@@ -8,12 +8,10 @@ import css from "./RfqLog.module.css";
 export type RfqPreviewProps = {
   rfq: RfqItem;
   api: Pick<RfqApi, "getPreview">;
-  /** Rendered under the preview (the status actions). */
-  children?: ReactNode;
 };
 
 /** The exact message that would be mailed, with the mail link and Copy text (B3-R12). */
-export function RfqPreview({ rfq, api, children }: RfqPreviewProps) {
+export function RfqPreview({ rfq, api }: RfqPreviewProps) {
   const toast = useToast();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,11 +20,12 @@ export function RfqPreview({ rfq, api, children }: RfqPreviewProps) {
   // The message depends on the contact and deadline, which move the version.
   useEffect(() => {
     let live = true;
-    setPreview(null);
-    setError(null);
+    // The old preview stays until the new one arrives (no flash after an action).
     api.getPreview(rfq.id).then(
       (p) => {
-        if (live) setPreview(p);
+        if (!live) return;
+        setPreview(p);
+        setError(null);
       },
       (e: unknown) => {
         if (live) setError(describe(e));
@@ -76,7 +75,6 @@ export function RfqPreview({ rfq, api, children }: RfqPreviewProps) {
       {!preview.body_in_link && (
         <p className={css.note}>Body too long for a mail link — use Copy text</p>
       )}
-      {children}
     </div>
   );
 }

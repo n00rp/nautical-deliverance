@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { RfqPreview as Preview } from "../rfqApi";
-import { Button } from "../ui/Button/Button";
 import { ToastHost, ToastProvider } from "../ui/Toast/Toast";
 import { RfqPreview } from "./RfqPreview";
 import { draftRfq, preview } from "./testSupport";
@@ -9,9 +8,7 @@ function Story({ msg }: { msg: Preview }) {
   return (
     <ToastProvider>
       <div style={{ maxWidth: "26rem" }}>
-        <RfqPreview rfq={draftRfq} api={{ getPreview: () => Promise.resolve(msg) }}>
-          <Button variant="secondary">Mark sent</Button>
-        </RfqPreview>
+        <RfqPreview rfq={draftRfq} api={{ getPreview: () => Promise.resolve(msg) }} />
       </div>
       <ToastHost />
     </ToastProvider>

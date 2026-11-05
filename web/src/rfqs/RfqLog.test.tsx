@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
@@ -140,6 +140,54 @@ describe("RfqLog", () => {
       within(panel).getByRole<HTMLButtonElement>("button", { name: "Mark sent" }).disabled,
     ).toBe(true);
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("[B3-R13] the busy ref alone drops a second confirm fired before React re-renders", async () => {
+    const api = logApi();
+    const send = vi.spyOn(api, "markSent").mockReturnValue(new Promise(() => undefined));
+    setup(["bunker_buyer"], all, api);
+    const panel = await openRow("Alpha Marine");
+    await userEvent.click(await within(panel).findByRole("button", { name: "Mark sent" }));
+    const confirm = within(panel).getByRole("button", { name: "Confirm sent" });
+    act(() => {
+      fireEvent.click(confirm);
+      fireEvent.click(confirm);
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("[B3-R13] with the preview failing, a draft can still be withdrawn", async () => {
+    const api = logApi();
+    vi.spyOn(api, "getPreview").mockRejectedValue(new Error("no preview"));
+    const withdraw = vi.spyOn(api, "withdrawRfq");
+    setup(["bunker_buyer"], all, api);
+    const panel = await openRow("Alpha Marine");
+    expect(await within(panel).findByText("no preview")).toBeTruthy();
+    await userEvent.click(within(panel).getByRole("button", { name: "Withdraw" }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Confirm withdraw" }));
+    await waitFor(() => {
+      expect(withdraw).toHaveBeenCalledWith("r0", 1);
+    });
+  });
+
+  it("[B3-R13] the deadline editor stays open across a reload, and a failed reload keeps the rows", async () => {
+    const api = logApi();
+    vi.spyOn(api, "markSent").mockRejectedValueOnce(
+      new ApiError(422, [{ field: "response_deadline", message: "Deadline has passed" }]),
+    );
+    setup(["bunker_buyer"], all, api);
+    const panel = await openRow("Alpha Marine");
+    await userEvent.click(await within(panel).findByRole("button", { name: "Mark sent" }));
+    await userEvent.click(within(panel).getByRole("button", { name: "Confirm sent" }));
+    await within(panel).findByLabelText(/^New offer deadline/);
+    // Another action elsewhere bumps the version and reloads: the editor must survive.
+    vi.spyOn(api, "listRfqs").mockRejectedValueOnce(new Error("blip"));
+    await userEvent.click(within(panel).getByRole("button", { name: "Withdraw" }));
+    vi.spyOn(api, "withdrawRfq").mockRejectedValueOnce(new ApiError(409));
+    await userEvent.click(within(panel).getByRole("button", { name: "Confirm withdraw" }));
+    expect(await screen.findByText("blip")).toBeTruthy();
+    expect(screen.getByRole("table", { name: "RFQs" })).toBeTruthy();
+    expect(within(panel).getByLabelText(/^New offer deadline/)).toBeTruthy();
   });
 
   it("[B3-R13] Mark declined and Withdraw call their routes with the row version", async () => {
