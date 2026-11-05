@@ -26,6 +26,7 @@ Build an internal web application for bunker (marine fuel) procurement that supp
 | D-075 | Evaluation criteria per §3 (E3, E4, E5 redefined). |
 | D-076 | Build order per §5 (replaces D-023). |
 | D-077 | Pilot 1 is ready per §6. |
+| D-078 | The build proceeds on our own judgment without waiting for the brief author's feedback; her feedback is input to whichever sub-project it affects, not a gate (amends B0-R08). Assumptions recorded in sub-project specs hold until she says otherwise. |
 
 ## 3. Evaluation criteria
 
