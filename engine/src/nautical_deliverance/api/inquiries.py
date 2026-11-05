@@ -5,39 +5,32 @@ Edits carry the client's `version`; lines are replaced as a set; after Draft onl
 EDITABLE_AFTER_DRAFT fields may change. Every change is audited in the same transaction.
 """
 
-import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from types import NoneType
-from typing import TYPE_CHECKING, Annotated, Any, Literal, NoReturn, cast, get_args
+from typing import TYPE_CHECKING, Annotated, Any, Literal, NoReturn, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import (
-    AwareDatetime,
-    BaseModel,
-    Field,
-    StringConstraints,
-    ValidationInfo,
-    create_model,
-    field_validator,
-)
 from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
-from nautical_deliverance.api.common import Strict, check, conflict, email_ok, scope, unprocessable
+from nautical_deliverance.api.common import conflict, scope, unprocessable
+from nautical_deliverance.api.inquiry_models import (
+    CancelIn,
+    HistoryOut,
+    InquiryIn,
+    InquiryListItem,
+    InquiryOut,
+    InquiryPatch,
+    LineIn,
+    VersionIn,
+)
 from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import (
-    DENSITY_MAX,
-    DENSITY_MIN,
-    LOCKED_AFTER_DRAFT,
-    MAX_LINES,
-    LineUnit,
-    Status,
-)
+from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status, can_transition
 from nautical_deliverance.persistence.audit import record_change
 from nautical_deliverance.persistence.inquiry_repo import (
+    dec,
     detail,
     line_rows,
     line_text,
@@ -46,6 +39,7 @@ from nautical_deliverance.persistence.inquiry_repo import (
 )
 from nautical_deliverance.persistence.models import (
     AppUser,
+    AuditEntry,
     BunkeringReason,
     Inquiry,
     InquiryLine,
@@ -59,6 +53,7 @@ from nautical_deliverance.persistence.models import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from pydantic import BaseModel
     from sqlalchemy import Row
 
 router = APIRouter(prefix="/inquiries")
@@ -74,8 +69,18 @@ MASTER: dict[str, tuple[Any, str]] = {
     "port_id": (Port, "port"),
     "bunkering_reason_id": (BunkeringReason, "bunkering reason"),
 }
-QUANTITY = re.compile(r"[0-9]{1,9}(\.[0-9]{1,3})?")  # numeric(12,3)
-DENSITY = re.compile(r"[0-9]{1,4}(\.[0-9])?")  # numeric(6,1)
+
+DUPLICATED = (
+    "vessel_id",
+    "legal_entity_id",
+    "voyage",
+    "operator_id",
+    "requester_id",
+    "port_id",
+    "agent_name",
+    "agent_email",
+    "bunkering_reason_id",
+)  # fmt: skip  (B2-D10)
 
 
 def get_now() -> datetime:
@@ -97,169 +102,6 @@ Creator = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER, Rol
 Editor = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER))]
 Eng = Annotated[Engine, Depends(get_users_engine)]
 Now = Annotated[datetime, Depends(get_now)]
-
-# --- request models ----------------------------------------------------------------------------
-
-_Trim = StringConstraints(strip_whitespace=True, min_length=1)
-Voyage = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
-AgentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-Comments = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
-SpecNotes = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
-Email = Annotated[str, _Trim, check(email_ok, "Invalid e-mail address")]
-
-
-class LineIn(Strict):
-    """A product line; quantity and density are decimal strings (D-074)."""
-
-    product_id: uuid.UUID
-    quantity: str
-    unit: LineUnit
-    density: str | None = None
-    spec_notes: SpecNotes | None = None
-    iso_spec_version_id: uuid.UUID
-
-    @field_validator("quantity")
-    @staticmethod
-    def _quantity(value: str) -> str:
-        if not QUANTITY.fullmatch(value) or Decimal(value) <= 0:
-            msg = "Must be a positive number with up to 9 digits and 3 decimals"
-            raise ValueError(msg)
-        return value
-
-    @field_validator("density")
-    @staticmethod
-    def _density(value: str | None, info: ValidationInfo) -> str | None:
-        if value is None:
-            return None
-        if info.data.get("unit") == LineUnit.MT:
-            msg = "Only allowed for m3 lines"
-            raise ValueError(msg)
-        if not DENSITY.fullmatch(value) or not DENSITY_MIN <= Decimal(value) <= DENSITY_MAX:
-            msg = f"Must be {DENSITY_MIN} to {DENSITY_MAX} kg/m3 with at most 1 decimal"
-            raise ValueError(msg)
-        return value
-
-
-class InquiryIn(Strict):
-    """Writable inquiry fields; omitted legal entity, operator, requester and buyer default."""
-
-    vessel_id: uuid.UUID
-    legal_entity_id: uuid.UUID | None = None
-    voyage: Voyage | None = None
-    operator_id: uuid.UUID | None = None
-    buyer_id: uuid.UUID | None = None
-    requester_id: uuid.UUID | None = None
-    port_id: uuid.UUID
-    eta: AwareDatetime
-    etd: AwareDatetime
-    agent_name: AgentName | None = None
-    agent_email: Email | None = None
-    bunkering_reason_id: uuid.UUID
-    internal_comments: Comments | None = None
-    lines: Annotated[list[LineIn], Field(min_length=1, max_length=MAX_LINES)]
-
-
-def _patch_model() -> type[BaseModel]:
-    """Every InquiryIn field optional; the ones the database requires may not be null."""
-    never_null = {"legal_entity_id", "operator_id", "requester_id"}
-    optional: dict[str, Any] = {}
-    for name, field in InquiryIn.model_fields.items():
-        kind = field.annotation
-        if name in never_null:
-            kind = next(a for a in get_args(kind) if a is not NoneType)
-        optional[name] = (Annotated[(kind, *field.metadata)] if field.metadata else kind, None)
-    return create_model(
-        "InquiryPatch",
-        __base__=Strict,
-        version=(Annotated[int, Field(ge=1)], ...),
-        **optional,
-    )
-
-
-InquiryPatch = _patch_model()
-
-# --- response models ---------------------------------------------------------------------------
-
-
-class LineOut(BaseModel):
-    """A line with display names and the "not in total" flag (m3 without density)."""
-
-    id: uuid.UUID
-    position: int
-    product_id: uuid.UUID
-    product_name: str
-    product_inactive: bool
-    quantity: str
-    unit: str
-    density: str | None
-    not_in_total: bool
-    spec_notes: str | None
-    iso_spec_version_id: uuid.UUID
-    iso_spec_version_name: str
-    iso_spec_version_inactive: bool
-
-
-class WarningOut(BaseModel):
-    """A non-blocking finding on a field."""
-
-    field: str
-    code: str
-    message: str
-
-
-class InquiryOut(BaseModel):
-    """The full inquiry with display names, inactive flags, lines and warnings."""
-
-    id: uuid.UUID
-    reference: str
-    status: str
-    version: int
-    vessel_id: uuid.UUID
-    vessel_name: str
-    vessel_inactive: bool
-    legal_entity_id: uuid.UUID
-    legal_entity_name: str
-    legal_entity_inactive: bool
-    voyage: str | None
-    operator_id: uuid.UUID
-    operator_name: str
-    buyer_id: uuid.UUID | None
-    buyer_name: str | None
-    requester_id: uuid.UUID
-    requester_name: str
-    port_id: uuid.UUID
-    port_name: str
-    port_locode: str
-    port_time_zone: str
-    port_inactive: bool
-    eta: datetime
-    etd: datetime
-    agent_name: str | None
-    agent_email: str | None
-    bunkering_reason_id: uuid.UUID
-    bunkering_reason_name: str
-    bunkering_reason_inactive: bool
-    internal_comments: str | None
-    cancel_reason: str | None
-    created_at: datetime
-    created_by: uuid.UUID
-    updated_at: datetime
-    lines: list[LineOut]
-    warnings: list[WarningOut]
-
-
-class InquiryListItem(BaseModel):
-    """A work-list row."""
-
-    id: uuid.UUID
-    reference: str
-    status: str
-    vessel_name: str
-    port_name: str
-    port_time_zone: str
-    eta: datetime
-    buyer_name: str | None
-    eta_warning: bool
 
 
 # --- validation --------------------------------------------------------------------------------
@@ -376,6 +218,16 @@ def _load(session: Session, inquiry_id: uuid.UUID, *, lock: bool = False) -> Inq
     return inq
 
 
+def _lock_open(session: Session, inquiry_id: uuid.UUID, version: int) -> Inquiry:
+    """Load with a row lock; 409 when cancelled or when the client's version is stale."""
+    inq = _load(session, inquiry_id, lock=True)
+    if inq.status == Status.CANCELLED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Inquiry is cancelled")
+    if inq.version != version:
+        raise conflict()
+    return inq
+
+
 # --- routes ------------------------------------------------------------------------------------
 
 
@@ -413,51 +265,69 @@ def get_inquiry(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object
         return InquiryOut(**detail(s, _load(s, inquiry_id)))
 
 
+def _create(  # noqa: PLR0913, PLR0917
+    s: Session,
+    principal: Principal,
+    now: datetime,
+    body: InquiryIn,
+    action: Literal["create", "duplicate"] = "create",
+    extra: dict[str, Any] | None = None,
+) -> InquiryOut:
+    """Validate and insert a Draft with its lines and one audit entry."""
+    _check_lines(body.lines)
+    _check_times(body.eta, body.etd)
+    vessel = s.get(Vessel, body.vessel_id)
+    if vessel is None:
+        _reject("vessel_id", "Unknown vessel")
+    values = {k: getattr(body, k) for k in InquiryIn.model_fields if k != "lines"}
+    values["legal_entity_id"] = body.legal_entity_id or vessel.legal_entity_id
+    values["operator_id"] = body.operator_id or _default_operator(s, vessel, principal)
+    values["requester_id"] = body.requester_id or principal.user_id
+    if "buyer_id" not in body.model_fields_set:
+        is_buyer = bool(BUYER_ROLES & principal.roles)
+        values["buyer_id"] = principal.user_id if is_buyer else None
+    _check_refs(s, values)
+    line_values, texts = _resolve_lines(s, body.lines, ())
+    inq = Inquiry(
+        id=uuid.uuid4(),
+        organization_id=principal.organization_id,
+        reference=next_reference(s, principal.organization_id, now),
+        status=Status.DRAFT.value,
+        created_by=principal.user_id,
+        created_at=now,
+        updated_at=now,
+        **values,
+    )
+    s.add(inq)
+    s.flush()
+    s.add_all(
+        InquiryLine(organization_id=inq.organization_id, inquiry_id=inq.id, **v)
+        for v in line_values
+    )
+    s.flush()
+    record_change(
+        s,
+        actor=principal.user_id,
+        entity_type="inquiry",
+        entity_id=inq.id,
+        action=action,
+        before=None,
+        after={
+            **values,
+            "reference": inq.reference,
+            "status": inq.status,
+            "lines": texts,
+            **(extra or {}),
+        },
+    )
+    return InquiryOut(**detail(s, inq))
+
+
 @router.post("", response_model=InquiryOut, status_code=status.HTTP_201_CREATED)
 def create_inquiry(body: InquiryIn, principal: Creator, engine: Eng, now: Now) -> object:
     """Create a Draft with the next reference of the month."""
-    _check_lines(body.lines)
-    _check_times(body.eta, body.etd)
     with scope(principal, engine) as s:
-        vessel = s.get(Vessel, body.vessel_id)
-        if vessel is None:
-            _reject("vessel_id", "Unknown vessel")
-        values = {k: getattr(body, k) for k in InquiryIn.model_fields if k != "lines"}
-        values["legal_entity_id"] = body.legal_entity_id or vessel.legal_entity_id
-        values["operator_id"] = body.operator_id or _default_operator(s, vessel, principal)
-        values["requester_id"] = body.requester_id or principal.user_id
-        if "buyer_id" not in body.model_fields_set:
-            is_buyer = bool(BUYER_ROLES & principal.roles)
-            values["buyer_id"] = principal.user_id if is_buyer else None
-        _check_refs(s, values)
-        line_values, texts = _resolve_lines(s, body.lines, ())
-        inq = Inquiry(
-            id=uuid.uuid4(),
-            organization_id=principal.organization_id,
-            reference=next_reference(s, principal.organization_id, now),
-            status=Status.DRAFT.value,
-            created_by=principal.user_id,
-            created_at=now,
-            updated_at=now,
-            **values,
-        )
-        s.add(inq)
-        s.flush()
-        s.add_all(
-            InquiryLine(organization_id=inq.organization_id, inquiry_id=inq.id, **v)
-            for v in line_values
-        )
-        s.flush()
-        record_change(
-            s,
-            actor=principal.user_id,
-            entity_type="inquiry",
-            entity_id=inq.id,
-            action="create",
-            before=None,
-            after={**values, "reference": inq.reference, "status": inq.status, "lines": texts},
-        )
-        return InquiryOut(**detail(s, inq))
+        return _create(s, principal, now, body)
 
 
 @router.patch("/{inquiry_id}", response_model=InquiryOut)
@@ -473,11 +343,7 @@ def update_inquiry(
     sent = {k: getattr(form, k) for k in form.model_fields_set}
     version = sent.pop("version")
     with scope(principal, engine) as s:
-        inq = _load(s, inquiry_id, lock=True)
-        if inq.status == Status.CANCELLED:
-            raise HTTPException(status.HTTP_409_CONFLICT, "Inquiry is cancelled")
-        if inq.version != version:
-            raise conflict()
+        inq = _lock_open(s, inquiry_id, version)
         changed = {k: v for k, v in sent.items() if k != "lines" and getattr(inq, k) != v}
         current = line_rows(s, inq.id)
         old_texts = [
@@ -524,3 +390,93 @@ def update_inquiry(
             after=changed,
         )
         return InquiryOut(**detail(s, inq))
+
+
+def _change(  # noqa: PLR0913, PLR0917
+    s: Session,
+    principal: Principal,
+    now: datetime,
+    inq: Inquiry,
+    action: Literal["take", "cancel"],
+    values: dict[str, Any],
+) -> object:
+    """Apply a one-step action: set fields, bump the version, write one audit entry."""
+    before = {k: getattr(inq, k) for k in values}
+    for k, v in values.items():
+        setattr(inq, k, v)
+    inq.version += 1
+    inq.updated_at = now
+    s.flush()
+    record_change(
+        s,
+        actor=principal.user_id,
+        entity_type="inquiry",
+        entity_id=inq.id,
+        action=action,
+        before=before,
+        after=values,
+    )
+    return InquiryOut(**detail(s, inq))
+
+
+@router.post("/{inquiry_id}/take", response_model=InquiryOut)
+def take_inquiry(
+    inquiry_id: uuid.UUID, body: VersionIn, principal: Editor, engine: Eng, now: Now
+) -> object:
+    """Make the caller the buyer. Taking your own inquiry again is a no-op."""
+    with scope(principal, engine) as s:
+        inq = _lock_open(s, inquiry_id, body.version)
+        if inq.buyer_id == principal.user_id:
+            return InquiryOut(**detail(s, inq))
+        return _change(s, principal, now, inq, "take", {"buyer_id": principal.user_id})
+
+
+@router.post("/{inquiry_id}/cancel", response_model=InquiryOut)
+def cancel_inquiry(
+    inquiry_id: uuid.UUID, body: CancelIn, principal: Editor, engine: Eng, now: Now
+) -> object:
+    """Cancel with a required reason (any open status may be cancelled)."""
+    with scope(principal, engine) as s:
+        inq = _lock_open(s, inquiry_id, body.version)
+        if not can_transition(Status(inq.status), Status.CANCELLED):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Cannot cancel")
+        values = {"status": Status.CANCELLED.value, "cancel_reason": body.reason}
+        return _change(s, principal, now, inq, "cancel", values)
+
+
+@router.post("/{inquiry_id}/duplicate", response_model=InquiryOut, status_code=201)
+def duplicate_inquiry(
+    inquiry_id: uuid.UUID, body: VersionIn, principal: Creator, engine: Eng, now: Now
+) -> object:
+    """Create a Draft from the B2-D10 fields; ETA/ETD start at the current time (required)."""
+    with scope(principal, engine) as s:
+        src = _load(s, inquiry_id)
+        if src.version != body.version:
+            raise conflict()
+        lines = [
+            LineIn(
+                product_id=r.InquiryLine.product_id,
+                quantity=cast("str", dec(r.InquiryLine.quantity)),
+                unit=r.InquiryLine.unit,
+                density=dec(r.InquiryLine.density),
+                spec_notes=r.InquiryLine.spec_notes,
+                iso_spec_version_id=r.InquiryLine.iso_spec_version_id,
+            )
+            for r in line_rows(s, src.id)
+        ]
+        copied = {k: getattr(src, k) for k in DUPLICATED}
+        new = InquiryIn(**copied, eta=now, etd=now, lines=lines)
+        return _create(s, principal, now, new, "duplicate", {"duplicate_of": src.reference})
+
+
+@router.get("/{inquiry_id}/history", response_model=list[HistoryOut])
+def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+    """Audit entries of the inquiry, newest first."""
+    with scope(principal, engine) as s:
+        _load(s, inquiry_id)
+        stmt = (
+            select(AuditEntry)
+            .where(AuditEntry.entity_type == "inquiry", AuditEntry.entity_id == inquiry_id)
+            .order_by(AuditEntry.at.desc(), AuditEntry.id)
+        )
+        return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]

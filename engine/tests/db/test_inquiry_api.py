@@ -14,7 +14,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, text, update
 
 from nautical_deliverance.api.auth import get_principal
-from nautical_deliverance.api.inquiries import InquiryPatch, get_now
+from nautical_deliverance.api.inquiries import get_now
+from nautical_deliverance.api.inquiry_models import InquiryPatch
 from nautical_deliverance.api.users import get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.inquiry import PATCHABLE_FIELDS
@@ -157,13 +158,13 @@ class Client:
     def create(self, **over: Any) -> Json:  # noqa: ANN401
         """Create."""
         r = self.http.post(URL, json=body(self.w, **over))
-        assert r.status_code in {OK, CREATED}, r.text
+        assert r.status_code == CREATED, r.text
         return r.json()
 
     def patch(self, inq: Json, **over: Any) -> Json:  # noqa: ANN401
         """Patch."""
         r = self.http.patch(f"{URL}/{inq['id']}", json={"version": inq["version"], **over})
-        assert r.status_code in {OK, CREATED}, r.text
+        assert r.status_code == OK, r.text
         return r.json()
 
     def get(self, inq_id: str) -> Json:
@@ -452,6 +453,10 @@ ALLOWED = {
     "get": set(Role),
     "create": {Role.ADMIN, Role.BUNKER_BUYER, Role.OPERATOR},
     "patch": {Role.ADMIN, Role.BUNKER_BUYER},
+    "take": {Role.ADMIN, Role.BUNKER_BUYER},
+    "cancel": {Role.ADMIN, Role.BUNKER_BUYER},
+    "duplicate": {Role.ADMIN, Role.BUNKER_BUYER, Role.OPERATOR},
+    "history": set(Role),
 }
 
 
@@ -463,6 +468,11 @@ def test_role_matrix(
     """Role matrix."""
     inq = admin.create()
     c = Client(settings, app_engine, world, role)
+
+    def live() -> int:  # earlier calls in the loop bump the version
+        version: int = admin.get(inq["id"])["version"]
+        return version
+
     calls: dict[str, Callable[[], Any]] = {
         "list": lambda: c.http.get(URL),
         "get": lambda: c.http.get(f"{URL}/{inq['id']}"),
@@ -470,10 +480,17 @@ def test_role_matrix(
         "patch": lambda: c.http.patch(
             f"{URL}/{inq['id']}", json={"version": 1, "internal_comments": "c"}
         ),
+        "take": lambda: c.http.post(f"{URL}/{inq['id']}/take", json={"version": live()}),
+        "cancel": lambda: c.http.post(
+            f"{URL}/{inq['id']}/cancel", json={"version": live(), "reason": "r"}
+        ),
+        "duplicate": lambda: c.http.post(f"{URL}/{inq['id']}/duplicate", json={"version": live()}),
+        "history": lambda: c.http.get(f"{URL}/{inq['id']}/history"),
     }
     for name, call in calls.items():
         r = call()
-        want = (CREATED if name == "create" else OK) if role in ALLOWED[name] else FORBIDDEN
+        created = name in {"create", "duplicate"}
+        want = (CREATED if created else OK) if role in ALLOWED[name] else FORBIDDEN
         assert r.status_code == want, (name, role, r.text)
 
 
@@ -885,3 +902,43 @@ def test_work_list_of_200_inquiries_answers_fast(
         f"runs {[round(x * 1000, 1) for x in runs]} ms"
     )
     assert median < PERF_BUDGET_S
+
+
+# --- another organization's ids -----------------------------------------------------------------
+
+
+@pytest.mark.req("B2-R04")
+def test_other_organizations_ids_are_422_on_their_field_and_404_as_inquiry(
+    settings: Settings, app_engine: Engine, world: SimpleNamespace, admin: Client
+) -> None:
+    """Real ids of org B: 422 on the field in org A; B's inquiry is 404 for every route."""
+    other = make_world(app_engine, "o")
+    theirs = Client(settings, app_engine, other).create()
+    mine = admin.create()
+    for field, value in {
+        "vessel_id": other.v1,
+        "port_id": other.port,
+        "legal_entity_id": other.le,
+        "bunkering_reason_id": other.reason,
+        "operator_id": other.users[Role.OPERATOR].user_id,
+        "buyer_id": other.users[Role.BUNKER_BUYER].user_id,
+        "requester_id": other.users[Role.ADMIN].user_id,
+    }.items():
+        assert field in errors(admin.http.post(URL, json=body(world, **{field: str(value)})))
+        r = admin.http.patch(f"{URL}/{mine['id']}", json={"version": 1, field: str(value)})
+        assert field in errors(r)
+    bad = line(world, product_id=str(other.hsfo))
+    assert "lines[0].product_id" in errors(admin.http.post(URL, json=body(world, lines=[bad])))
+    bad = line(world, iso_spec_version_id=str(other.iso))
+    r = admin.http.patch(f"{URL}/{mine['id']}", json={"version": 1, "lines": [bad]})
+    assert "lines[0].iso_spec_version_id" in errors(r)
+    path = f"{URL}/{theirs['id']}"
+    calls = [
+        admin.http.get(path),
+        admin.http.patch(path, json={"version": 1, "voyage": "x"}),
+        admin.http.post(f"{path}/take", json={"version": 1}),
+        admin.http.post(f"{path}/cancel", json={"version": 1, "reason": "r"}),
+        admin.http.post(f"{path}/duplicate", json={"version": 1}),
+        admin.http.get(f"{path}/history"),
+    ]
+    assert [r.status_code for r in calls] == [NOT_FOUND] * 6
