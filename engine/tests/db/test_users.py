@@ -198,3 +198,43 @@ def test_user_bound_to_other_org_is_403(
 
     assert response.status_code == HTTPStatus.FORBIDDEN
     assert response.json() == {"detail": "Organization not accessible"}
+
+
+@pytest.mark.req("B2-R01")
+def test_user_with_only_unknown_role_is_excluded(
+    settings: Settings, owner_engine: Engine, app_engine: Engine
+) -> None:
+    """Only the four known roles make a user listable."""
+    org, user = _org(owner_engine), uuid.uuid4()
+    with org_session(org, app_engine) as s:
+        s.add(
+            AppUser(
+                id=user,
+                organization_id=org,
+                last_seen_at=datetime.now(UTC),
+                name="Analyst",
+                email="",
+                roles=["route_analyst"],
+            )
+        )
+
+    names = [u["name"] for u in _as(settings, app_engine, org, name="Me").get(URL).json()]
+
+    assert names == ["Me"]
+
+
+@pytest.mark.req("B2-R01")
+@pytest.mark.parametrize(
+    ("email", "stored"),
+    [("ann@x.test", "ann@x.test"), ("not-an-email", ""), ("a" * 330 + "@x.test", "")],
+)
+def test_claim_lengths_capped(
+    settings: Settings, owner_engine: Engine, app_engine: Engine, email: str, stored: str
+) -> None:
+    """Names are truncated to 200; an invalid or overlong e-mail is stored as empty."""
+    org, user = _org(owner_engine), uuid.uuid4()
+
+    _as(settings, app_engine, org, BUYER, user, "N" * 300, email).get(URL)
+
+    row, _ = _row(app_engine, org, user)
+    assert (row.name, row.email) == ("N" * 200, stored)
