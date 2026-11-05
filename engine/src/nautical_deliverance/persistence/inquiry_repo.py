@@ -86,7 +86,7 @@ def list_rows(
             | Port.name.icontains(q, autoescape=True)
         )
     # ponytail: unpaginated; reference sorts as text, so INQ-yymm-1000 sorts before -999.
-    order = Inquiry.reference if sort == "reference" else Inquiry.eta
+    order = Inquiry.reference if sort == "reference" else Inquiry.eta.asc().nulls_last()
     return session.execute(stmt.order_by(order, Inquiry.id)).all()
 
 

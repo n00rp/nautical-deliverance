@@ -99,6 +99,9 @@ INQ_ACCEPT: list[dict[str, Any]] = [
     {"status": "rfq_sent"},
     {"voyage": "x" * 40},
     {"etd": ETA},
+    {"eta": None, "etd": None},
+    {"eta": ETA, "etd": None},
+    {"status": "cancelled", "cancel_reason": "x", "eta": None, "etd": None},
     {"internal_comments": "x" * 4000},
     {"status": "cancelled", "cancel_reason": "no longer needed"},
 ]
@@ -107,6 +110,8 @@ INQ_REJECT: list[tuple[str, dict[str, Any]]] = [
     ("inquiry_status_valid", {"status": "bogus"}),
     ("inquiry_voyage_len", {"voyage": "x" * 41}),
     ("inquiry_etd_after_eta", {"etd": ETA - timedelta(seconds=1)}),
+    ("inquiry_eta_etd_set", {"status": "rfq_sent", "eta": None}),
+    ("inquiry_eta_etd_set", {"status": "nominated", "etd": None}),
     ("inquiry_comments_len", {"internal_comments": "x" * 4001}),
     ("inquiry_cancel_reason_consistent", {"status": "cancelled"}),
     ("inquiry_cancel_reason_consistent", {"status": "cancelled", "cancel_reason": "  "}),

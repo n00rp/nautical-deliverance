@@ -119,8 +119,8 @@ def _check_lines(lines: Sequence[LineIn]) -> None:
         seen.add(line.product_id)
 
 
-def _check_times(eta: datetime, etd: datetime) -> None:
-    if etd < eta:
+def _check_times(eta: datetime | None, etd: datetime | None) -> None:
+    if eta is not None and etd is not None and etd < eta:
         _reject("etd", "ETD must not be before ETA")
 
 
@@ -231,7 +231,9 @@ def _lock_open(session: Session, inquiry_id: uuid.UUID, version: int) -> Inquiry
 # --- routes ------------------------------------------------------------------------------------
 
 
-def _eta_warning(state: str, eta: datetime, now: datetime) -> bool:
+def _eta_warning(state: str, eta: datetime | None, now: datetime) -> bool:
+    if eta is None:
+        return False
     open_ = state not in (Status.NOMINATED, Status.CANCELLED)
     return open_ and now <= eta < now + ETA_WARNING_WINDOW
 
@@ -448,7 +450,7 @@ def cancel_inquiry(
 def duplicate_inquiry(
     inquiry_id: uuid.UUID, body: VersionIn, principal: Creator, engine: Eng, now: Now
 ) -> object:
-    """Create a Draft from the B2-D10 fields; ETA/ETD start at the current time (required)."""
+    """Create a Draft from the B2-D10 fields; ETA/ETD start empty (R5)."""
     with scope(principal, engine) as s:
         src = _load(s, inquiry_id)
         if src.version != body.version:
@@ -465,7 +467,7 @@ def duplicate_inquiry(
             for r in line_rows(s, src.id)
         ]
         copied = {k: getattr(src, k) for k in DUPLICATED}
-        new = InquiryIn(**copied, eta=now, etd=now, lines=lines)
+        new = InquiryIn.model_construct(**copied, eta=None, etd=None, lines=lines)
         return _create(s, principal, now, new, "duplicate", {"duplicate_of": src.reference})
 
 

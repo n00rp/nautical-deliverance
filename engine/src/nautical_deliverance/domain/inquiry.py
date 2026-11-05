@@ -60,6 +60,11 @@ def can_transition(a: Status, b: Status) -> bool:
     return b in TRANSITIONS[a]
 
 
+def ready_to_leave_draft(eta: datetime | None, etd: datetime | None) -> bool:
+    """Return whether ETA and ETD are both set, as leaving Draft requires (R5)."""
+    return eta is not None and etd is not None
+
+
 def format_reference(created_at: datetime, n: int) -> str:
     """Return ``INQ-yymm-nnn`` for the UTC month of ``created_at``."""
     if created_at.tzinfo is None:

@@ -183,8 +183,8 @@ class InquiryOut(BaseModel):
     port_locode: str
     port_time_zone: str
     port_inactive: bool
-    eta: datetime
-    etd: datetime
+    eta: datetime | None
+    etd: datetime | None
     agent_name: str | None
     agent_email: str | None
     bunkering_reason_id: uuid.UUID
@@ -208,6 +208,6 @@ class InquiryListItem(BaseModel):
     vessel_name: str
     port_name: str
     port_time_zone: str
-    eta: datetime
+    eta: datetime | None
     buyer_name: str | None
     eta_warning: bool

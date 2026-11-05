@@ -19,6 +19,7 @@ from nautical_deliverance.domain.inquiry import (
     Status,
     can_transition,
     format_reference,
+    ready_to_leave_draft,
 )
 from nautical_deliverance.domain.master import Unit
 
@@ -121,3 +122,12 @@ def test_constants() -> None:
     """Constants."""
     assert LineUnit is Unit
     assert (Decimal(600), Decimal(1100), 10) == (DENSITY_MIN, DENSITY_MAX, MAX_LINES)
+
+
+def test_ready_to_leave_draft_needs_both_times() -> None:
+    """Only ETA and ETD together allow leaving Draft."""
+    t = datetime(2026, 11, 5, tzinfo=UTC)
+    assert ready_to_leave_draft(t, t)
+    assert not ready_to_leave_draft(None, t)
+    assert not ready_to_leave_draft(t, None)
+    assert not ready_to_leave_draft(None, None)

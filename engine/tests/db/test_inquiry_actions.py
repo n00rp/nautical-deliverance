@@ -171,7 +171,7 @@ def test_duplicate_copies_exactly_the_b2_d10_fields(
     assert new["reference"] != src["reference"]
     assert new["internal_comments"] is None
     assert new["buyer_id"] == str(world.users[Role.ADMIN].user_id)  # the create default
-    assert (new["eta"], new["etd"]) != (src["eta"], src["etd"])
+    assert (new["eta"], new["etd"]) == (None, None)
     [entry] = admin.entries(new["id"])
     assert entry.action == "duplicate"
     assert entry.changes["duplicate_of"]["after"] == src["reference"]
@@ -214,3 +214,19 @@ def test_each_action_writes_one_entry_and_history_is_newest_first(admin: Client)
     assert admin.http.get(f"{URL}/{inq['id']}/history").json()[0]["actor"] == str(
         admin.principal.user_id
     )
+
+
+@pytest.mark.req("B2-R08")
+def test_duplicate_can_be_dated_by_patch_and_cancelled_while_undated(admin: Client) -> None:
+    """A dated-less duplicate takes ETA/ETD by PATCH; the list sorts it last without warning."""
+    src = admin.create()
+    dup = act(admin, src, "duplicate").json()
+    other = act(admin, src, "duplicate").json()
+    rows = admin.listing()
+    assert rows[0]["id"] == src["id"]
+    assert {r["id"]: (r["eta"], r["eta_warning"]) for r in rows}[dup["id"]] == (None, False)
+    done = admin.patch(dup, eta="2026-11-22T08:00:00Z", etd="2026-11-23T08:00:00Z")
+    assert done["eta"].startswith("2026-11-22")
+    other = admin.patch(other, voyage="v")
+    assert other["eta"] is None
+    assert act(admin, other, "cancel", reason="r").status_code == OK
