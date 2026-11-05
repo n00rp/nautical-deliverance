@@ -189,8 +189,12 @@ ROUTES: list[tuple[str, str, bool]] = [
     ("GET", "/inquiries/{inq}/suggestions", False),
     ("GET", "/inquiries/{inq}/rfqs", False),
     ("GET", "/rfqs/{rfq}/preview", False),
+    ("GET", "/rfqs/{rfq}/history", False),
     ("POST", "/inquiries/{inq}/rfqs", True),
     ("PATCH", "/rfqs/{rfq}", True),
+    ("POST", "/rfqs/{rfq}/mark-sent", True),
+    ("POST", "/rfqs/{rfq}/withdraw", True),
+    ("POST", "/rfqs/{rfq}/decline", True),
 ]
 
 
@@ -205,14 +209,19 @@ def test_role_matrix(  # noqa: PLR0913
     admin = make_client(settings, app_engine, world, Role.ADMIN)
     i = admin.inquiry()
     rfq = admin.make(i["id"], ("Alpha", "a1"))[0]
+    version = 1
+    if path.endswith("/decline"):  # only a sent RFQ can be declined
+        sent = admin.http.post(f"/api/v1/rfqs/{rfq['id']}/mark-sent", json={"version": 1})
+        assert sent.status_code == OK, sent.text
+        version = 2
     url = "/api/v1" + path.format(inq=i["id"], rfq=rfq["id"])
-    body = {
-        "POST": {"deadline": DEADLINE, "recipients": admin.recipients(("Beta", "b1"))},
-        "PATCH": {"version": 1},
-    }.get(method)
+    creates = path == "/inquiries/{inq}/rfqs" and method == "POST"
+    body: Json = {"version": version} if writes else None
+    if creates:
+        body = {"deadline": DEADLINE, "recipients": admin.recipients(("Beta", "b1"))}
     r = make_client(settings, app_engine, world, role).http.request(method, url, json=body)
     allowed = role is not Role.OPERATOR and not (writes and role is Role.VIEWER)
-    expected = (CREATED if method == "POST" else OK) if allowed else FORBIDDEN
+    expected = (CREATED if creates else OK) if allowed else FORBIDDEN
     assert r.status_code == expected, r.text
 
 

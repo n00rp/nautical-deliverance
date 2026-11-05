@@ -1,4 +1,4 @@
-"""RFQ REST API (B3): suggestions, drafts, log, preview, edit.
+"""RFQ REST API (B3): suggestions, drafts, log, preview, edit, send, withdraw, decline, history.
 
 Admin and Bunker Buyer write; Viewer reads; Operator gets 403 everywhere (B3-D11). Drafts are
 created atomically, one per recipient. Every change is audited in the same transaction.
@@ -13,7 +13,8 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
 from nautical_deliverance.api.common import conflict, scope, unprocessable
-from nautical_deliverance.api.inquiries import get_now
+from nautical_deliverance.api.inquiries import _transition, get_now
+from nautical_deliverance.api.inquiry_models import HistoryOut, VersionIn
 from nautical_deliverance.api.rfq_models import (
     PreviewOut,
     RecipientIn,
@@ -24,14 +25,20 @@ from nautical_deliverance.api.rfq_models import (
 )
 from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import Status
-from nautical_deliverance.domain.rfq import RfqStatus
+from nautical_deliverance.domain.inquiry import Status, ready_to_leave_draft
+from nautical_deliverance.domain.rfq import RfqStatus, can_rfq_transition, render_rfq
 from nautical_deliverance.persistence import rfq_repo
-from nautical_deliverance.persistence.audit import record_change
-from nautical_deliverance.persistence.models import Contact, Counterparty, Inquiry, Rfq
+from nautical_deliverance.persistence.audit import Action, record_change
+from nautical_deliverance.persistence.models import (
+    AuditEntry,
+    Contact,
+    Counterparty,
+    Inquiry,
+    Rfq,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
 router = APIRouter()
 
@@ -128,13 +135,20 @@ def _check_recipients(s: Session, inquiry_id: uuid.UUID, recipients: Sequence[Re
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, problems)
 
 
-def _audit(s: Session, principal: Principal, rfq: Rfq, before: Any, after: Any) -> None:  # noqa: ANN401
+def _audit(  # noqa: PLR0913, PLR0917
+    s: Session,
+    principal: Principal,
+    rfq: Rfq,
+    before: Mapping[str, object] | None,
+    after: Mapping[str, object],
+    action: Action | None = None,
+) -> None:
     record_change(
         s,
         actor=principal.user_id,
         entity_type="rfq",
         entity_id=rfq.id,
-        action="update" if before else "create",
+        action=action or ("update" if before else "create"),
         before=before,
         after=after,
     )
@@ -254,3 +268,121 @@ def update_rfq(
             s.flush()
             _audit(s, principal, rfq, before, new)
         return rfq_repo.log(s, rfq.inquiry_id, {rfq.id})[0]
+
+
+# --- send, withdraw, decline, history ----------------------------------------------------------
+
+
+def _lock(s: Session, rfq_id: uuid.UUID, version: int) -> tuple[Inquiry, Rfq]:
+    """Lock the inquiry, then the RFQ (always this order); 409 when the version is stale."""
+    inquiry_id = s.scalar(select(Rfq.inquiry_id).where(Rfq.id == rfq_id))
+    if inquiry_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    inq = _inquiry(s, inquiry_id, lock=True)
+    rfq = _rfq(s, rfq_id, lock=True)
+    if rfq.version != version:
+        raise conflict()
+    return inq, rfq
+
+
+def _move(rfq: Rfq, to: RfqStatus) -> None:
+    if not can_rfq_transition(RfqStatus(rfq.status), to):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"Cannot move from {rfq.status} to {to.value}"
+        )
+
+
+def _finish(  # noqa: PLR0913, PLR0917
+    s: Session,
+    principal: Principal,
+    now: datetime,
+    rfq: Rfq,
+    action: Action,
+    values: dict[str, Any],
+) -> object:
+    """Apply the values, bump the version, write one audit entry, return the log item."""
+    before = {k: getattr(rfq, k) for k in values}
+    for k, v in values.items():
+        setattr(rfq, k, v)
+    rfq.version += 1
+    rfq.updated_at = now
+    s.flush()
+    _audit(s, principal, rfq, before, values, action)
+    return rfq_repo.log(s, rfq.inquiry_id, {rfq.id})[0]
+
+
+@router.post("/rfqs/{rfq_id}/mark-sent", response_model=RfqItem)
+def mark_sent(
+    rfq_id: uuid.UUID, body: VersionIn, principal: Writer, engine: Eng, now: Now
+) -> object:
+    """Freeze the live text and address; the first send moves a Draft inquiry to RFQ sent."""
+    with scope(principal, engine) as s:
+        inq, rfq = _lock(s, rfq_id, body.version)
+        _move(rfq, RfqStatus.SENT)
+        if Status(inq.status) not in CREATABLE:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"Inquiry is {inq.status}")
+        problem = _contact_problem(s.get(Contact, rfq.contact_id), rfq.counterparty_id)
+        if problem:
+            field = "contact_id"
+            raise unprocessable(field, problem)
+        if rfq.response_deadline <= now:
+            field, message = "response_deadline", "Deadline has passed"
+            raise unprocessable(field, message)
+        if not ready_to_leave_draft(inq.eta, inq.etd):
+            field, message = "eta", "Set ETA and ETD before sending"
+            raise unprocessable(field, message)
+        ctx = rfq_repo.build_context(s, rfq)
+        subject, text_ = render_rfq(ctx)
+        values = {
+            "status": RfqStatus.SENT.value,
+            "sent_at": now,
+            "sent_to_email": ctx.recipient_email,
+            "sent_subject": subject,
+            "sent_body": text_,
+            "inquiry_version_at_send": inq.version,
+        }
+        if Status(inq.status) is Status.DRAFT:
+            moved = _transition(inq, Status.RFQ_SENT)
+            before = {k: getattr(inq, k) for k in moved}
+            inq.status = moved["status"]
+            inq.version += 1
+            inq.updated_at = now
+            s.flush()
+            record_change(
+                s, actor=principal.user_id, entity_type="inquiry", entity_id=inq.id,
+                action="update", before=before, after=moved,
+            )  # fmt: skip
+        return _finish(s, principal, now, rfq, "send", values)
+
+
+@router.post("/rfqs/{rfq_id}/withdraw", response_model=RfqItem)
+def withdraw(
+    rfq_id: uuid.UUID, body: VersionIn, principal: Writer, engine: Eng, now: Now
+) -> object:
+    """Withdraw a draft; its counterparty may then get a new RFQ."""
+    with scope(principal, engine) as s:
+        _, rfq = _lock(s, rfq_id, body.version)
+        _move(rfq, RfqStatus.WITHDRAWN)
+        return _finish(s, principal, now, rfq, "withdraw", {"status": RfqStatus.WITHDRAWN.value})
+
+
+@router.post("/rfqs/{rfq_id}/decline", response_model=RfqItem)
+def decline(rfq_id: uuid.UUID, body: VersionIn, principal: Writer, engine: Eng, now: Now) -> object:
+    """Record that the supplier declined a sent RFQ."""
+    with scope(principal, engine) as s:
+        _, rfq = _lock(s, rfq_id, body.version)
+        _move(rfq, RfqStatus.DECLINED)
+        return _finish(s, principal, now, rfq, "decline", {"status": RfqStatus.DECLINED.value})
+
+
+@router.get("/rfqs/{rfq_id}/history", response_model=list[HistoryOut])
+def rfq_history(rfq_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+    """Audit entries of the RFQ, newest first."""
+    with scope(principal, engine) as s:
+        _rfq(s, rfq_id)
+        stmt = (
+            select(AuditEntry)
+            .where(AuditEntry.entity_type == "rfq", AuditEntry.entity_id == rfq_id)
+            .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
+        )
+        return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]

@@ -16,7 +16,10 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
-Action = Literal["create", "update", "deactivate", "reactivate", "take", "cancel", "duplicate"]
+Action = Literal[
+    "create", "update", "deactivate", "reactivate", "take", "cancel", "duplicate",
+    "send", "withdraw", "decline",
+]  # fmt: skip
 
 
 def _text(value: object) -> str | None:  # noqa: PLR0911
