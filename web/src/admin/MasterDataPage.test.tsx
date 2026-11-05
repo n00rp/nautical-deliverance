@@ -249,6 +249,46 @@ describe("master-data pages", () => {
     expect(await screen.findByRole("cell", { name: "Changed elsewhere" })).toBeTruthy();
   });
 
+  it("[B1-R11] after a contact 409 the form carries the fresh version, so the next save works", async () => {
+    const api = fakeApi(seed(), {}, [
+      rec("k1", { name: "Ann", email: "ann@alpha.example", phone: null, is_primary: false }),
+    ]);
+    setup("counterparties", ["admin"], api);
+    await userEvent.click(await screen.findByRole("cell", { name: "Seed Counterparty" }));
+    const contacts = within(await screen.findByRole("region", { name: "Contacts" }));
+    await userEvent.click(await contacts.findByRole("button", { name: "Edit" }));
+    const form = () => within(screen.getByRole("form", { name: "Contact" }));
+    const spy = vi.spyOn(api, "updateContact");
+    spy.mockImplementationOnce(() => {
+      Object.assign(api.contactsNow[0] as object, { name: "Changed elsewhere", version: 2 });
+      return Promise.reject(new ApiError(409));
+    });
+    await userEvent.type(form().getByLabelText(label("Name")), "!");
+    await userEvent.click(form().getByRole("button", { name: "Save contact" }));
+
+    await waitFor(() => {
+      expect(form().getByLabelText<HTMLInputElement>(label("Name")).value).toBe(
+        "Changed elsewhere",
+      );
+    });
+    await userEvent.type(form().getByLabelText(label("Name")), "!");
+    await userEvent.click(form().getByRole("button", { name: "Save contact" }));
+    expect(await contacts.findByRole("cell", { name: "Changed elsewhere!" })).toBeTruthy();
+    expect(spy).toHaveBeenLastCalledWith("cp1", "k1", 2, expect.anything());
+  });
+
+  it("[B1-R11] a 422 on a set save shows the server's message", async () => {
+    const api = setup("vessels");
+    vi.spyOn(api, "putSet").mockRejectedValueOnce(
+      new ApiError(422, [{ field: "items", message: "Unknown product" }]),
+    );
+    await userEvent.click(await screen.findByRole("cell", { name: "Seed Vessel" }));
+    const fuels = within(await screen.findByRole("region", { name: "Approved fuels" }));
+    await userEvent.click(await fuels.findByRole("checkbox", { name: "Seed Product" }));
+    await userEvent.click(fuels.getByRole("button", { name: "Save approved fuels" }));
+    expect(await screen.findByText("Unknown product")).toBeTruthy();
+  });
+
   it("[B1-R11] a 422 shows field errors on the field and in the summary", async () => {
     const api = setup("ports");
     vi.spyOn(api, "create").mockRejectedValueOnce(

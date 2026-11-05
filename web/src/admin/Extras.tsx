@@ -129,7 +129,14 @@ export function ContactsPanel({ ctx }: { ctx: ExtraCtx }) {
                   ? api.updateContact(rec.id, editing.id, editing.version, body)
                   : api.addContact(rec.id, body));
               } catch (e) {
-                if (e instanceof ApiError && e.status === 409) refresh();
+                if (e instanceof ApiError && e.status === 409) {
+                  // Swap in the reloaded row so the form (keyed on its version) resets to it.
+                  const fresh = await api.contacts(rec.id).catch(() => null);
+                  if (fresh) {
+                    setList(fresh);
+                    setEditing(fresh.find((c) => c.id === editing?.id) ?? null);
+                  }
+                }
                 throw e;
               }
               setEditing(null);

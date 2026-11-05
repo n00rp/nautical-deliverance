@@ -8,6 +8,7 @@ const EXPIRED = "Session expired — sign in again";
 
 export function describe(e: unknown): string {
   if (e instanceof ApiError && e.status === 409) return CONFLICT;
+  if (e instanceof ApiError && e.status === 422 && e.issues[0]) return e.issues[0].message;
   if (e instanceof ApiError && e.status === 401) return EXPIRED;
   if (e instanceof ApiError && e.status === 403) return "You are not allowed to change this record";
   return e instanceof Error ? e.message : "Unknown error";
