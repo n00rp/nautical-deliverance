@@ -1,8 +1,9 @@
 """Audit helper: one entry per change, same transaction, per-field diff (B1-R07)."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import pytest
@@ -60,10 +61,10 @@ def test_create_update_deactivate_write_one_entry_each(app_engine: Engine, org: 
     assert [e.action for e in entries] == ["create", "update", "deactivate"]
     assert entries[0].changes == {
         "name": {"before": None, "after": "A"},
-        "active": {"before": None, "after": "True"},
+        "active": {"before": None, "after": "true"},
     }
     assert entries[1].changes == {"name": {"before": "A", "after": "B"}}
-    assert entries[2].changes == {"active": {"before": "True", "after": "False"}}
+    assert entries[2].changes == {"active": {"before": "true", "after": "false"}}
     assert all(e.actor == ACTOR and e.organization_id == org for e in entries)
     assert all(abs((datetime.now(UTC) - e.at).total_seconds()) < MAX_SKEW_S for e in entries)
 
@@ -133,6 +134,71 @@ def test_noop_update_writes_nothing_and_values_are_canonical(
         assert e is not None
         assert e.changes == {
             "qty": {"before": "10", "after": "10.5"},
-            "when": {"before": None, "after": "2026-01-01T00:00:00+00:00"},
+            "when": {"before": None, "after": "2026-01-01T00:00:00Z"},
         }
     assert len(_entries(app_engine, org, eid)) == 1
+
+
+class Colour(Enum):
+    """Sample enum."""
+
+    RED = "red"
+
+
+def _diff(before: dict[str, object], after: dict[str, object], s: Session) -> AuditEntry | None:
+    return record_change(
+        s,
+        actor=ACTOR,
+        entity_type="x",
+        entity_id=uuid.uuid4(),
+        action="update",
+        before=before,
+        after=after,
+    )
+
+
+@pytest.mark.req("B1-R07")
+def test_canonical_values(app_engine: Engine, org: uuid.UUID) -> None:
+    """Enum, bool, collections and offset datetimes serialize canonically."""
+    plus2 = datetime(2026, 1, 1, 2, tzinfo=timezone(timedelta(hours=2)))
+    with org_session(org, app_engine) as s:
+        e = _diff(
+            {},
+            {
+                "c": Colour.RED,
+                "b": False,
+                "l": ["b", "a"],
+                "t": ("x", 1),
+                "st": {"b", "a"},
+                "fs": frozenset({Decimal("1.0"), Decimal(2)}),
+                "d": plus2,
+            },
+            s,
+        )
+        assert e is not None
+        got = {k: v["after"] for k, v in e.changes.items()}
+    assert got == {
+        "c": "red",
+        "b": "false",
+        "l": '["b", "a"]',
+        "t": '["x", "1"]',
+        "st": '["a", "b"]',
+        "fs": '["1", "2"]',
+        "d": "2026-01-01T00:00:00Z",
+    }
+
+
+@pytest.mark.req("B1-R07")
+def test_set_reorder_is_noop_but_list_reorder_is_not(app_engine: Engine, org: uuid.UUID) -> None:
+    """Sets compare as sets; list order is meaningful."""
+    with org_session(org, app_engine) as s:
+        assert _diff({"k": {"a", "b"}}, {"k": frozenset({"b", "a"})}, s) is None
+        assert _diff({"k": ["a", "b"]}, {"k": ["a", "b"]}, s) is None
+        assert _diff({"k": ["a", "b"]}, {"k": ["b", "a"]}, s) is not None
+
+
+@pytest.mark.req("B1-R07")
+def test_naive_datetime_rejected(app_engine: Engine, org: uuid.UUID) -> None:
+    """A naive datetime is a programming error."""
+    with org_session(org, app_engine) as s, pytest.raises(ValueError, match="naive"):
+        _diff({}, {"when": datetime(2026, 1, 1)}, s)  # noqa: DTZ001

@@ -1,12 +1,16 @@
 """Coverage queries: who covers a port for all / some products (B1-R09)."""
 
 import uuid
+from typing import TYPE_CHECKING, Literal
 
 import pytest
 from sqlalchemy import Engine, text
 
 from nautical_deliverance.persistence.db import org_session
 from nautical_deliverance.persistence.master_repo import counterparties_covering
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 
 @pytest.fixture
@@ -80,3 +84,79 @@ def test_all_and_some_sets_exclude_deactivated(
             cps["A"],
             cps["B"],
         }
+
+
+def _cover(s: Session, org: uuid.UUID, cp: uuid.UUID, port: uuid.UUID, prod: uuid.UUID) -> None:
+    s.execute(
+        text(
+            "INSERT INTO coverage (organization_id, counterparty_id, port_id, product_id)"
+            " VALUES (:o, :c, :pt, :pr)"
+        ),
+        {"o": org, "c": cp, "pt": port, "pr": prod},
+    )
+
+
+@pytest.mark.req("B1-R09")
+def test_inactive_port_product_and_coverage_row_are_ignored(
+    app_engine: Engine,
+    world: tuple[uuid.UUID, uuid.UUID, list[uuid.UUID], dict[str, uuid.UUID]],
+) -> None:
+    """Inactive port -> []; inactive product dropped from request; inactive row not counted."""
+    org, port, prods, cps = world
+
+    def ids(mode: Literal["all", "some"], req: list[uuid.UUID]) -> set[uuid.UUID]:
+        return {c.id for c in counterparties_covering(s, port, req, mode=mode)}
+
+    with org_session(org, app_engine) as s:
+        _cover(s, org, cps["B"], port, prods[1])  # B now covers p0+p1 like A
+        assert ids("all", prods[:2]) == {cps["A"], cps["B"]}
+        s.execute(
+            text(
+                "UPDATE coverage SET active = false WHERE counterparty_id = :c AND product_id = :p"
+            ),
+            {"c": cps["B"], "p": prods[1]},
+        )
+        assert ids("all", prods[:2]) == {cps["A"]}
+        assert ids("some", prods[:2]) == {cps["B"]}
+        # Deactivated p1 is dropped from the request: B (p0 only) then covers "all" of {p0}.
+        s.execute(text("UPDATE product SET active = false WHERE id = :p"), {"p": prods[1]})
+        assert ids("all", prods[:2]) == {cps["A"], cps["B"]}
+        assert ids("some", [prods[1]]) == set()
+        s.execute(text("UPDATE port SET active = false WHERE id = :p"), {"p": port})
+        assert ids("all", prods[:1]) == set()
+
+
+@pytest.mark.req("B1-R09")
+def test_other_org_with_same_names_is_isolated(
+    app_engine: Engine,
+    world: tuple[uuid.UUID, uuid.UUID, list[uuid.UUID], dict[str, uuid.UUID]],
+) -> None:
+    """A second org with identically named rows only ever sees its own counterparties."""
+    org, port, prods, _ = world
+    org2, port2, prod2, cp2 = (uuid.uuid4() for _ in range(4))
+    with org_session(org2, app_engine) as s:
+        s.execute(text("INSERT INTO organization (id, name) VALUES (:o, 'o2')"), {"o": org2})
+        s.execute(
+            text(
+                "INSERT INTO port (id, organization_id, locode, name, country, time_zone)"
+                " VALUES (:i, :o, 'NLRTM', 'p', 'XX', 'UTC')"
+            ),
+            {"i": port2, "o": org2},
+        )
+        s.execute(
+            text("INSERT INTO product (id, organization_id, name) VALUES (:i, :o, 'P0')"),
+            {"i": prod2, "o": org2},
+        )
+        s.execute(
+            text(
+                "INSERT INTO counterparty (id, organization_id, name, type)"
+                " VALUES (:i, :o, 'A', 'trader')"
+            ),
+            {"i": cp2, "o": org2},
+        )
+        _cover(s, org2, cp2, port2, prod2)
+        assert [c.id for c in counterparties_covering(s, port2, [prod2], mode="all")] == [cp2]
+        assert counterparties_covering(s, port, prods[:1], mode="all") == []  # org 1 ids invisible
+    with org_session(org, app_engine) as s:
+        assert cp2 not in {c.id for c in counterparties_covering(s, port, prods[:1], mode="all")}
+        assert counterparties_covering(s, port2, [prod2], mode="all") == []

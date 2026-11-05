@@ -1,7 +1,9 @@
 """Audit helper (B1-D12): one entry per change, in the caller's transaction."""
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import literal_column
@@ -17,14 +19,31 @@ if TYPE_CHECKING:
 Action = Literal["create", "update", "deactivate", "reactivate"]
 
 
-def _text(value: object) -> str | None:
-    """Canonical string form: Decimals without trailing zeros, datetimes as ISO UTC."""
+def _text(value: object) -> str | None:  # noqa: PLR0911
+    """Canonical string form, so equal values compare equal and diffs stay stable.
+
+    Enum -> its value; bool -> "true"/"false"; Decimal without trailing zeros;
+    datetime -> ISO UTC with "Z" (naive is a programming error); list/tuple -> JSON
+    array in order; set/frozenset -> JSON array sorted by canonical element string.
+    """
     if value is None:
         return None
+    if isinstance(value, Enum):
+        return _text(value.value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
     if isinstance(value, Decimal):
         return format(value.normalize(), "f")
     if isinstance(value, datetime):
-        return value.astimezone(UTC).isoformat()
+        if value.tzinfo is None:
+            msg = "naive datetime in audit values; use a timezone-aware one"
+            raise ValueError(msg)
+        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    if isinstance(value, (list, tuple, set, frozenset)):
+        items = [_text(v) for v in value]
+        if isinstance(value, (set, frozenset)):
+            items.sort(key=lambda t: (t is None, t or ""))
+        return json.dumps(items)
     return str(value)
 
 

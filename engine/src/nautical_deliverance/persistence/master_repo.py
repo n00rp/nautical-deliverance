@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import func, select
 
-from nautical_deliverance.persistence.models import Counterparty, Coverage
+from nautical_deliverance.persistence.models import Counterparty, Coverage, Port, Product
 
 if TYPE_CHECKING:
     import uuid
@@ -20,9 +20,18 @@ def counterparties_covering(
     *,
     mode: Literal["all", "some"],
 ) -> list[Counterparty]:
-    """Active counterparties covering the port for all, or only some, of the products."""
-    wanted = set(product_ids)
-    if not wanted:
+    """Active counterparties covering the port for all, or only some, of the products.
+
+    Inactive ports, products, coverage rows and counterparties never count. An inactive
+    requested product is dropped from the request (it can no longer be asked for, so it
+    must not make "all" unsatisfiable); if no active product remains, or the port is
+    inactive or unknown, the result is empty.
+    """
+    wanted = set(
+        session.scalars(select(Product.id).where(Product.id.in_(set(product_ids)), Product.active))
+    )
+    port_active = session.scalar(select(Port.id).where(Port.id == port_id, Port.active))
+    if not wanted or port_active is None:
         return []
     covered = func.count(func.distinct(Coverage.product_id))
     ids = (
