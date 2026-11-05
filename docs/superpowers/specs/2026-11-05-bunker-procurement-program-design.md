@@ -1,6 +1,6 @@
 # Bunker Procurement — Program Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-05
 - **Date:** 2026-11-05
 - **Supersedes:** the goal, scope and build order of [2026-11-04-nautical-deliverance-program-design.md](2026-11-04-nautical-deliverance-program-design.md) (see §7 for which earlier decisions still apply).
 - **Requirements source:** the bunker procurement MVP brief written by a bunker buyer at the pilot company (`text.md`, owner-provided). Every requirement in later sub-project specs traces to a line of that brief or to a decision below.
