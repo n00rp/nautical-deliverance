@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ADMIN_NAV, configFor } from "./admin/configs";
 import { MasterDataPage } from "./admin/MasterDataPage";
-import { parseAdmin, useHash } from "./admin/routes";
+import { parseAdmin, parseInquiries, useHash } from "./admin/routes";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
-import { createMasterApi, type TokenSource } from "./masterApi";
+import type { TokenSource } from "./http";
+import { WorkList } from "./inquiries/WorkList";
+import { createInquiryApi } from "./inquiryApi";
+import { createMasterApi } from "./masterApi";
 import { PRODUCT_NAME } from "./productName";
 import { AppShell } from "./ui/AppShell/AppShell";
 import type { Role } from "./ui/RoleGate/RoleGate";
@@ -25,6 +28,8 @@ const tokens: TokenSource = {
   token: async () => (await userManager.getUser())?.access_token ?? "",
   renew: async () => (await userManager.signinSilent())?.access_token ?? null,
 };
+
+const NAV = [{ href: "#/inquiries", label: "Inquiries" }, ...ADMIN_NAV];
 
 function cleanUrl() {
   window.history.replaceState({}, document.title, window.location.pathname);
@@ -78,15 +83,18 @@ export function App() {
       : null;
   const signedIn = state.kind === "signedIn";
   const api = useMemo(() => (signedIn ? createMasterApi(tokens) : null), [signedIn]);
-  const route = parseAdmin(useHash());
+  const inquiryApi = useMemo(() => (signedIn ? createInquiryApi(tokens) : null), [signedIn]);
+  const hash = useHash();
+  const route = parseAdmin(hash);
+  const inquiries = parseInquiries(hash);
 
   return (
     <ToastProvider>
       <AppShell
         productName={PRODUCT_NAME}
         user={user}
-        nav={user ? ADMIN_NAV : []}
-        current={route ? `#/admin/${route.path}` : undefined}
+        nav={user ? NAV : []}
+        current={route ? `#/admin/${route.path}` : inquiries ? "#/inquiries" : undefined}
       >
         {state.kind === "loading" && <p role="status">Loading…</p>}
         {state.kind === "error" && <p role="alert">{state.message}</p>}
@@ -103,7 +111,11 @@ export function App() {
             roles={user.roles}
           />
         )}
-        {user && !route && <p>Choose a master-data page from the menu.</p>}
+        {user && inquiryApi && inquiries && !inquiries.id && (
+          <WorkList api={inquiryApi} roles={user.roles} />
+        )}
+        {user && inquiries?.id && <p>Inquiry details are not available yet.</p>}
+        {user && !route && !inquiries && <p>Choose a master-data page from the menu.</p>}
       </AppShell>
       <ToastHost />
     </ToastProvider>

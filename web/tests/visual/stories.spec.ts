@@ -28,6 +28,7 @@ const open = async (page: import("@playwright/test").Page, id: string) => {
   if (id.startsWith("admin-")) {
     await page.getByRole("region", { name: "Coverage" }).getByRole("checkbox").first().waitFor();
   }
+  if (id.startsWith("inquiries-")) await page.getByRole("cell", { name: "INQ-2611-001" }).waitFor();
 };
 
 test("[B1-R13] no orphan baselines", () => {
