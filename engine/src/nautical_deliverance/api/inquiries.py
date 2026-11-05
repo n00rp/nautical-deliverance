@@ -27,7 +27,7 @@ from nautical_deliverance.api.inquiry_models import (
 )
 from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status, can_transition
+from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status
 from nautical_deliverance.persistence.audit import record_change
 from nautical_deliverance.persistence.inquiry_repo import (
     dec,
@@ -440,15 +440,13 @@ def cancel_inquiry(
     """Cancel with a required reason (any open status may be cancelled)."""
     with scope(principal, engine) as s:
         inq = _lock_open(s, inquiry_id, body.version)
-        if not can_transition(Status(inq.status), Status.CANCELLED):
-            raise HTTPException(status.HTTP_409_CONFLICT, "Cannot cancel")
         values = {"status": Status.CANCELLED.value, "cancel_reason": body.reason}
         return _change(s, principal, now, inq, "cancel", values)
 
 
 @router.post("/{inquiry_id}/duplicate", response_model=InquiryOut, status_code=201)
 def duplicate_inquiry(
-    inquiry_id: uuid.UUID, body: VersionIn, principal: Creator, engine: Eng, now: Now
+    inquiry_id: uuid.UUID, body: VersionIn, principal: Editor, engine: Eng, now: Now
 ) -> object:
     """Create a Draft from the B2-D10 fields; ETA/ETD start empty (R5)."""
     with scope(principal, engine) as s:
@@ -479,6 +477,6 @@ def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> ob
         stmt = (
             select(AuditEntry)
             .where(AuditEntry.entity_type == "inquiry", AuditEntry.entity_id == inquiry_id)
-            .order_by(AuditEntry.at.desc(), AuditEntry.id)
+            .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
         )
         return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]

@@ -12,6 +12,7 @@ from nautical_deliverance.persistence.models import Vessel
 from tests.db.test_inquiry_api import (
     CONFLICT,
     CREATED,
+    FORBIDDEN,
     OK,
     URL,
     Client,
@@ -179,14 +180,14 @@ def test_duplicate_copies_exactly_the_b2_d10_fields(
 
 
 @pytest.mark.req("B2-R08")
-def test_duplicate_by_an_operator_leaves_the_buyer_empty(
+def test_duplicate_by_an_operator_is_forbidden(
     settings: Settings, app_engine: Engine, world: SimpleNamespace, admin: Client
 ) -> None:
-    """The buyer follows the create default: none for an operator."""
+    """Duplicate is for admin and bunker buyer only (B2-D12)."""
     src = admin.create()
     op = Client(settings, app_engine, world, Role.OPERATOR)
     r = act(op, src, "duplicate")
-    assert (r.status_code, r.json()["buyer_id"]) == (CREATED, None)
+    assert r.status_code == FORBIDDEN
 
 
 @pytest.mark.req("B2-R08")

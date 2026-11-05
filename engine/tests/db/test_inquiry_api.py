@@ -455,7 +455,7 @@ ALLOWED = {
     "patch": {Role.ADMIN, Role.BUNKER_BUYER},
     "take": {Role.ADMIN, Role.BUNKER_BUYER},
     "cancel": {Role.ADMIN, Role.BUNKER_BUYER},
-    "duplicate": {Role.ADMIN, Role.BUNKER_BUYER, Role.OPERATOR},
+    "duplicate": {Role.ADMIN, Role.BUNKER_BUYER},
     "history": set(Role),
 }
 
