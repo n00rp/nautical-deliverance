@@ -84,7 +84,7 @@ The visual baselines (`web/tests/visual/__screenshots__/`) are Linux-only and ar
 pnpm --dir web run test:visual:docker --update-snapshots
 ```
 
-Pixel tolerance: at most 0.1 % of pixels may differ (`maxDiffPixelRatio` in `web/playwright.config.ts`). `pnpm run storybook` starts Storybook for development.
+Pixel tolerance: at most 20 pixels may differ, per-pixel `threshold` 0.1, on the story root element (`maxDiffPixels` in `web/playwright.config.ts`). `pnpm run storybook` starts Storybook for development.
 
 Repository, from the root:
 

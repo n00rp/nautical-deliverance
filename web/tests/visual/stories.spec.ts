@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 type Entry = { id: string; type: string };
 const index = JSON.parse(readFileSync("storybook-static/index.json", "utf8")) as {
@@ -11,8 +11,26 @@ const stories = Object.values(index.entries).filter((e) => e.type === "story");
 const open = async (page: import("@playwright/test").Page, id: string) => {
   await page.goto(`/iframe.html?id=${id}&viewMode=story`);
   await page.locator("#storybook-root > *").first().waitFor();
-  await page.evaluate(() => document.fonts.ready);
+  await page.evaluate(async () => {
+    await Promise.all(
+      [
+        '400 1em "IBM Plex Sans"',
+        '500 1em "IBM Plex Sans"',
+        '600 1em "IBM Plex Sans"',
+        '600 1em "IBM Plex Sans Condensed"',
+        '400 1em "IBM Plex Mono"',
+        '500 1em "IBM Plex Mono"',
+      ].map((f) => document.fonts.load(f)),
+    );
+    await document.fonts.ready;
+  });
 };
+
+test("[B1-R13] no orphan baselines", () => {
+  const expected = new Set(stories.flatMap(({ id }) => [`${id}-light.png`, `${id}-dark.png`]));
+  const orphans = readdirSync("tests/visual/__screenshots__").filter((f) => !expected.has(f));
+  expect(orphans, `orphan baselines (delete them): ${orphans.join(", ")}`).toEqual([]);
+});
 
 test("[B1-R13] storybook has stories", () => {
   expect(stories.length).toBeGreaterThan(0);
@@ -23,7 +41,7 @@ for (const scheme of ["light", "dark"] as const) {
     test(`[B1-R13] ${id} ${scheme}: screenshot and axe`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
       await open(page, id);
-      await expect(page).toHaveScreenshot(`${id}-${scheme}.png`);
+      await expect(page.locator("#storybook-root")).toHaveScreenshot(`${id}-${scheme}.png`);
       const { violations } = await new AxeBuilder({ page })
         // Page-level rules do not apply to an isolated component story.
         .disableRules(["page-has-heading-one", "landmark-one-main", "region"])

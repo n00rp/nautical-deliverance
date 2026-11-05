@@ -7,8 +7,8 @@ export default defineConfig({
   outputDir: "test-results",
   reporter: [["list"]],
   expect: {
-    // Tolerates sub-pixel anti-aliasing only: at most 0.1 % of pixels may differ.
-    toHaveScreenshot: { maxDiffPixelRatio: 0.001, animations: "disabled" },
+    // Story root only. Per-pixel colour tolerance 0.1 absorbs anti-aliasing; at most 20 pixels may differ.
+    toHaveScreenshot: { maxDiffPixels: 20, threshold: 0.1, animations: "disabled" },
   },
   use: { baseURL: "http://127.0.0.1:6006" },
   webServer: {

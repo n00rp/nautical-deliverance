@@ -3,3 +3,7 @@ body {
   color: var(--color-fg);
   font-family: var(--font-body);
 }
+
+#storybook-root {
+  padding: var(--space-4);
+}
