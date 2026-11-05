@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { describe, useFail } from "../admin/errors";
 import { goInquiry } from "../admin/routes";
 import { STATUS_LABEL, type Inquiry, type InquiryApi, type InquiryBody } from "../inquiryApi";
@@ -25,18 +25,28 @@ export type InquiryPageProps = {
 
 async function loadRefs(api: InquiryApi, master: Pick<MasterApi, "list">): Promise<Refs> {
   const list = (t: Parameters<MasterApi["list"]>[0]) => master.list(t, "true");
-  const [vessels, ports, legalEntities, products, isos, reasons, operators, buyers] =
-    await Promise.all([
-      list("vessels"),
-      list("ports"),
-      list("legal-entities"),
-      list("products"),
-      list("iso-spec-versions"),
-      list("bunkering-reasons"),
-      api.listUsers("operator"),
-      api.listUsers("bunker_buyer"),
-    ]);
-  return { vessels, ports, legalEntities, products, isos, reasons, operators, buyers };
+  const [vessels, ports, legalEntities, products, isos, reasons, users] = await Promise.all([
+    list("vessels"),
+    list("ports"),
+    list("legal-entities"),
+    list("products"),
+    list("iso-spec-versions"),
+    list("bunkering-reasons"),
+    api.listUsers(),
+  ]);
+  // The engine accepts an admin as operator or buyer too (inquiries.py _check_refs).
+  const has = (...roles: Role[]) => users.filter((u) => u.roles.some((r) => roles.includes(r)));
+  return {
+    vessels,
+    ports,
+    legalEntities,
+    products,
+    isos,
+    reasons,
+    users,
+    operators: has("operator", "admin"),
+    buyers: has("bunker_buyer", "admin"),
+  };
 }
 
 /** Create, edit and act on one inquiry (B2-R13). */
@@ -47,6 +57,8 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
   const [rec, setRec] = useState<Inquiry | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [failed, setFailed] = useState(false);
+  const [pending, setPending] = useState(false);
+  const busy = useRef(false);
   const [tick, setTick] = useState(0);
   // Bumps with every load, so the form restarts from the server state (drafts survive failures).
   const [epoch, setEpoch] = useState(0);
@@ -102,14 +114,21 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
   if (!refs || (!isNew && !rec)) return <p role="status">Loading…</p>;
 
   const act = (run: (r: Inquiry) => Promise<void>) => {
-    if (!rec) return;
-    run(rec).catch(fail);
+    if (!rec || busy.current) return;
+    busy.current = true;
+    setPending(true);
+    run(rec)
+      .catch(fail)
+      .finally(() => {
+        busy.current = false;
+        setPending(false);
+      });
   };
   const done = (message: string) => {
     toast(message, "ok");
     reload();
   };
-  const names = new Map([...refs.operators, ...refs.buyers].map((u) => [u.id, u.name]));
+  const names = new Map(refs.users.map((u) => [u.id, u.name]));
 
   return (
     <div className={css.page}>
@@ -144,6 +163,7 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
                   {rec.buyer_id === null && rec.status !== "cancelled" && (
                     <Button
                       variant="primary"
+                      disabled={pending}
                       onClick={() => {
                         act(async (r) => {
                           await api.takeInquiry(r.id, r.version);
@@ -156,6 +176,7 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
                   )}
                   <Button
                     variant="secondary"
+                    disabled={pending}
                     onClick={() => {
                       act(async (r) => {
                         const copy = await api.duplicateInquiry(r.id, r.version);
@@ -169,6 +190,7 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
                 </div>
                 {rec.status !== "cancelled" && (
                   <CancelAction
+                    disabled={pending}
                     onCancel={(reason) => {
                       act(async (r) => {
                         await api.cancelInquiry(r.id, r.version, reason);

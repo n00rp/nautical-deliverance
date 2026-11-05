@@ -248,6 +248,46 @@ describe("InquiryPage actions", () => {
     expect(api.duplicateInquiry).toHaveBeenCalledWith("i1", 4);
   });
 
+  it("[B2-R13] a double click on Duplicate sends one request and disables the actions", async () => {
+    let finish: (i: Inquiry) => void = () => undefined;
+    const api = setup(inquiry({ buyer_id: null, buyer_name: null }), ["bunker_buyer"], {
+      duplicateInquiry: vi.fn(
+        () =>
+          new Promise<Inquiry>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    });
+    await form();
+    const dup = screen.getByRole("button", { name: "Duplicate" });
+    await userEvent.dblClick(dup);
+    expect(api.duplicateInquiry).toHaveBeenCalledTimes(1);
+    for (const name of ["Take", "Duplicate", "Cancel inquiry"]) {
+      expect(screen.getByRole("button", { name }).hasAttribute("disabled")).toBe(true);
+    }
+    finish(inquiry({ id: "i2" }));
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/inquiries/i2");
+    });
+  });
+
+  it("[B2-R11] an admin's history entry shows the admin's name, and pickers include admins", async () => {
+    setup(inquiry(), ["admin"], {
+      inquiryHistory: () =>
+        Promise.resolve([
+          { id: "h2", actor: "ad1", at: "2026-11-05T10:00:00Z", action: "take", changes: [] },
+        ]),
+    });
+    await form();
+    const history = within(screen.getByRole("region", { name: "History" }));
+    expect(await history.findByText("Ada Admin")).toBeTruthy();
+    for (const name of ["Operator", "Buyer"]) {
+      await userEvent.click(combo(name));
+      expect(await screen.findByRole("option", { name: "Ada Admin" })).toBeTruthy();
+      await userEvent.keyboard("{Escape}");
+    }
+  });
+
   it("[B2-R13] Take is shown without a buyer, for admins and buyers only", async () => {
     const unassigned = inquiry({ buyer_id: null, buyer_name: null, version: 5 });
     const api = setup(unassigned, ["admin"]);
@@ -380,6 +420,20 @@ describe("InquiryPage lines", () => {
     await form();
     expect(line(2).getByText("Not an approved fuel for this vessel")).toBeTruthy();
     expect(line(1).queryByText("Not an approved fuel for this vessel")).toBeNull();
+  });
+
+  it("[B2-R10] warnings of the saved vessel disappear once the vessel changes", async () => {
+    setup(
+      inquiry({
+        warnings: [
+          { field: "lines[0].product_id", code: "not_approved_fuel", message: "Not approved" },
+        ],
+      }),
+    );
+    await form();
+    expect(screen.getByText("Not approved")).toBeTruthy();
+    await pick("Vessel", "Harbour Light");
+    expect(screen.queryByText("Not approved")).toBeNull();
   });
 
   it("[B2-R13] the internal comments section is marked internal", async () => {

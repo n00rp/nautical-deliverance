@@ -53,6 +53,9 @@ const OPERATORS: DirectoryUser[] = [
 const BUYERS: DirectoryUser[] = [
   { id: "b1", name: "Bea Buyer", email: "bea@demo.example", roles: ["bunker_buyer"] },
 ];
+const ADMINS: DirectoryUser[] = [
+  { id: "ad1", name: "Ada Admin", email: "ada@demo.example", roles: ["admin"] },
+];
 
 /** A Draft with one VLSFO line; override any field. */
 export const inquiry = (fields: Partial<Inquiry> = {}): Inquiry => ({
@@ -132,6 +135,10 @@ export function inquiryApi(current: Inquiry = inquiry()): InquiryApi {
           changes: [{ field: "status", before: null, after: "draft" }],
         },
       ]),
-    listUsers: (role) => Promise.resolve(role === "bunker_buyer" ? BUYERS : OPERATORS),
+    // Like the engine: no role means everyone; a role filter matches the user's own roles.
+    listUsers: (role) =>
+      Promise.resolve(
+        [...OPERATORS, ...BUYERS, ...ADMINS].filter((u) => !role || u.roles.includes(role)),
+      ),
   };
 }

@@ -31,6 +31,8 @@ export type Refs = {
   products: Rec[];
   isos: Rec[];
   reasons: Rec[];
+  /** Everyone in the directory, for names of users who no longer fit a picker. */
+  users: DirectoryUser[];
   operators: DirectoryUser[];
   buyers: DirectoryUser[];
 };
@@ -123,7 +125,11 @@ export function InquiryForm({ rec, refs, roles, onCreate, onPatch, onFail }: Inq
   for (const w of rec?.warnings ?? []) {
     const i = Number(/^lines\[(\d+)\]\./.exec(w.field)?.[1]);
     // A warning describes the saved line; it only applies while that line still holds the product.
-    if (rec?.lines[i]?.product_id === values.lines[i]?.product_id) {
+    // After a vessel change the saved warnings are about the old vessel, so they are hidden.
+    if (
+      rec?.vessel_id === values.vessel_id &&
+      rec.lines[i]?.product_id === values.lines[i]?.product_id
+    ) {
       (warnings[i] ??= []).push(w.message);
     }
   }
