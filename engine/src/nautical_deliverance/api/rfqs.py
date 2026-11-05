@@ -333,14 +333,6 @@ def mark_sent(
             raise unprocessable(field, message)
         ctx = rfq_repo.build_context(s, rfq)
         subject, text_ = render_rfq(ctx)
-        values = {
-            "status": RfqStatus.SENT.value,
-            "sent_at": now,
-            "sent_to_email": ctx.recipient_email,
-            "sent_subject": subject,
-            "sent_body": text_,
-            "inquiry_version_at_send": inq.version,
-        }
         if Status(inq.status) is Status.DRAFT:
             moved = _transition(inq, Status.RFQ_SENT)
             before = {k: getattr(inq, k) for k in moved}
@@ -352,6 +344,14 @@ def mark_sent(
                 s, actor=principal.user_id, entity_type="inquiry", entity_id=inq.id,
                 action="update", before=before, after=moved,
             )  # fmt: skip
+        values = {  # after the bump: a version the inquiry had while this RFQ was sent
+            "status": RfqStatus.SENT.value,
+            "sent_at": now,
+            "sent_to_email": ctx.recipient_email,
+            "sent_subject": subject,
+            "sent_body": text_,
+            "inquiry_version_at_send": inq.version,
+        }
         return _finish(s, principal, now, rfq, "send", values)
 
 

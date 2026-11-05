@@ -11,7 +11,7 @@ from sqlalchemy.exc import DBAPIError
 
 from nautical_deliverance.domain.identity import Role
 from nautical_deliverance.persistence.db import org_session
-from nautical_deliverance.persistence.models import AppUser, Contact, Inquiry
+from nautical_deliverance.persistence.models import AppUser, Contact, Inquiry, Rfq
 from tests.db.test_inquiry_api import CONFLICT, CREATED, NOT_FOUND, OK, UNPROCESSABLE, errors
 from tests.db.test_rfq_api import Rc, make_client, rfq_world
 
@@ -82,6 +82,8 @@ def test_first_send_moves_the_inquiry_once(admin: Rc, inq: Json) -> None:
     assert send(admin, b)["status"] == "sent"
     assert inquiry_row(admin, inq["id"]) == ("rfq_sent", v0 + 1)
     assert len(admin.audit("inquiry", [inq["id"]])) == 3  # create, rfq_deadline, status  # noqa: PLR2004
+    with org_session(admin.w.org, admin.engine) as s:  # a version the inquiry had while sent
+        assert s.get(Rfq, uuid.UUID(a["id"])).inquiry_version_at_send == v0 + 1  # type: ignore[union-attr]
 
 
 @pytest.mark.req("B3-R09")
