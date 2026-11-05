@@ -74,7 +74,7 @@ jobs:
       - name: Duplication (jscpd, threshold 0)
         run: pnpm --dir web run duplication
 
-  # req: S0-R06 S0-R07 S0-R15
+  # req: S0-R06 S0-R07 S0-R15 B1-R12
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -97,6 +97,7 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: pnpm run format:check
+      - run: pnpm run stylelint
       - run: pnpm run depcruise
       - run: pnpm run knip
       - run: pnpm run test --coverage

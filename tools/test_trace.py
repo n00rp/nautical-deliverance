@@ -99,3 +99,17 @@ def test_web_test_names_reference_ids(tmp_path: Path) -> None:
     assert "S0-R04 | web/src/a.test.tsx" in (tmp_path / "docs/traceability.md").read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.req("B1-R15")
+def test_b_prefixed_ids_collected(tmp_path: Path) -> None:
+    _repo(
+        tmp_path,
+        ["B1-R01", "B1a-R02"],
+        {"web/src/a.test.ts": "it('[B1-R01] x', () => {});\nit('[B1a-R02] y', () => {});\n"},
+    )
+    result = _run(tmp_path)
+    assert result.returncode == 0, result.stderr
+    matrix = (tmp_path / "docs/traceability.md").read_text(encoding="utf-8")
+    assert "B1-R01 | web/src/a.test.ts" in matrix
+    assert "B1a-R02 | web/src/a.test.ts" in matrix

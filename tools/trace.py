@@ -6,7 +6,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-ID = r"(?:S\d\w*|C\d+)-R\d{2}"
+ID = r"(?:S\d\w*|C\d+|B\d+[a-z]?)-R\d{2}"
 SPEC_ROW = re.compile(rf"^\| ({ID}) \|", re.MULTILINE)
 PY_REF = re.compile(r'req\("([^"]+)"\)')
 TS_REF = re.compile(rf"\[({ID})\]")
