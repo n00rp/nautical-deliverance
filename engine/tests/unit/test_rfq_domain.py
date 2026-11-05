@@ -1,5 +1,6 @@
 """RFQ domain: render, confidentiality, mailto and transitions (B3-R05..R12)."""
 
+import dataclasses
 import itertools
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -65,7 +66,7 @@ def test_golden_render() -> None:
         "Products:\n"
         "  - VLSFO: 1200.500 mt, ISO 8217:2024, max 0.5% S\n"
         "  - MGO: 300 m3, density 850.5 kg/m3, ISO 8217:2024\n\n"
-        "Please state price per unit (USD), all additional costs (barging, port, agent, "
+        "Please state price per mt (USD), all additional costs (barging, port, agent, "
         "surveyor, other), offer validity, payment terms, delivery window and method, "
         "and the physical supplier if you are a trader.\n\n"
         "Response requested by 12 Nov 06:00 UTC · 07:00 local.\n\n"
@@ -193,7 +194,17 @@ def test_mailto_single_address_only_subject_body(local: str, subject: str, body:
 @pytest.mark.req("B3-R05")
 @pytest.mark.parametrize(
     "to",
-    ["a@x.example,b@y.example", "a@x.example;b@y.example", "a@x.example?cc=b", "a b@x.example", ""],
+    [
+        "a@x.example,b@y.example",
+        "a@x.example;b@y.example",
+        "a@x.example?cc=b",
+        "a b@x.example",
+        "",
+        "nobody",
+        "a@b@c.example",
+        "@x.example",
+        "a@",
+    ],
 )
 def test_mailto_rejects_multiple_or_injected(to: str) -> None:
     """Separators, ?, whitespace in the address are rejected."""
@@ -240,3 +251,57 @@ def test_rfq_transitions_exact() -> None:
 def test_can_rfq_transition_all_pairs(pair: tuple[RfqStatus, RfqStatus]) -> None:
     """All 16 pairs agree with the table."""
     assert can_rfq_transition(*pair) is (pair in _TABLE)
+
+
+def _marker_dict(n: int, count: int) -> dict[str, str]:
+    markers = {k: f"MK{n}-{i}-{k.upper()}" for i, k in enumerate(FORBIDDEN)}
+    markers["recipient_count"] = f"COUNT-{count}"
+    return markers
+
+
+@pytest.mark.req("B3-R06")
+def test_context_fields_pinned_and_disjoint_from_forbidden() -> None:
+    """RfqContext holds exactly the allowed fields; none is a forbidden key."""
+    names = {f.name for f in dataclasses.fields(RfqContext)}
+    assert names == set(ALLOWED) | {"recipient_name", "recipient_email", "buyer_name"}
+    assert names.isdisjoint(FORBIDDEN)
+    assert {f.name for f in dataclasses.fields(RfqLine)} == {
+        "product",
+        "quantity",
+        "unit",
+        "density",
+        "spec_notes",
+        "iso_version",
+    }
+
+
+@pytest.mark.req("B3-R06")
+@given(n=st.integers(1, 10**6), count=st.integers(1, 50))
+def test_leak_scan_positive_control(n: int, count: int) -> None:
+    """The scan can fail: a marker in an allowed field is found; markers are non-empty."""
+    markers = _marker_dict(n, count)
+    assert len(markers) == len(FORBIDDEN)
+    assert all(m and m in repr(markers) for m in markers.values())
+    m = markers["internal_comments"]
+    line = RfqLine("X", Decimal(1), "mt", None, m, "ISO")
+    subject, body = render_rfq(_ctx(lines=(line,)))
+    url, _ = build_mailto(TO, subject, body)
+    assert m in body
+    assert m in unquote(url)
+
+
+@pytest.mark.req("B3-R06")
+def test_all_keys_context_would_leak() -> None:
+    """Mutation check: copying every key (forbidden too) into a rendered field leaks."""
+    markers = _marker_dict(1, 2)
+    note = " ".join(markers.values())
+    _, body = render_rfq(_ctx(lines=(RfqLine("X", Decimal(1), "mt", None, note, "ISO"),)))
+    assert all(m in body for m in markers.values())
+
+
+@pytest.mark.req("B3-R07")
+def test_decimals_never_use_exponent() -> None:
+    """Quantity and density print in plain notation."""
+    line = RfqLine("X", Decimal("1E+3"), "m3", Decimal("8.5E+2"), None, "ISO")
+    _, body = render_rfq(_ctx(lines=(line,)))
+    assert "  - X: 1000 m3, density 850 kg/m3, ISO" in body

@@ -81,9 +81,9 @@ def format_instant(dt: datetime, tz: str) -> str:
 
 
 def _line(line: RfqLine) -> str:
-    parts = [f"{line.product}: {line.quantity} {line.unit}"]
+    parts = [f"{line.product}: {format(line.quantity, 'f')} {line.unit}"]
     if line.density is not None:
-        parts.append(f"density {line.density} kg/m3")
+        parts.append(f"density {format(line.density, 'f')} kg/m3")
     parts.append(line.iso_version)
     if line.spec_notes:
         parts.append(line.spec_notes)
@@ -107,7 +107,7 @@ def render_rfq(ctx: RfqContext) -> tuple[str, str]:
         f"ETA / ETD: {when(ctx.eta)} / {when(ctx.etd)}\n"
         f"Agent: {ctx.agent_name or TBA}\n"
         f"Products:\n{products}\n\n"
-        "Please state price per unit (USD), all additional costs (barging, port, agent, "
+        "Please state price per mt (USD), all additional costs (barging, port, agent, "
         "surveyor, other), offer validity, payment terms, delivery window and method, "
         "and the physical supplier if you are a trader.\n\n"
         f"Response requested by {when(ctx.response_deadline)}.\n\n"
@@ -118,7 +118,14 @@ def render_rfq(ctx: RfqContext) -> tuple[str, str]:
 
 def build_mailto(to: str, subject: str, body: str) -> tuple[str, bool]:
     """Return ``(url, body_included)``; the body is dropped if the link exceeds MAILTO_MAX."""
-    if not to or any(c in to for c in ",;?") or any(c.isspace() for c in to):
+    local, _, domain = to.partition("@")
+    if (
+        not local
+        or not domain
+        or "@" in domain
+        or any(c in to for c in ",;?")
+        or any(c.isspace() for c in to)
+    ):
         msg = "to must be a single e-mail address"
         raise ValueError(msg)
     head = f"mailto:{quote(to, safe='@')}?subject={quote(subject, safe='')}"
