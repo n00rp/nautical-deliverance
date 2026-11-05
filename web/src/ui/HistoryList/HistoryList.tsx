@@ -1,0 +1,49 @@
+import { formatInstant } from "../DateTimeField/format";
+import styles from "./HistoryList.module.css";
+
+export type HistoryEntry = {
+  id: string;
+  actor: string;
+  at: string;
+  action: "create" | "update" | "deactivate" | "reactivate";
+  changes: { field: string; before: string | null; after: string | null }[];
+};
+
+const VERB = {
+  create: "created",
+  update: "updated",
+  deactivate: "deactivated",
+  reactivate: "reactivated",
+} as const;
+
+const show = (v: string | null) => v ?? "—";
+
+export function HistoryList({ entries }: { entries: HistoryEntry[] }) {
+  if (entries.length === 0) return <p className={styles.none}>No history yet</p>;
+  // ISO-8601 UTC strings of equal format sort chronologically; compare parsed instants to be safe.
+  const newestFirst = [...entries].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  return (
+    <ol className={styles.list}>
+      {newestFirst.map((e) => (
+        <li key={e.id} data-entry={e.id} className={styles.entry}>
+          <p className={styles.head}>
+            <strong>{e.actor}</strong> {VERB[e.action]}{" "}
+            <time dateTime={e.at} className={styles.time}>
+              {formatInstant(e.at)}
+            </time>
+          </p>
+          {e.changes.length > 0 && (
+            <ul className={styles.changes}>
+              {e.changes.map((c) => (
+                <li key={c.field}>
+                  <span className={styles.field}>{c.field}</span>{" "}
+                  <span>{`${show(c.before)} → ${show(c.after)}`}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}

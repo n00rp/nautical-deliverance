@@ -1,0 +1,7 @@
+@media (min-width: 900px) {
+  .side {
+    width: 22rem;
+    flex: none;
+    align-self: flex-start;
+  }
+}

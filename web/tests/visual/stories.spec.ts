@@ -64,3 +64,30 @@ test("[B1-R13] reduced motion disables transitions", async ({ page }) => {
     .evaluate((el) => getComputedStyle(el).transitionDuration);
   expect(normal).not.toBe("0s");
 });
+
+// Review Focus 2 and 4: 60+ char unbroken text never widens the page; tables scroll inside their container.
+for (const id of [
+  "ui-table--long-name",
+  "ui-table--offer-table",
+  "ui-detailpanel--beside-table",
+  "ui-historylist--default",
+]) {
+  test(`[B1-R13] ${id}: no horizontal page overflow at 400 px`, async ({ page }) => {
+    await page.setViewportSize({ width: 400, height: 800 });
+    await open(page, id);
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  });
+}
+
+test("[B1-R13] table cells wrap long unbroken text", async ({ page }) => {
+  await open(page, "ui-table--long-name");
+  const wrap = await page
+    .getByRole("cell")
+    .first()
+    .evaluate((el) => getComputedStyle(el).overflowWrap);
+  expect(wrap).toBe("anywhere");
+});
