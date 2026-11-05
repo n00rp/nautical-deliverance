@@ -29,4 +29,9 @@ describe("admin routes", () => {
     expect(parseInquiries("#/admin/ports")).toBeNull();
     expect(parseInquiries("#/inquiries/a/b")).toBeNull();
   });
+
+  it("[B3-R13] parses the supplier selection and RFQ log hashes", () => {
+    expect(parseInquiries("#/inquiries/abc/suppliers")).toEqual({ id: "abc", view: "suppliers" });
+    expect(parseInquiries("#/inquiries/abc/rfqs/")).toEqual({ id: "abc", view: "rfqs" });
+  });
 });

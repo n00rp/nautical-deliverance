@@ -45,11 +45,18 @@ describe("WorkList", () => {
     expect(row.getByText("Bea Buyer")).toBeTruthy();
   });
 
-  it("[B2-R12] next step: draft selects suppliers, cancelled shows a dash", async () => {
+  it("[B3-R13] next step of a draft: assign a buyer, create RFQs, or how many are sent", async () => {
+    setup([item("1", { buyer_name: null }), item("2"), item("3", { rfq_total: 3, rfq_sent: 1 })]);
+    const next = async (n: string) =>
+      within(await screen.findByRole("row", { name: new RegExp(`INQ-2611-00${n}`) }));
+    expect((await next("1")).getByText("Assign buyer")).toBeTruthy();
+    expect((await next("2")).getByText("Create RFQs")).toBeTruthy();
+    expect((await next("3")).getByText("1 of 3 RFQs sent")).toBeTruthy();
+  });
+
+  it("[B2-R12] next step: cancelled shows a dash", async () => {
     setup([item("1"), item("2", { status: "cancelled" })]);
-    const draft = within(await screen.findByRole("row", { name: /INQ-2611-001/ }));
-    expect(draft.getByText("Select suppliers")).toBeTruthy();
-    const cancelled = within(screen.getByRole("row", { name: /INQ-2611-002/ }));
+    const cancelled = within(await screen.findByRole("row", { name: /INQ-2611-002/ }));
     expect(cancelled.getByText("—")).toBeTruthy();
   });
 

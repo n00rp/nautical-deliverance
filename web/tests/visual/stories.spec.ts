@@ -31,6 +31,9 @@ const open = async (page: import("@playwright/test").Page, id: string) => {
   if (id.startsWith("inquiries-worklist")) {
     await page.getByRole("cell", { name: "INQ-2611-001" }).waitFor();
   }
+  if (id.startsWith("rfqs-supplierselection") && !id.endsWith("as-operator")) {
+    await page.getByRole("form", { name: "Supplier selection" }).waitFor();
+  }
   if (id.startsWith("inquiries-inquirypage")) {
     await page.getByRole("form", { name: "Inquiry" }).waitFor();
     // The history panel loads after the form.

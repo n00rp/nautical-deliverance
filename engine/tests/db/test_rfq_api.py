@@ -693,3 +693,23 @@ def test_changed_since_sent(admin: Rc, inq: Json, world: SimpleNamespace) -> Non
     assert item["status"] == "sent"
     # The preview of a sent RFQ is the frozen text, not the live one.
     assert "Changed Agent" not in admin.api(f"/rfqs/{rid}/preview")["body"]
+
+
+@pytest.mark.req("B3-R13")
+def test_work_list_counts_active_and_sent_rfqs(admin: Rc, inq: Json) -> None:
+    """rfq_total counts every RFQ but withdrawn ones; rfq_sent counts sent and declined."""
+    assert admin.api("/inquiries")[0]["rfq_total"] == 0
+    a, b, c = admin.make(inq["id"], ("Alpha", "a1"), ("Beta", "b1"), ("Gamma", "c1"))
+
+    def act(rfq: Json, action: str) -> Json:
+        r = admin.http.post(f"/api/v1/rfqs/{rfq['id']}/{action}", json={"version": rfq["version"]})
+        assert r.status_code == OK, r.text
+        item: Json = r.json()
+        return item
+
+    act(a, "mark-sent")
+    act(act(b, "mark-sent"), "decline")
+    act(c, "withdraw")
+    row = admin.api("/inquiries")[0]
+    assert (row["rfq_total"], row["rfq_sent"]) == (2, 2)
+    assert admin.fresh(inq)["rfq_deadline"] == DEADLINE

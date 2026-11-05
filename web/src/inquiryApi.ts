@@ -32,6 +32,9 @@ export type InquiryListItem = {
   port_time_zone: string;
   eta: string | null;
   buyer_name: string | null;
+  /** RFQs that are not withdrawn, and how many of those have been sent. */
+  rfq_total: number;
+  rfq_sent: number;
   eta_warning: boolean;
 };
 
@@ -113,6 +116,7 @@ export type Inquiry = {
   bunkering_reason_inactive: boolean;
   internal_comments: string | null;
   cancel_reason: string | null;
+  rfq_deadline: string | null;
   created_at: string;
   created_by: string;
   updated_at: string;

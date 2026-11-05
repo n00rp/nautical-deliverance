@@ -306,6 +306,28 @@ describe("InquiryPage actions", () => {
     expect(screen.queryByRole("button", { name: "Take" })).toBeNull();
   });
 
+  it("[B3-R13] Select suppliers opens the supplier screen, in the states that accept RFQs only", async () => {
+    setup(inquiry(), ["bunker_buyer"]);
+    await form();
+    await userEvent.click(screen.getByRole("button", { name: "Select suppliers" }));
+    expect(window.location.hash).toBe("#/inquiries/i1/suppliers");
+    cleanup();
+    setup(inquiry({ status: "nominated" }), ["bunker_buyer"]);
+    await form();
+    expect(screen.queryByRole("button", { name: "Select suppliers" })).toBeNull();
+    cleanup();
+    setup(inquiry(), ["operator"]);
+    await form();
+    expect(screen.queryByRole("button", { name: "Select suppliers" })).toBeNull();
+  });
+
+  it("[B3-R13] the fields that go into the RFQ text say so; internal comments stay internal", async () => {
+    setup(twoLines());
+    await form();
+    expect(screen.getAllByText("Sent to suppliers in the RFQ")).toHaveLength(4); // 2 lines + agent
+    expect(screen.getByText("Internal — never sent to suppliers")).toBeTruthy();
+  });
+
   it("[B2-R11] shows the history, with actors named when known", async () => {
     setup();
     await form();

@@ -90,6 +90,7 @@ export const inquiry = (fields: Partial<Inquiry> = {}): Inquiry => ({
   bunkering_reason_inactive: false,
   internal_comments: null,
   cancel_reason: null,
+  rfq_deadline: null,
   created_at: "2026-11-05T09:00:00Z",
   created_by: "op1",
   updated_at: "2026-11-05T09:00:00Z",

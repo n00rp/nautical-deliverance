@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
 from nautical_deliverance.domain.inquiry import format_reference
+from nautical_deliverance.domain.rfq import RfqStatus
 from nautical_deliverance.persistence.models import (
     AppUser,
     BunkeringReason,
@@ -18,6 +19,7 @@ from nautical_deliverance.persistence.models import (
     LegalEntity,
     Port,
     Product,
+    Rfq,
     Vessel,
     VesselApprovedFuel,
 )
@@ -54,6 +56,15 @@ def _shown(user: Any) -> Any:  # noqa: ANN401
     return func.coalesce(func.nullif(user.name, ""), user.email)
 
 
+def _rfq_count(*statuses: RfqStatus) -> Any:  # noqa: ANN401
+    """Correlated count of the inquiry's RFQs in the given statuses."""
+    return (
+        select(func.count())
+        .where(Rfq.inquiry_id == Inquiry.id, Rfq.status.in_([x.value for x in statuses]))
+        .scalar_subquery()
+    )
+
+
 def list_rows(
     session: Session, *, status: str | None, q: str | None, buyer: uuid.UUID | None, sort: str
 ) -> Sequence[Row[Any]]:
@@ -68,6 +79,9 @@ def list_rows(
             Port.time_zone.label("port_time_zone"),
             Inquiry.eta,
             _shown(AppUser).label("buyer_name"),
+            # Active RFQs (anything not withdrawn); "sent" includes the ones a supplier declined.
+            _rfq_count(RfqStatus.DRAFT, RfqStatus.SENT, RfqStatus.DECLINED).label("rfq_total"),
+            _rfq_count(RfqStatus.SENT, RfqStatus.DECLINED).label("rfq_sent"),
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)
         .join(Port, Port.id == Inquiry.port_id)

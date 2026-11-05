@@ -49,6 +49,9 @@ async function loadRefs(api: InquiryApi, master: Pick<MasterApi, "list">): Promi
   };
 }
 
+/** The statuses in which the engine accepts new RFQs. */
+const SUPPLIER_STATES: Inquiry["status"][] = ["draft", "rfq_sent", "offers_received"];
+
 /** Create, edit and act on one inquiry (B2-R13). */
 export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
   const isNew = id === "new";
@@ -172,6 +175,16 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
                       }}
                     >
                       Take
+                    </Button>
+                  )}
+                  {SUPPLIER_STATES.includes(rec.status) && (
+                    <Button
+                      variant={rec.buyer_id === null ? "secondary" : "primary"}
+                      onClick={() => {
+                        goInquiry(`${rec.id}/suppliers`);
+                      }}
+                    >
+                      Select suppliers
                     </Button>
                   )}
                   <Button

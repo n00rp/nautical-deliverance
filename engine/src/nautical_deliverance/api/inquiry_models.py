@@ -192,6 +192,7 @@ class InquiryOut(BaseModel):
     bunkering_reason_inactive: bool
     internal_comments: str | None
     cancel_reason: str | None
+    rfq_deadline: datetime | None
     created_at: datetime
     created_by: uuid.UUID
     updated_at: datetime
@@ -210,4 +211,6 @@ class InquiryListItem(BaseModel):
     port_time_zone: str
     eta: datetime | None
     buyer_name: str | None
+    rfq_total: int
+    rfq_sent: int
     eta_warning: bool

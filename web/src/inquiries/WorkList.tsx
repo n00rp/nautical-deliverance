@@ -40,12 +40,15 @@ const SORT_OPTIONS: { value: Sort; label: string }[] = [
 ];
 const DEBOUNCE_MS = 250;
 
+const draftStep = (r: InquiryListItem) =>
+  r.buyer_name === null
+    ? "Assign buyer"
+    : r.rfq_total === 0
+      ? "Create RFQs"
+      : `${String(r.rfq_sent)} of ${String(r.rfq_total)} RFQs sent`;
+
 const nextStep = (r: InquiryListItem) =>
-  r.status === "draft"
-    ? "Select suppliers"
-    : r.status === "cancelled"
-      ? "—"
-      : STATUS_LABEL[r.status];
+  r.status === "draft" ? draftStep(r) : r.status === "cancelled" ? "—" : STATUS_LABEL[r.status];
 
 const eta = (r: InquiryListItem) =>
   r.eta === null ? (

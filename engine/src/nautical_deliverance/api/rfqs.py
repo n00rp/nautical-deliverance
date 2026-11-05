@@ -13,7 +13,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
 from nautical_deliverance.api.common import conflict, scope, unprocessable
-from nautical_deliverance.api.inquiries import _transition, get_now
+from nautical_deliverance.api.inquiries import _allow, _transition, get_now
 from nautical_deliverance.api.inquiry_models import HistoryOut, VersionIn
 from nautical_deliverance.api.rfq_models import (
     PreviewOut,
@@ -23,7 +23,7 @@ from nautical_deliverance.api.rfq_models import (
     RfqPatch,
     Suggestions,
 )
-from nautical_deliverance.api.users import current_user, get_users_engine
+from nautical_deliverance.api.users import get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.inquiry import Status, ready_to_leave_draft
 from nautical_deliverance.domain.rfq import RfqStatus, can_rfq_transition, render_rfq
@@ -38,20 +38,11 @@ from nautical_deliverance.persistence.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
 router = APIRouter()
 
 CREATABLE = frozenset({Status.DRAFT, Status.RFQ_SENT, Status.OFFERS_RECEIVED})
-
-
-def _allow(*roles: Role) -> Callable[..., Principal]:
-    def dependency(principal: Annotated[Principal, Depends(current_user)]) -> Principal:
-        if not principal.roles & set(roles):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
-        return principal
-
-    return dependency
 
 
 Reader = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER, Role.VIEWER))]
