@@ -159,6 +159,8 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
                 _shown(operator).label("operator_name"),
                 _shown(buyer).label("buyer_name"),
                 _shown(requester).label("requester_name"),
+                _rfq_count(is_active_rfq()).label("rfq_total"),
+                _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
             )
             .select_from(Inquiry)
             .join(Vessel, Vessel.id == Inquiry.vessel_id)

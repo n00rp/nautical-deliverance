@@ -63,6 +63,7 @@ LOCKED_MESSAGE = "Locked after Draft"
 OPERATOR_ROLES = frozenset({Role.OPERATOR, Role.ADMIN})
 BUYER_ROLES = frozenset({Role.BUNKER_BUYER, Role.ADMIN})
 RFQ_READERS = BUYER_ROLES | {Role.VIEWER}
+RFQ_FIELDS = ("rfq_deadline", "rfq_total", "rfq_sent")  # null for everyone else (R6)
 USER_ROLES = {"operator_id": OPERATOR_ROLES, "buyer_id": BUYER_ROLES}  # requester: any user
 MASTER: dict[str, tuple[Any, str]] = {
     "vessel_id": (Vessel, "vessel"),
@@ -255,7 +256,7 @@ def _sees_rfqs(principal: Principal) -> bool:
 
 def _out(s: Session, inq: Inquiry, principal: Principal) -> InquiryOut:
     """Return the inquiry record; the RFQ deadline is hidden from the Operator."""
-    hide = {} if _sees_rfqs(principal) else {"rfq_deadline": None}
+    hide = {} if _sees_rfqs(principal) else dict.fromkeys(RFQ_FIELDS)
     return InquiryOut(**{**detail(s, inq), **hide})
 
 
@@ -275,7 +276,7 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
         rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
-        hide = {} if _sees_rfqs(principal) else {"rfq_total": None, "rfq_sent": None}
+        hide = {} if _sees_rfqs(principal) else dict.fromkeys(RFQ_FIELDS)
         return [
             InquiryListItem(
                 **{**r._asdict(), **hide}, eta_warning=_eta_warning(r.status, r.eta, now)

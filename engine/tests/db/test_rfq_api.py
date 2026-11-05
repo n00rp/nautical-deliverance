@@ -789,11 +789,13 @@ def test_rfq_counts_and_deadline_by_role(
     history = c.api(f"/inquiries/{i['id']}/history")
     if role is Role.OPERATOR:
         assert {k: row[k] for k in HIDDEN} == HIDDEN
+        assert {k: one[k] for k in HIDDEN} == HIDDEN
         assert (one["rfq_deadline"], rfq_deadline_in(history)) == (None, False)
         # The entry that only set the deadline is gone; the create and status entries stay.
         assert len(history) == len(admin.api(f"/inquiries/{i['id']}/history")) - 1
         assert "rfq_deadline" not in str(history)
     else:
         assert (row["rfq_total"], row["rfq_sent"]) == (2, 1)
+        assert (one["rfq_total"], one["rfq_sent"]) == (2, 1)
         assert one["rfq_deadline"] == DEADLINE
         assert rfq_deadline_in(history)

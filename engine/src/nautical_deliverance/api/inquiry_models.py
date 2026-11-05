@@ -193,6 +193,8 @@ class InquiryOut(BaseModel):
     internal_comments: str | None
     cancel_reason: str | None
     rfq_deadline: datetime | None
+    rfq_total: int | None  # RFQ facts are null for the Operator (R6)
+    rfq_sent: int | None
     created_at: datetime
     created_by: uuid.UUID
     updated_at: datetime
