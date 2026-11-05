@@ -106,8 +106,10 @@ Realm `nautical-deliverance` in `infra/keycloak/realm-dev.json`. Test-only crede
 | Username / password | Organisation | Role |
 |---|---|---|
 | `admin@acme.test` | Acme | admin |
-| `route_analyst@acme.test` | Acme | route_analyst |
+| `bunker_buyer@acme.test` | Acme | bunker_buyer |
+| `operator@acme.test` | Acme | operator |
 | `viewer@acme.test` | Acme | viewer |
 | `admin@borealis.test` | Borealis | admin |
-| `route_analyst@borealis.test` | Borealis | route_analyst |
+| `bunker_buyer@borealis.test` | Borealis | bunker_buyer |
+| `operator@borealis.test` | Borealis | operator |
 | `viewer@borealis.test` | Borealis | viewer |

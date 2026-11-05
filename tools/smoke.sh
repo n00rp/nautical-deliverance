@@ -47,8 +47,10 @@ check_me() { # check_me <user> <expected org name> <expected role>
     && ok "/me for $1 roles = $3" || fail "/me for $1 expected role '$3', got: $me"
 }
 
-check_me route_analyst@acme.test "Acme Shipping" route_analyst
-check_me viewer@borealis.test "Borealis Tankers" viewer
+for role in admin bunker_buyer operator viewer; do
+  check_me "$role@acme.test" "Acme Shipping" "$role"
+  check_me "$role@borealis.test" "Borealis Tankers" "$role"
+done
 
 for svc in engine web; do
   img="nautical-deliverance/$svc:$TAG"

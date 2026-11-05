@@ -9,7 +9,8 @@ class Role(StrEnum):
     """Roles carried in the access token."""
 
     ADMIN = "admin"
-    ROUTE_ANALYST = "route_analyst"
+    BUNKER_BUYER = "bunker_buyer"
+    OPERATOR = "operator"
     VIEWER = "viewer"
 
 
