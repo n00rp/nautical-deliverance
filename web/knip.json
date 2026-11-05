@@ -1,4 +1,9 @@
 {
-  "entry": ["src/**/*.test.{ts,tsx}"],
-  "project": ["src/**"]
+  "entry": [
+    "src/**/*.test.{ts,tsx}",
+    "src/**/*.stories.tsx",
+    ".storybook/{main,preview}.{ts,tsx}",
+    "tests/visual/*.spec.ts"
+  ],
+  "project": ["src/**", ".storybook/**", "tests/**", "*.ts"]
 }

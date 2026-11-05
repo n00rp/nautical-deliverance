@@ -73,7 +73,18 @@ pnpm run depcruise
 pnpm run knip
 pnpm run test --coverage
 pnpm run duplication
+pnpm run stylelint
+pnpm run build-storybook
+pnpm run test:visual:docker                       # visual regression + axe, light and dark
 ```
+
+The visual baselines (`web/tests/visual/__screenshots__/`) are Linux-only and are produced only in the digest-pinned Playwright image used by CI (`web/scripts/visual-docker.sh`; needs Docker). After an intended visual change, regenerate and commit them with:
+
+```bash
+pnpm --dir web run test:visual:docker --update-snapshots
+```
+
+Pixel tolerance: at most 0.1 % of pixels may differ (`maxDiffPixelRatio` in `web/playwright.config.ts`). `pnpm run storybook` starts Storybook for development.
 
 Repository, from the root:
 
