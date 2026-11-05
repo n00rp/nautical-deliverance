@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from sqlalchemy import Engine, update
 
+from nautical_deliverance.domain import inquiry as inquiry_domain
 from nautical_deliverance.domain.identity import Role
+from nautical_deliverance.domain.inquiry import Status
 from nautical_deliverance.persistence.db import org_session
 from nautical_deliverance.persistence.models import Vessel
 from tests.db.test_inquiry_api import (
@@ -231,3 +233,17 @@ def test_duplicate_can_be_dated_by_patch_and_cancelled_while_undated(admin: Clie
     other = admin.patch(other, voyage="v")
     assert other["eta"] is None
     assert act(admin, other, "cancel", reason="r").status_code == OK
+
+
+@pytest.mark.req("B2-R06")
+def test_cancel_goes_through_can_transition(admin: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A move the domain table forbids is 409 and writes nothing."""
+    inq = admin.create()
+    monkeypatch.setattr(inquiry_domain, "TRANSITIONS", {Status.DRAFT: frozenset()})
+    r = act(admin, inq, "cancel", reason="r")
+    assert (r.status_code, r.json()) == (
+        CONFLICT,
+        {"detail": "Cannot move from draft to cancelled"},
+    )
+    assert admin.get(inq["id"])["status"] == "draft"
+    assert [e.action for e in admin.entries(inq["id"])] == ["create"]

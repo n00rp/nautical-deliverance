@@ -27,7 +27,7 @@ from nautical_deliverance.api.inquiry_models import (
 )
 from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status
+from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status, can_transition
 from nautical_deliverance.persistence.audit import record_change
 from nautical_deliverance.persistence.inquiry_repo import (
     dec,
@@ -226,6 +226,15 @@ def _lock_open(session: Session, inquiry_id: uuid.UUID, version: int) -> Inquiry
     if inq.version != version:
         raise conflict()
     return inq
+
+
+def _transition(inq: Inquiry, to: Status) -> dict[str, Any]:
+    """Return the status values for a move allowed by `can_transition`, else 409 (B2-D9)."""
+    if not can_transition(Status(inq.status), to):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"Cannot move from {inq.status} to {to.value}"
+        )
+    return {"status": to.value}
 
 
 # --- routes ------------------------------------------------------------------------------------
@@ -440,7 +449,7 @@ def cancel_inquiry(
     """Cancel with a required reason (any open status may be cancelled)."""
     with scope(principal, engine) as s:
         inq = _lock_open(s, inquiry_id, body.version)
-        values = {"status": Status.CANCELLED.value, "cancel_reason": body.reason}
+        values = {**_transition(inq, Status.CANCELLED), "cancel_reason": body.reason}
         return _change(s, principal, now, inq, "cancel", values)
 
 
