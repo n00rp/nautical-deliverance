@@ -800,7 +800,7 @@ def test_eta_warning_boundary(admin: Client) -> None:
         "exact48": False,
         "inside": True,
         "now": True,
-        "past": False,
+        "past": True,
     }
     for status in ("nominated", "cancelled"):
         admin.set_status(ids["inside"], status)

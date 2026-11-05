@@ -244,7 +244,7 @@ def _eta_warning(state: str, eta: datetime | None, now: datetime) -> bool:
     if eta is None:
         return False
     open_ = state not in (Status.NOMINATED, Status.CANCELLED)
-    return open_ and now <= eta < now + ETA_WARNING_WINDOW
+    return open_ and eta < now + ETA_WARNING_WINDOW
 
 
 @router.get("", response_model=list[InquiryListItem])

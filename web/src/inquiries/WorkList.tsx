@@ -53,7 +53,11 @@ const eta = (r: InquiryListItem) =>
   ) : (
     <span className={css.eta}>
       {formatInstant(r.eta, r.port_time_zone)}
-      {r.eta_warning && <StatusPill tone="crit">ETA in &lt; 48 h, not nominated</StatusPill>}
+      {r.eta_warning && (
+        <StatusPill tone="crit">
+          {Date.parse(r.eta) < Date.now() ? "ETA passed" : "ETA in < 48 h"}, not nominated
+        </StatusPill>
+      )}
     </span>
   );
 

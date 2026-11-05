@@ -66,6 +66,12 @@ describe("WorkList", () => {
     expect(screen.getAllByText(/not nominated/)).toHaveLength(1);
   });
 
+  it("[B2-R12] a passed ETA says ETA passed instead of the 48 h text", async () => {
+    setup([item("1", { eta: "2020-01-01T00:00:00Z", eta_warning: true })]);
+    expect(await screen.findByText("ETA passed, not nominated")).toBeTruthy();
+    expect(screen.queryByText(/< 48 h/)).toBeNull();
+  });
+
   it("[B2-R12] shows Unassigned without a buyer", async () => {
     setup([item("1", { buyer_name: null })]);
     expect(await screen.findByText("Unassigned")).toBeTruthy();
