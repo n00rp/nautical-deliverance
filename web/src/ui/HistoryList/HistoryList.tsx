@@ -20,8 +20,9 @@ const show = (v: string | null) => v ?? "—";
 
 export function HistoryList({ entries }: { entries: HistoryEntry[] }) {
   if (entries.length === 0) return <p className={styles.none}>No history yet</p>;
-  // ISO-8601 UTC strings of equal format sort chronologically; compare parsed instants to be safe.
-  const newestFirst = [...entries].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  // An unparseable timestamp counts as oldest, so the comparator never sees NaN.
+  const time = (at: string) => Date.parse(at) || 0;
+  const newestFirst = [...entries].sort((a, b) => time(b.at) - time(a.at));
   return (
     <ol className={styles.list}>
       {newestFirst.map((e) => (

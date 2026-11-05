@@ -28,6 +28,37 @@ describe("tokens", () => {
   });
 });
 
+function lum(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+const ratio = (a: string, b: string) => {
+  const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+};
+const hexOf = (block: string, name: string) =>
+  new RegExp(`${name}: (#[0-9a-fA-F]{6})`).exec(block)?.[1] as string;
+
+describe("tone contrast", () => {
+  const themes = {
+    light: ":root {",
+    "dark (OS)": ':root:not([data-theme="light"])',
+    "dark (pinned)": ':root[data-theme="dark"]',
+  };
+  for (const [theme, marker] of Object.entries(themes)) {
+    for (const tone of ["accent", "ok", "warn", "crit"]) {
+      it(`[B1-R12] ${tone} text on ${tone} soft is at least 4.5:1 in ${theme}`, () => {
+        const block = blockAfter(marker);
+        const r = ratio(hexOf(block, `--color-${tone}`), hexOf(block, `--color-${tone}-soft`));
+        expect(r).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+});
+
 // Lints source text as if it were a component module; stdin keeps the repo free of bad fixtures.
 function lint(source: string): { status: number | null; out: string } {
   const bin = join(here, "../../node_modules/stylelint/bin/stylelint.mjs");

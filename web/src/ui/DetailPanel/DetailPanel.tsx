@@ -1,4 +1,4 @@
-import { useId, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Button } from "../Button/Button";
 import panel from "../Panel/Panel.module.css";
 import styles from "./DetailPanel.module.css";
@@ -8,11 +8,18 @@ export type DetailPanelProps = {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  /** Where focus goes on close; defaults to whatever had focus when the panel opened. */
+  returnFocusRef?: RefObject<HTMLElement | null>;
 };
 
 /** Non-modal side panel: beside the content from 900 px, stacked below on narrow screens. */
-export function DetailPanel({ title, open, onClose, children }: DetailPanelProps) {
+export function DetailPanel({ title, open, onClose, children, returnFocusRef }: DetailPanelProps) {
   const titleId = useId();
+  useEffect(() => {
+    if (!open) return;
+    const before = document.activeElement as HTMLElement | null;
+    return () => (returnFocusRef?.current ?? before)?.focus();
+  }, [open, returnFocusRef]);
   if (!open) return null;
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") onClose();

@@ -75,7 +75,7 @@ describe("Table", () => {
     expect(onRowSelect).toHaveBeenCalledTimes(3);
   });
 
-  it("[B1-R13] table selection: other keys and inner control keys do not double-select", async () => {
+  it("[B1-R13] table selection: other keys and inner controls do not select the row", async () => {
     const onRowSelect = vi.fn();
     render(
       <Table
@@ -92,7 +92,9 @@ describe("Table", () => {
     await userEvent.keyboard("a");
     screen.getByRole("button", { name: "Bravo" }).focus();
     await userEvent.keyboard("{Enter}");
-    // The inner button's own click bubbles once; its keydown must not select a second time.
+    await userEvent.click(screen.getByRole("button", { name: "Bravo" }));
+    expect(onRowSelect).not.toHaveBeenCalled();
+    await userEvent.click(screen.getAllByRole("cell")[1] ?? document.body);
     expect(onRowSelect).toHaveBeenCalledTimes(1);
   });
 
@@ -106,7 +108,7 @@ describe("Table", () => {
   it("[B1-R13] table states: loading is busy, empty shows the empty content", () => {
     const { rerender } = setup({ loading: true });
     expect(screen.getByRole("table").getAttribute("aria-busy")).toBe("true");
-    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("Loading…");
     rerender(
       <Table columns={columns} rows={[]} rowKey={(r) => r.id} caption="Offers" empty="No offers" />,
     );

@@ -41,4 +41,17 @@ describe("HistoryList", () => {
     render(<HistoryList entries={[]} />);
     expect(screen.getByText("No history yet")).toBeTruthy();
   });
+
+  it("[B1-R13] history list: an unparseable timestamp counts as oldest", () => {
+    const bad = {
+      id: "bad",
+      actor: "Zed",
+      at: "not a date",
+      action: "create" as const,
+      changes: [],
+    };
+    render(<HistoryList entries={[bad, ...entries]} />);
+    const ids = screen.getAllByRole("listitem").filter((li) => li.hasAttribute("data-entry"));
+    expect(ids.map((li) => li.getAttribute("data-entry"))).toEqual(["3", "2", "1", "bad"]);
+  });
 });

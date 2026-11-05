@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import styles from "./Table.module.css";
 
 type Column<Row> = {
@@ -19,6 +19,8 @@ export type TableProps<Row> = {
   empty?: ReactNode;
   caption: string;
 };
+
+const INTERACTIVE = "button, a, input, select, textarea, label";
 
 type Sort = { key: string; dir: "ascending" | "descending" } | null;
 
@@ -54,6 +56,12 @@ export function Table<Row>({
           ? { key, dir: "descending" }
           : null,
     );
+
+  const onClick = (e: MouseEvent<HTMLTableRowElement>, row: Row) => {
+    const inner = (e.target as Element).closest(INTERACTIVE);
+    if (inner && inner !== e.currentTarget && e.currentTarget.contains(inner)) return;
+    onRowSelect?.(row);
+  };
 
   const onKeyDown = (e: KeyboardEvent, row: Row) => {
     if (e.target !== e.currentTarget) return;
@@ -93,7 +101,7 @@ export function Table<Row>({
           {message !== null ? (
             <tr>
               <td colSpan={columns.length} className={styles.message}>
-                {message}
+                <span role="status">{message}</span>
               </td>
             </tr>
           ) : (
@@ -105,7 +113,7 @@ export function Table<Row>({
                   className={onRowSelect ? styles.selectable : undefined}
                   tabIndex={onRowSelect ? 0 : undefined}
                   aria-selected={onRowSelect ? key === selectedKey : undefined}
-                  onClick={onRowSelect && (() => onRowSelect(row))}
+                  onClick={onRowSelect && ((e) => onClick(e, row))}
                   onKeyDown={onRowSelect && ((e) => onKeyDown(e, row))}
                 >
                   {columns.map((c) => (
