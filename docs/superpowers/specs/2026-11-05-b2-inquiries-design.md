@@ -1,6 +1,6 @@
 # B2 Inquiries — Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-05 (including proposed decisions B2-D9–B2-D12)
 - **Date:** 2026-11-05
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md), build step B2 (D-076); UX per [B0](2026-11-05-b0-ux-concept-design.md) S1, S2, S8; builds on [B1](2026-11-05-b1-domain-and-design-system-design.md)
 - **Goal:** Bunker inquiries can be created, edited, owned, cancelled, duplicated and listed, with product lines and the inquiry status flow, as the first working part of the purchase flow.
