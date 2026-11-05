@@ -53,6 +53,15 @@ describe("App", () => {
     expect(fetchMe).toHaveBeenCalledWith("tok");
   });
 
+  it("[S0-R03] drops roles the web does not know yet without crashing", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue({ ...me, roles: ["legacy_role"] });
+    render(<App />);
+
+    expect(await screen.findByText("Acme Shipping")).toBeTruthy();
+    expect(screen.queryByText("legacy_role")).toBeNull();
+  });
+
   it("[S0-R03] shows error message when /me fails", async () => {
     auth.getUser.mockResolvedValue(user);
     vi.mocked(fetchMe).mockRejectedValue(new ApiError(403));

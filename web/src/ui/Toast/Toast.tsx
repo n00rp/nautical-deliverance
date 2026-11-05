@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import styles from "./Toast.module.css";
 
 export type ToastTone = "info" | "ok" | "warn" | "crit";
@@ -15,6 +23,14 @@ let nextId = 0;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<Item[]>([]);
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach(clearTimeout);
+      pending.clear();
+    };
+  }, []);
   const dismiss = useCallback((id: number) => {
     setItems((all) => all.filter((i) => i.id !== id));
   }, []);
@@ -22,9 +38,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: string, tone: ToastTone = "info") => {
       const id = nextId++;
       setItems((all) => [...all, { id, message, tone }]);
-      setTimeout(() => {
+      const t = setTimeout(() => {
+        timers.current.delete(t);
         dismiss(id);
       }, LIFETIME_MS);
+      timers.current.add(t);
     },
     [dismiss],
   );

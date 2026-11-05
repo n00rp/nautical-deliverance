@@ -62,4 +62,15 @@ describe("Toast", () => {
     expect(() => render(<ToastHost />)).toThrow("ToastProvider");
     quiet.mockRestore();
   });
+
+  it("[B1-R13] toast: unmounting clears pending timers", () => {
+    vi.useFakeTimers();
+    const { unmount } = setup();
+    act(() => {
+      screen.getByRole("button", { name: "go" }).click();
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

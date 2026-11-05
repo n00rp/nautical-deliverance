@@ -64,4 +64,22 @@ describe("AppShell", () => {
     expect(screen.queryByRole("button", { name: "Menu" })).toBeNull();
     expect(screen.queryByText("Ada")).toBeNull();
   });
+
+  it("[B1-R13] app shell: current item gets aria-current=page", () => {
+    shell({ current: "#inquiry" });
+    expect(screen.getByRole("link", { name: "Inquiry" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Work list" }).getAttribute("aria-current")).toBeNull();
+  });
+
+  it("[B1-R13] app shell: opening focuses first link; Escape closes and refocuses Menu", async () => {
+    shell();
+    const button = screen.getByRole("button", { name: "Menu" });
+    await userEvent.click(button);
+    expect(document.activeElement).toBe(screen.getByRole("link", { name: "Work list" }));
+    await userEvent.keyboard("{Escape}");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(button);
+    await userEvent.keyboard("{Escape}");
+    expect(document.activeElement).toBe(button);
+  });
 });

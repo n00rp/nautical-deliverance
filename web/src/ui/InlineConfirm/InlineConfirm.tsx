@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../Button/Button";
 import styles from "./InlineConfirm.module.css";
 
@@ -7,6 +7,8 @@ export type InlineConfirmProps = {
   confirmLabel: string;
   onConfirm: () => void;
   tone?: "default" | "crit";
+  /** Armed state resets after this many ms. */
+  timeoutMs?: number;
 };
 
 export function InlineConfirm({
@@ -14,8 +16,20 @@ export function InlineConfirm({
   confirmLabel,
   onConfirm,
   tone = "default",
+  timeoutMs = 8000,
 }: InlineConfirmProps) {
   const [armed, setArmed] = useState(false);
+  const row = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!armed) return;
+    row.current?.querySelector("button")?.focus();
+    const t = setTimeout(() => {
+      setArmed(false);
+    }, timeoutMs);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [armed, timeoutMs]);
   if (!armed) {
     return (
       <Button variant="secondary" onClick={() => setArmed(true)}>
@@ -24,7 +38,14 @@ export function InlineConfirm({
     );
   }
   return (
-    <span className={styles.row} data-tone={tone}>
+    <span
+      ref={row}
+      className={styles.row}
+      data-tone={tone}
+      onBlur={(e) => {
+        if (!row.current?.contains(e.relatedTarget)) setArmed(false);
+      }}
+    >
       <Button
         variant="primary"
         className={tone === "crit" ? styles.crit : undefined}
