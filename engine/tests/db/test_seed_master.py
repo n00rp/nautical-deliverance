@@ -2,6 +2,7 @@
 """The demo master-data seed (B1-R10): realistic, invented, idempotent, per organization."""
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -20,7 +21,10 @@ TABLES = (
     "vessel_approved_fuel", "port", "counterparty", "contact", "coverage",
 )  # fmt: skip
 # Pilot company, plus the incumbent platforms (case-insensitive).
-DENY = ("stena", "stormgeo", "zeronorth", "nereus")
+DENY = (
+    "stena", "stormgeo", "zeronorth", "nereus", "maersk", "vitol", "monjasa", "glander",
+    "peninsula", "minerva", "bunker holding", "tidewater",
+)  # fmt: skip
 
 
 @pytest.fixture(scope="module")
@@ -128,3 +132,10 @@ def test_no_real_company_names(seeded: Engine) -> None:
         for t in (*TABLES, "organization"):
             blob = json.dumps(q(seeded, org, f"SELECT * FROM {t}"), default=str).lower()
             assert not [d for d in DENY if d in blob], t
+
+
+@pytest.mark.req("B1-R10")
+def test_seed_gate_defaults_to_off() -> None:
+    """The entrypoint seeds only when ND_SEED_DEV_DATA is exactly "true"; unset means off."""
+    script = (Path(__file__).parents[2] / "docker-entrypoint.sh").read_text(encoding="utf-8")
+    assert 'if [ "${ND_SEED_DEV_DATA:-false}" = "true" ]; then' in script

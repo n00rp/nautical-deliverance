@@ -7,6 +7,10 @@ Demo data only: ports are real public data; companies, vessels and people are in
 e-mails use the reserved ``.example`` TLD. No audit entries are written: this is bootstrap data
 that exists before any actor does, and the audit log records only user-driven changes (B1-D12).
 
+IMO numbers are synthetic: chosen only to satisfy the check digit, they may coincide with real
+ships. All company, vessel and person names are invented (checked against well-known shipping
+and bunker companies).
+
 Sources, retrieved 2026-11-05:
 * UN/LOCODE: every port code below was checked as present with the port function flag (1) in
   https://github.com/datasets/un-locode (data/code-list.csv, a mirror of the UNECE UN/LOCODE
@@ -146,62 +150,62 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
         ),
         "counterparties": (
             (
-                "North Sea Bunkers",
+                "November Bunkers",
                 "physical_supplier",
                 "ARA barging.",
-                (("Nils Aaberg", "nils.aaberg@northseabunkers.example", None),),
+                (("Nils Aaberg", "nils.aaberg@novemberbunkers.example", None),),
                 dict.fromkeys(("NLRTM", "BEANR"), _BIO),
             ),
             (
-                "Orion Marine Fuels",
+                "Oscar Marine Fuels",
                 "physical_supplier",
                 "Mediterranean and Gibraltar.",
-                (("Olivia Perez", "olivia.perez@orionfuels.example", None),),
+                (("Olivia Perez", "olivia.perez@oscarfuels.example", None),),
                 {"ESALG": _CONV, "GIGIB": _CONV, "MTMAR": ("VLSFO", "MGO")},
             ),
             (
-                "Polar Supply Co",
+                "Papa Supply Co",
                 "physical_supplier",
                 "Singapore and Busan.",
                 (
-                    ("Peter Wong", "peter.wong@polarsupply.example", None),
-                    ("Priya Nair", "priya.nair@polarsupply.example", None),
+                    ("Peter Wong", "peter.wong@papasupply.example", None),
+                    ("Priya Nair", "priya.nair@papasupply.example", None),
                 ),
                 {"SGSIN": _BIO, "KRPUS": ("VLSFO", "MGO")},
             ),
             (
-                "Quartz Trading",
+                "Quebec Trading",
                 "trader",
-                "Trader; physical supplier relationship: North Sea Bunkers, Orion.",
-                (("Quentin Berg", "quentin.berg@quartztrading.example", None),),
+                "Trader; physical supplier relationship: November Bunkers, Oscar.",
+                (("Quentin Berg", "quentin.berg@quebectrading.example", None),),
                 {"NLRTM": ("VLSFO", "MGO", "HSFO"), "GIGIB": ("VLSFO", "MGO")},
             ),
             (
-                "Ridge Energy Partners",
+                "Romeo Energy Partners",
                 "trader",
                 "Global trader, strong in the Gulf.",
-                (("Rania Saleh", "rania.saleh@ridgeenergy.example", None),),
+                (("Rania Saleh", "rania.saleh@romeoenergy.example", None),),
                 {"AEFJR": ("VLSFO", "HSFO", "MGO"), "USHOU": ("VLSFO",), "SGSIN": ("VLSFO", "MGO")},
             ),
             (
-                "Sable Oil",
+                "Sierra Oil",
                 "both",
                 "Own storage in Piraeus.",
-                (("Sofia Papas", "sofia.papas@sableoil.example", "+30 21 0555 0104"),),
+                (("Sofia Papas", "sofia.papas@sierraoil.example", "+30 21 0555 0104"),),
                 {"GRPIR": _BIO, "MTMAR": _CONV},
             ),
             (
-                "Tidewater Fuel Services",
+                "Tango Fuel Services",
                 "physical_supplier",
                 "Houston and Santos.",
-                (("Tom Hargrove", "tom.hargrove@tidewaterfuel.example", None),),
+                (("Tom Hargrove", "tom.hargrove@tangofuel.example", None),),
                 {"USHOU": _CONV, "BRSSZ": ("VLSFO", "MGO", "HSFO")},
             ),
             (
-                "Umber Bunkering",
+                "Uniform Bunkering",
                 "both",
                 "South Africa and Fujairah.",
-                (("Uma Naidoo", "uma.naidoo@umberbunkering.example", None),),
+                (("Uma Naidoo", "uma.naidoo@uniformbunkering.example", None),),
                 {"ZADUR": _CONV, "AEFJR": ("VLSFO", "MGO")},
             ),
         ),

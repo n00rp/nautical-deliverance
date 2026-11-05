@@ -53,17 +53,22 @@ for role in admin bunker_buyer operator viewer; do
 done
 
 check_master() { # check_master <user>: seeded ports and a suggestion with both "all" and "some"
-  local tok api=http://localhost:8080/api/v1/master ports prods pq pid a s hit=0
+  local tok ports prods pq pid out n a s hit=0
+  local api=http://localhost:8080/api/v1/master
   if ! tok="$(token "$1")" || [[ -z "$tok" ]]; then fail "token for $1"; return; fi
   ports="$(curl -sf -H "Authorization: Bearer $tok" "$api/ports" || true)"
-  [[ "$(echo "$ports" | json "len(d)" 2>/dev/null || echo 0)" -ge 10 ]] \
+  n="$(echo "$ports" | json "len(d)" 2>/dev/null || true)"
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  ((n >= 10)) \
     && ok "GET /master/ports for $1 >= 10" || fail "ports for $1: $ports"
   prods="$(curl -sf -H "Authorization: Bearer $tok" "$api/products?q=VLSFO" | json "[p['id'] for p in d if p['name']=='VLSFO'][0]" 2>/dev/null || true)"
   pq="product_id=$prods&product_id=$(curl -sf -H "Authorization: Bearer $tok" "$api/products?q=MGO" | json "[p['id'] for p in d if p['name']=='MGO'][0]" 2>/dev/null || true)"
   for pid in $(echo "$ports" | json "' '.join(p['id'] for p in d)" 2>/dev/null || true); do
     out="$(curl -sf -H "Authorization: Bearer $tok" "$api/counterparties/suggest?port_id=$pid&$pq" || true)"
-    a="$(echo "$out" | json "len(d['all'])" 2>/dev/null || echo 0)"
-    s="$(echo "$out" | json "len(d['some'])" 2>/dev/null || echo 0)"
+    a="$(echo "$out" | json "len(d['all'])" 2>/dev/null || true)"
+    s="$(echo "$out" | json "len(d['some'])" 2>/dev/null || true)"
+    [[ "$a" =~ ^[0-9]+$ ]] || a=0
+    [[ "$s" =~ ^[0-9]+$ ]] || s=0
     if ((a > 0 && s > 0)); then hit=1; break; fi
   done
   ((hit)) && ok "suggest for $1 yields all and some at one port" || fail "no port with all+some for $1"
