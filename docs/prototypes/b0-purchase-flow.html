@@ -1,0 +1,428 @@
+<title>Bunker Desk Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&display=swap">
+<style>
+/* Layout: workspace — sticky header with role switcher, left nav, one working pane; tables carry the data */
+:root {
+  --bg: #f3f5f7; --surface: #ffffff; --fg: #17212b; --muted: #5b6876; --line: #d7dde3;
+  --accent: #c2410c; --accent-fg: #ffffff; --accent-soft: #fbe6da;
+  --ok: #1f7a4d; --ok-soft: #dcf1e6; --warn: #9a6200; --warn-soft: #fbefd2; --crit: #b42318; --crit-soft: #fde4e2;
+  --info-soft: #e3ecf5; --banner: #17212b; --banner-fg: #f3f5f7;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f151b; --surface: #17202a; --fg: #e4e9ee; --muted: #9aa7b4; --line: #2b3742;
+  --accent: #f0814a; --accent-fg: #1a0d05; --accent-soft: #3a2116;
+  --ok: #5cc795; --ok-soft: #133426; --warn: #e8b04b; --warn-soft: #3a2c10; --crit: #f2867c; --crit-soft: #3d1715;
+  --info-soft: #1c2a38; --banner: #e4e9ee; --banner-fg: #0f151b; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0f151b; --surface: #17202a; --fg: #e4e9ee; --muted: #9aa7b4; --line: #2b3742;
+  --accent: #f0814a; --accent-fg: #1a0d05; --accent-soft: #3a2116;
+  --ok: #5cc795; --ok-soft: #133426; --warn: #e8b04b; --warn-soft: #3a2c10; --crit: #f2867c; --crit-soft: #3d1715;
+  --info-soft: #1c2a38; --banner: #e4e9ee; --banner-fg: #0f151b; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--banner); }
+.banner { background: var(--banner); color: var(--banner-fg); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; padding-block: 6px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; justify-content: space-between; padding-block: var(--s3);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { font-family: var(--font-display); font-size: 18px; letter-spacing: .02em; }
+.brand small { font-family: var(--font-body); font-weight: 400; color: var(--muted); font-size: 12px; margin-left: var(--s2); }
+.roles { display: flex; gap: var(--s1); flex-wrap: wrap; align-items: center; }
+.roles span { color: var(--muted); font-size: 12px; margin-right: var(--s1); }
+.shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--s5); padding-block: var(--s5);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); max-width: 1320px; margin: 0 auto; }
+nav.side { display: flex; flex-direction: column; gap: var(--s1); }
+nav.side a, nav.side span { padding: var(--s2) var(--s3); border-radius: var(--radius); color: var(--fg); text-decoration: none; }
+nav.side a[aria-current="page"] { background: var(--info-soft); font-weight: 600; }
+nav.side span { color: var(--muted); font-size: 13px; }
+nav.side .group { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: var(--s3) var(--s3) var(--s1); }
+main { min-width: 0; display: flex; flex-direction: column; gap: var(--s5); }
+h1 { font-family: var(--font-display); font-size: 24px; margin: 0; text-wrap: balance; letter-spacing: .01em; }
+h2 { font-size: 15px; margin: 0; font-weight: 600; }
+.sub { color: var(--muted); margin: var(--s1) 0 0; }
+.pagehead { display: flex; flex-wrap: wrap; gap: var(--s3); justify-content: space-between; align-items: flex-end; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.panel > .ph { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); border-bottom: 1px solid var(--line); }
+.panel > .pb { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s4); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s3) var(--s4); }
+label.f { display: flex; flex-direction: column; gap: var(--s1); font-size: 12px; color: var(--muted); min-width: 0; }
+input, select, textarea { font: inherit; font-size: 14px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; width: 100%; }
+textarea { min-height: 64px; resize: vertical; }
+input.num { font-family: var(--font-mono); text-align: right; font-variant-numeric: tabular-nums; }
+button, .btn { font: inherit; font-size: 13px; font-weight: 500; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 4px; padding: 6px 12px; cursor: pointer; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+button.primary, .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.ghost { border-color: transparent; }
+button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: flex-end; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 500; white-space: nowrap; }
+td.n, th.n { text-align: right; font-family: var(--font-mono); }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--info-soft); }
+tr.sel td { background: var(--info-soft); }
+tr.best td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+.mono { font-family: var(--font-mono); }
+td.mono, td.n { white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 8px; border-radius: 999px; background: var(--info-soft); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); } .pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.crit { background: var(--crit-soft); color: var(--crit); } .pill.acc { background: var(--accent-soft); color: var(--accent); }
+.muted { color: var(--muted); }
+.note { font-size: 12px; color: var(--muted); }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s4); align-items: start; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1) var(--s4); margin: 0; }
+.kv dt { color: var(--muted); font-size: 12px; } .kv dd { margin: 0; }
+.draft { font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: var(--s3); margin: 0; overflow-x: auto; }
+.locked { display: flex; gap: var(--s2); align-items: center; padding: var(--s3) var(--s4); background: var(--info-soft); border-radius: var(--radius); color: var(--muted); }
+.steps { display: flex; flex-wrap: wrap; gap: var(--s1); font-size: 12px; }
+.steps span { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.steps span.done { color: var(--ok); border-color: var(--ok); } .steps span.now { color: var(--accent-fg); background: var(--accent); border-color: var(--accent); }
+.calc { font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
+.toast { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: var(--s2) var(--s4); border-radius: var(--radius); font-size: 13px; }
+@media (max-width: 900px) { .shell { grid-template-columns: minmax(0, 1fr); } nav.side { flex-direction: row; flex-wrap: wrap; } nav.side .group { display: none; } .split { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: no-preference) { tr.clickable td { transition: background .12s; } }
+</style>
+
+<div class="banner" role="note">Prototype — demo data only · no real companies, prices or contacts · nothing is saved or sent</div>
+<header class="top">
+  <div class="brand">Bunker Desk <small>Pilot 1 concept</small></div>
+  <div class="roles" role="group" aria-label="View as role">
+    <span>View as</span>
+    <button type="button" data-role="buyer">Bunker Buyer</button>
+    <button type="button" data-role="operator">Operator</button>
+    <button type="button" data-role="viewer">Viewer</button>
+    <button type="button" data-role="admin">Admin</button>
+  </div>
+</header>
+<div class="shell">
+  <nav class="side" aria-label="Main">
+    <div class="group">Purchase</div>
+    <a href="#worklist" data-nav="worklist">Work list</a>
+    <a href="#inquiry" data-nav="inquiry">Inquiry</a>
+    <a href="#suppliers" data-nav="suppliers">Suppliers</a>
+    <a href="#rfq" data-nav="rfq">RFQ drafts</a>
+    <a href="#offers" data-nav="offers">Offers</a>
+    <a href="#compare" data-nav="compare">Compare &amp; decide</a>
+    <a href="#nomination" data-nav="nomination">Nomination</a>
+    <div class="group">Pilot 2</div>
+    <span aria-disabled="true">Delivery</span><span aria-disabled="true">Invoices</span><span aria-disabled="true">Claims</span><span aria-disabled="true">Reports</span>
+    <div class="group">Review</div>
+    <a href="#notes" data-nav="notes">Reviewer notes</a>
+  </nav>
+  <main id="view" tabindex="-1"></main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+// ---------- exact money (BigInt): qty in thousandths of mt, price in cents/mt ----------
+const toMilli = s => { const [i, f = ""] = String(s).trim().split("."); return BigInt(i || "0") * 1000n + BigInt((f + "000").slice(0, 3)); };
+const toCents = s => { const [i, f = ""] = String(s).trim().split("."); return BigInt(i || "0") * 100n + BigInt((f + "00").slice(0, 2)); };
+const lineCents = (qty, price) => { const p = toMilli(qty) * toCents(price); return (p + 500n) / 1000n; }; // half-up to cents
+const fmtUsd = c => { const neg = c < 0n; c = neg ? -c : c; const s = (c / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " "); return (neg ? "-" : "") + s + "." + (c % 100n).toString().padStart(2, "0"); };
+const fmtQty = q => Number(q).toLocaleString("en-GB", { maximumFractionDigits: 3 }).replace(/,/g, " ");
+const esc = v => String(v ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+
+// ---------- demo master data (invented, anonymized per D-066) ----------
+const VESSELS = {
+  "MT Nordic Example": { imo: "9074729", type: "Product tanker", dwt: "49 900", flag: "Example Islands", entity: "Example Bulk Tankers AB" },
+  "MT Aurora Demo": { imo: "9183520", type: "Chemical tanker", dwt: "25 400", flag: "Example Islands", entity: "Example Bulk Tankers AB" },
+  "MV Baltic Sample": { imo: "9241061", type: "Bulk carrier", dwt: "63 500", flag: "Sampleland", entity: "Example Dry Ltd" },
+};
+const PORTS = ["Rotterdam", "Gibraltar", "Singapore", "Houston"];
+const PRODUCTS = ["HSFO 3.5%", "VLSFO 0.5%", "DMA 0.1%", "Biofuel", "B24", "B30", "B100", "Bio diesel FAME"];
+const ISO = ["ISO 8217:2005", "ISO 8217:2010", "ISO 8217:2012", "ISO 8217:2017", "ISO 8217:2024"];
+const REASONS = ["Bunkers only", "Working cargo", "Debunkering"];
+const SUPPLIERS = [
+  { name: "Alpha Fuels", kind: "Physical supplier", contact: "Anna Example", email: "sales@alpha-fuels.example", ports: { Rotterdam: ["VLSFO 0.5%", "DMA 0.1%", "HSFO 3.5%"], Gibraltar: ["VLSFO 0.5%", "DMA 0.1%"] } },
+  { name: "Beta Marine Energy", kind: "Physical supplier", contact: "Bo Sample", email: "desk@beta-marine.example", ports: { Rotterdam: ["VLSFO 0.5%", "DMA 0.1%"] } },
+  { name: "Gamma Trading", kind: "Trader", contact: "Carla Demo", email: "ops@gamma-trading.example", ports: { Rotterdam: ["VLSFO 0.5%", "DMA 0.1%"], Singapore: ["VLSFO 0.5%"] } },
+  { name: "Delta Oil Bunkering", kind: "Physical supplier", contact: "Dan Example", email: "rfq@delta-oil.example", ports: { Rotterdam: ["DMA 0.1%"] } },
+  { name: "Epsilon Bunkers", kind: "Trader", contact: "Eva Sample", email: "trading@epsilon.example", ports: { Singapore: ["VLSFO 0.5%", "DMA 0.1%"] } },
+];
+const RATIONALE_REASONS = ["Flexibility", "Operational fit", "Availability", "Reliability", "Timing", "Payment terms", "Commercial judgement", "Other"];
+
+// ---------- prototype state ----------
+const S = {
+  role: "buyer", selectedOffer: null, toastTimer: 0,
+  inq: {
+    ref: "INQ-2611-014", status: "Draft", vessel: "MT Nordic Example", voyage: "V-2611", operator: "Olle Operator", buyer: "Bea Buyer", requester: "Olle Operator",
+    port: "Rotterdam", eta: "2026-11-12T06:00", etd: "2026-11-13T18:00", agent: "Harbour Agency Example", reason: "Bunkers only",
+    deadline: "2026-11-07T12:00", comments: "Owners prefer delivery before cargo ops. Budget guide approx. 550 USD/mt VLSFO (internal only).",
+    lines: [ { grade: "VLSFO 0.5%", qty: "1200", iso: "ISO 8217:2017", spec: "Max sulphur 0.50%" }, { grade: "DMA 0.1%", qty: "150", iso: "ISO 8217:2024", spec: "" } ],
+  },
+  chosen: new Set(), rfqs: [], offers: [], winner: null, rationale: { reason: "", text: "" }, nominated: false,
+};
+const OTHER = [
+  { ref: "INQ-2611-009", vessel: "MV Baltic Sample", port: "Gibraltar", eta: "08 Nov 14:00", status: "Offers received", next: "Compare 4 of 5 offers", warn: { t: "Offer validity ends in 3 h", k: "warn" } },
+  { ref: "INQ-2611-011", vessel: "MT Aurora Demo", port: "Singapore", eta: "15 Nov 09:00", status: "RFQ sent", next: "2 of 3 offers in", warn: { t: "RFQ deadline tomorrow 10:00", k: "warn" } },
+  { ref: "INQ-2611-006", vessel: "MT Aurora Demo", port: "Houston", eta: "06 Nov 22:00", status: "Winner selected", next: "Create nomination", warn: { t: "ETA in 18 h, not nominated", k: "crit" } },
+  { ref: "INQ-2610-118", vessel: "MV Baltic Sample", port: "Rotterdam", eta: "02 Nov 08:00", status: "Nominated", next: "Delivery (pilot 2)", warn: null },
+];
+const FLOW = ["Draft", "RFQ sent", "Offers received", "Winner selected", "Nominated"];
+const canSeePrices = () => S.role !== "operator";
+const canBuy = () => S.role === "buyer" || S.role === "admin";
+const canCreate = () => S.role !== "viewer";
+
+// ---------- offers ----------
+function offerTotal(o) {
+  let total = 0n; const lines = [];
+  for (const l of S.inq.lines) {
+    const p = o.prices[l.grade];
+    if (p === "" || p == null) { lines.push({ grade: l.grade, qty: l.qty, price: null, cents: null }); continue; }
+    const c = lineCents(l.qty, p); total += c; lines.push({ grade: l.grade, qty: l.qty, price: p, cents: c });
+  }
+  const fixed = Object.values(o.fixed).reduce((a, v) => a + (v === "" ? 0n : toCents(v)), 0n);
+  return { lines, fixed, total: total + fixed, missing: lines.some(x => x.cents === null) };
+}
+function seedOffers() {
+  if (S.offers.length) return;
+  const base = [
+    { supplier: "Alpha Fuels", prices: { "VLSFO 0.5%": "548.00", "DMA 0.1%": "712.00" }, fixed: { barging: "1800.00", portcall: "0.00", agent: "350.00", surveyor: "250.00", other: "0.00" }, valid: "2026-11-06T16:00", pay: "30 days net", delivery: "12 Nov 06:00–14:00 · barge", physical: "", comment: "" },
+    { supplier: "Beta Marine Energy", prices: { "VLSFO 0.5%": "551.50", "DMA 0.1%": "705.00" }, fixed: { barging: "1500.00", portcall: "0.00", agent: "300.00", surveyor: "0.00", other: "0.00" }, valid: "2026-11-06T18:00", pay: "45 days net", delivery: "12 Nov 08:00–20:00 · barge", physical: "", comment: "Barge confirmed subject to berth line-up." },
+    { supplier: "Gamma Trading", prices: { "VLSFO 0.5%": "549.00", "DMA 0.1%": "" }, fixed: { barging: "2600.00", portcall: "500.00", agent: "450.00", surveyor: "350.00", other: "0.00" }, valid: "2026-11-06T11:00", pay: "30 days net", delivery: "12 Nov 06:00–12:00 · barge", physical: "Alpha Fuels", comment: "VLSFO only." },
+  ];
+  S.offers = base.filter(o => S.chosen.has(o.supplier));
+}
+
+// ---------- rendering helpers ----------
+const statusPill = s => `<span class="pill ${s === "Nominated" ? "ok" : s === "Winner selected" ? "acc" : ""}">${esc(s)}</span>`;
+const steps = () => `<div class="steps" aria-label="Status flow">${FLOW.map((f, i) => { const k = FLOW.indexOf(S.inq.status); return `<span class="${i < k ? "done" : i === k ? "now" : ""}">${esc(f)}</span>`; }).join("")}</div>`;
+const lock = what => `<div class="locked" role="note">Hidden for your role: ${esc(what)} (D-072)</div>`;
+const fmtDt = v => { if (!v) return "—"; const d = new Date(v + ":00Z"); return d.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC"; };
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.hidden = false; clearTimeout(S.toastTimer); S.toastTimer = setTimeout(() => { t.hidden = true; }, 2200); }
+function nextStep() {
+  switch (S.inq.status) {
+    case "Draft": return "Select suppliers and create RFQs";
+    case "RFQ sent": return `${S.offers.length} of ${S.rfqs.length} offers in`;
+    case "Offers received": return "Compare offers and select winner";
+    case "Winner selected": return "Create nomination";
+    default: return "Delivery (pilot 2)";
+  }
+}
+
+// ---------- views ----------
+const V = {};
+V.worklist = () => {
+  const rows = [{ ref: S.inq.ref, vessel: S.inq.vessel, port: S.inq.port, eta: fmtDt(S.inq.eta).replace(" UTC", ""), status: S.inq.status, next: nextStep(), warn: S.inq.status === "RFQ sent" ? { t: "RFQ deadline " + fmtDt(S.inq.deadline), k: "warn" } : null, live: true }, ...OTHER];
+  return `<div class="pagehead"><div><h1>Work list</h1><p class="sub">${rows.filter(r => r.status !== "Nominated").length} open inquiries · times in UTC</p></div>
+    <div class="actions">${canCreate() ? `<a class="btn primary" href="#inquiry">New inquiry</a>` : ""}</div></div>
+    <section class="panel"><div class="tablewrap"><table>
+      <thead><tr><th>Inquiry</th><th>Vessel</th><th>Port</th><th>ETA</th><th>Status</th><th>Next step</th><th>Attention</th></tr></thead>
+      <tbody>${rows.map(r => `<tr class="${r.live ? "clickable" : ""}" ${r.live ? `data-go="inquiry" tabindex="0"` : ""}>
+        <td class="mono">${esc(r.ref)}${r.live ? "" : ` <span class="note">(static)</span>`}</td><td>${esc(r.vessel)}</td><td>${esc(r.port)}</td><td class="mono">${esc(r.eta)}</td>
+        <td>${statusPill(r.status)}</td><td>${esc(r.next)}</td><td>${r.warn ? `<span class="pill ${r.warn.k}">${esc(r.warn.t)}</span>` : `<span class="muted">—</span>`}</td></tr>`).join("")}</tbody>
+    </table></div></section>
+    <p class="note">Only ${esc(S.inq.ref)} is live in this prototype; the other rows show what the list looks like at ~10 open inquiries (assumption A3).</p>`;
+};
+V.inquiry = () => {
+  const v = VESSELS[S.inq.vessel]; const ro = !canBuy() && !(S.role === "operator" && S.inq.status === "Draft");
+  const dis = ro ? "disabled" : "";
+  const opt = (list, cur) => list.map(x => `<option ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("");
+  return `<div class="pagehead"><div><h1>${esc(S.inq.ref)}</h1><p class="sub">${esc(S.inq.vessel)} · ${esc(S.inq.port)}</p></div>${steps()}</div>
+  <section class="panel"><div class="ph"><h2>Vessel &amp; voyage</h2></div><div class="pb"><div class="grid">
+    <label class="f">Vessel<select id="f-vessel" data-k="vessel" ${dis}>${opt(Object.keys(VESSELS), S.inq.vessel)}</select></label>
+    <label class="f">Voyage<input id="f-voyage" data-k="voyage" value="${esc(S.inq.voyage)}" ${dis}></label>
+    <label class="f">Operator<input id="f-operator" data-k="operator" value="${esc(S.inq.operator)}" ${dis}></label>
+    <label class="f">Buyer<input id="f-buyer" data-k="buyer" value="${esc(S.inq.buyer)}" ${dis}></label>
+    <label class="f">Requester<input id="f-requester" data-k="requester" value="${esc(S.inq.requester)}" ${dis}></label>
+    <label class="f">Entity<input id="f-entity" value="${esc(v.entity)}" disabled></label>
+  </div><dl class="kv"><dt>IMO</dt><dd class="mono">${esc(v.imo)}</dd><dt>Type</dt><dd>${esc(v.type)} · DWT ${esc(v.dwt)} · ${esc(v.flag)}</dd></dl>
+  <p class="note">Particulars and entity are filled from vessel master data.</p></div></section>
+  <section class="panel"><div class="ph"><h2>Port &amp; timing</h2></div><div class="pb"><div class="grid">
+    <label class="f">Port<select id="f-port" data-k="port" ${dis}>${opt(PORTS, S.inq.port)}</select></label>
+    <label class="f">ETA (UTC)<input id="f-eta" type="datetime-local" data-k="eta" value="${esc(S.inq.eta)}" ${dis}></label>
+    <label class="f">ETD (UTC)<input id="f-etd" type="datetime-local" data-k="etd" value="${esc(S.inq.etd)}" ${dis}></label>
+    <label class="f">Agent<input id="f-agent" data-k="agent" value="${esc(S.inq.agent)}" ${dis}></label>
+    <label class="f">Bunkering reason<select id="f-reason" data-k="reason" ${dis}>${opt(REASONS, S.inq.reason)}</select></label>
+    <label class="f">RFQ response deadline (UTC)<input id="f-deadline" type="datetime-local" data-k="deadline" value="${esc(S.inq.deadline)}" ${dis}></label>
+  </div></div></section>
+  <section class="panel"><div class="ph"><h2>Products</h2>${ro ? "" : `<button type="button" id="add-line">Add product</button>`}</div><div class="tablewrap"><table>
+    <thead><tr><th>Grade</th><th class="n">Quantity (mt)</th><th>Specification</th><th>Notes</th><th></th></tr></thead>
+    <tbody>${S.inq.lines.map((l, i) => `<tr>
+      <td><select id="l-grade-${i}" data-line="${i}" data-lk="grade" ${dis} aria-label="Grade">${opt(PRODUCTS, l.grade)}</select></td>
+      <td><input id="l-qty-${i}" class="num" inputmode="decimal" data-line="${i}" data-lk="qty" value="${esc(l.qty)}" ${dis} aria-label="Quantity in metric tons"></td>
+      <td><select id="l-iso-${i}" data-line="${i}" data-lk="iso" ${dis} aria-label="ISO 8217 version">${opt(ISO, l.iso)}</select></td>
+      <td><input id="l-spec-${i}" data-line="${i}" data-lk="spec" value="${esc(l.spec)}" ${dis} aria-label="Specification notes"></td>
+      <td>${ro || S.inq.lines.length < 2 ? "" : `<button type="button" class="ghost" data-del="${i}" aria-label="Remove product line">Remove</button>`}</td></tr>`).join("")}</tbody>
+  </table></div></section>
+  ${canSeePrices() ? `<section class="panel"><div class="ph"><h2>Internal comments</h2><span class="pill">Internal only · never in RFQs</span></div><div class="pb">
+    <textarea id="f-comments" data-k="comments" ${dis} aria-label="Internal comments">${esc(S.inq.comments)}</textarea></div></section>` : lock("internal comments")}
+  <div class="actions">${ro ? "" : `<button type="button" id="save">Save draft</button>`}${canBuy() ? `<a class="btn primary" href="#suppliers">Next: select suppliers</a>` : ""}</div>
+  ${S.role === "operator" ? `<p class="note">Operators can create and edit drafts; after RFQs go out they see status and the selected supplier only.${S.winner ? " Selected supplier: <strong>" + esc(S.winner) + "</strong>." : ""}</p>` : ""}`;
+};
+function suggested(s) {
+  const at = s.ports[S.inq.port] || []; const need = S.inq.lines.map(l => l.grade);
+  return { listed: at.length > 0, all: need.every(g => at.includes(g)), covers: need.filter(g => at.includes(g)) };
+}
+V.suppliers = () => {
+  if (!canBuy()) return lock("supplier selection");
+  if (!S.chosen.size && !S.rfqs.length) SUPPLIERS.forEach(s => { if (suggested(s).all) S.chosen.add(s.name); });
+  const sug = SUPPLIERS.filter(s => suggested(s).listed), rest = SUPPLIERS.filter(s => !suggested(s).listed);
+  const row = s => { const g = suggested(s); return `<tr><td><input type="checkbox" id="sup-${esc(s.name)}" data-sup="${esc(s.name)}" ${S.chosen.has(s.name) ? "checked" : ""} ${S.rfqs.length ? "disabled" : ""} aria-label="Send RFQ to ${esc(s.name)}"></td>
+    <td><label for="sup-${esc(s.name)}">${esc(s.name)}</label></td><td>${esc(s.kind)}</td><td>${g.listed ? (g.all ? `<span class="pill ok">All requested</span>` : `<span class="pill warn">${esc(g.covers.join(", ") || "None")}</span>`) : `<span class="muted">Not listed for ${esc(S.inq.port)}</span>`}</td>
+    <td>${esc(s.contact)}</td><td class="mono">${esc(s.email)}</td></tr>`; };
+  return `<div class="pagehead"><div><h1>Select suppliers</h1><p class="sub">${esc(S.inq.ref)} · ${esc(S.inq.port)} · ${esc(S.inq.lines.map(l => l.grade).join(", "))}</p></div>${steps()}</div>
+  <section class="panel"><div class="ph"><h2>Suggested for ${esc(S.inq.port)}</h2><span class="note">Pre-selected when they deliver all requested products (B0-D8)</span></div>
+    <div class="tablewrap"><table><thead><tr><th></th><th>Supplier / trader</th><th>Type</th><th>Products here</th><th>Contact</th><th>E-mail</th></tr></thead><tbody>${sug.map(row).join("")}</tbody></table></div></section>
+  <section class="panel"><div class="ph"><h2>Other suppliers</h2></div><div class="tablewrap"><table><tbody>${rest.map(row).join("")}</tbody></table></div></section>
+  <div class="actions"><span class="note">${S.chosen.size} selected → ${S.chosen.size} individual RFQ drafts</span>
+    ${S.rfqs.length ? `<a class="btn primary" href="#rfq">Open RFQ drafts</a>` : `<button type="button" class="primary" id="make-rfqs" ${S.chosen.size ? "" : "disabled"}>Create RFQ drafts</button>`}</div>`;
+};
+function rfqText(sup) {
+  const l = S.inq.lines.map(x => `  - ${x.grade}: ${fmtQty(x.qty)} mt, ${x.iso}${x.spec ? ", " + x.spec : ""}`).join("\n");
+  return `To: ${sup.contact} <${sup.email}>\nSubject: RFQ ${S.inq.ref} – ${S.inq.vessel} – ${S.inq.port}\n\nDear ${sup.contact},\n\nPlease quote for the following bunker delivery:\n\nVessel: ${S.inq.vessel} (IMO ${VESSELS[S.inq.vessel].imo})\nPort: ${S.inq.port}\nETA / ETD: ${fmtDt(S.inq.eta)} / ${fmtDt(S.inq.etd)}\nAgent: ${S.inq.agent}\nProducts:\n${l}\n\nPlease state price per mt (USD), all additional costs (barging, port, agent, surveyor, other), offer validity, payment terms, delivery window and method, and the physical supplier if you are a trader.\n\nResponse requested by ${fmtDt(S.inq.deadline)}.\n\nKind regards,\n${S.inq.buyer}\nBunker desk`;
+}
+V.rfq = () => {
+  if (!canBuy()) return lock("RFQ drafts");
+  if (!S.rfqs.length) return `<h1>RFQ drafts</h1><p class="sub">No drafts yet.</p><div><a class="btn primary" href="#suppliers">Select suppliers</a></div>`;
+  return `<div class="pagehead"><div><h1>RFQ drafts</h1><p class="sub">One draft per recipient · each recipient sees only their own RFQ (D-070)</p></div>${steps()}</div>
+  <section class="panel"><div class="ph"><h2>Recipient log</h2><span class="note">Response deadline ${esc(fmtDt(S.inq.deadline))}</span></div><div class="tablewrap"><table>
+    <thead><tr><th>Recipient</th><th>Contact</th><th>E-mail</th><th>Generated</th><th>Sent</th><th>Status</th><th>Offer</th><th></th></tr></thead>
+    <tbody>${S.rfqs.map((r, i) => { const s = SUPPLIERS.find(x => x.name === r.supplier); return `<tr><td>${esc(r.supplier)}</td><td>${esc(s.contact)}</td><td class="mono">${esc(s.email)}</td>
+      <td class="mono">${esc(r.generated)}</td><td class="mono">${esc(r.sent || "—")}</td><td><span class="pill ${r.sent ? "ok" : ""}">${r.sent ? "Sent" : "Draft"}</span></td>
+      <td>${S.offers.some(o => o.supplier === r.supplier) ? `<span class="pill ok">Received</span>` : "No"}</td>
+      <td><button type="button" data-preview="${i}">Preview</button></td></tr>`; }).join("")}</tbody></table></div></section>
+  ${S.rfqs.map((r, i) => { const s = SUPPLIERS.find(x => x.name === r.supplier); const t = rfqText(s); const body = t.split("\n\n").slice(1).join("\n\n");
+    const mail = `mailto:${encodeURIComponent(s.email)}?subject=${encodeURIComponent("RFQ " + S.inq.ref + " – " + S.inq.vessel + " – " + S.inq.port)}&body=${encodeURIComponent(body)}`;
+    return `<section class="panel" id="draft-${i}" ${S.preview === i ? "" : "hidden"}><div class="ph"><h2>Draft to ${esc(r.supplier)}</h2><span class="pill">1 recipient</span></div><div class="pb">
+      <pre class="draft">${esc(t)}</pre>
+      <div class="actions"><button type="button" data-copy="${i}">Copy text</button><a class="btn" href="${esc(mail)}">Open in e-mail</a>
+      ${r.sent ? "" : `<button type="button" class="primary" data-sent="${i}">Mark as sent</button>`}</div>
+      <p class="note">"Open in e-mail" starts a new message to this one recipient in your own e-mail program; the system never sends anything. Demo addresses use .example and cannot be delivered.</p></div></section>`; }).join("")}
+  <div class="actions"><a class="btn primary" href="#offers">Next: enter offers</a></div>`;
+};
+V.offers = () => {
+  if (!canBuy()) return lock("offer entry");
+  seedOffers();
+  const o = S.offers[S.editOffer ?? 0]; if (!o) return `<h1>Offers</h1><p class="sub">No RFQ recipients yet.</p>`;
+  const t = offerTotal(o);
+  const fx = [["barging", "Barging"], ["portcall", "Port call"], ["agent", "Agent"], ["surveyor", "Surveyor"], ["other", "Other fixed"]];
+  return `<div class="pagehead"><div><h1>Enter offer</h1><p class="sub">${S.offers.length} of ${S.rfqs.length} offers in · prefilled with demo values</p></div>${steps()}</div>
+  <div class="actions" style="justify-content:flex-start">${S.offers.map((x, i) => `<button type="button" data-edit="${i}" aria-pressed="${(S.editOffer ?? 0) === i}">${esc(x.supplier)}</button>`).join("")}</div>
+  <section class="panel"><div class="ph"><h2>${esc(o.supplier)}</h2><span class="pill">USD</span></div><div class="pb">
+    <div class="tablewrap"><table><thead><tr><th>Product</th><th class="n">Quantity (mt)</th><th class="n">Price (USD/mt)</th><th class="n">Line total (USD)</th></tr></thead><tbody>
+    ${t.lines.map(l => `<tr><td>${esc(l.grade)}</td><td class="n">${esc(fmtQty(l.qty))}</td><td><input class="num" id="op-${esc(l.grade)}" inputmode="decimal" data-price="${esc(l.grade)}" value="${esc(o.prices[l.grade] ?? "")}" placeholder="no offer" aria-label="Price per mt for ${esc(l.grade)}"></td><td class="n">${l.cents === null ? "no offer" : fmtUsd(l.cents)}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="grid">${fx.map(([k, n]) => `<label class="f">${n} (USD)<input class="num" id="ofx-${k}" inputmode="decimal" data-fixed="${k}" value="${esc(o.fixed[k])}"></label>`).join("")}</div>
+    <div class="grid">
+      <label class="f">Valid until (UTC)<input type="datetime-local" id="o-valid" data-ok="valid" value="${esc(o.valid)}"></label>
+      <label class="f">Payment terms<input id="o-pay" data-ok="pay" value="${esc(o.pay)}"></label>
+      <label class="f">Delivery window &amp; method<input id="o-delivery" data-ok="delivery" value="${esc(o.delivery)}"></label>
+      <label class="f">Physical supplier (traders)<input id="o-physical" data-ok="physical" value="${esc(o.physical)}"></label>
+    </div>
+    <label class="f">Supplier comment<input id="o-comment" data-ok="comment" value="${esc(o.comment)}"></label>
+    <dl class="kv"><dt>Fixed costs</dt><dd class="mono">${fmtUsd(t.fixed)}</dd><dt>Total offer</dt><dd class="mono"><strong>${fmtUsd(t.total)}</strong>${t.missing ? ` <span class="pill warn">not all products offered</span>` : ""}</dd></dl>
+  </div></section>
+  <div class="actions"><a class="btn primary" href="#compare">Next: compare offers</a></div>`;
+};
+V.compare = () => {
+  if (!canSeePrices()) return `<h1>Compare &amp; decide</h1>${lock("prices, offers and decision rationale")}<p>Status: ${statusPill(S.inq.status)}${S.winner ? ` · Selected supplier: <strong>${esc(S.winner)}</strong>` : ""}</p>`;
+  seedOffers();
+  if (!S.offers.length) return `<h1>Compare &amp; decide</h1><p class="sub">No offers yet.</p>`;
+  const rows = S.offers.map(o => ({ o, t: offerTotal(o) }));
+  const complete = rows.filter(r => !r.t.missing); const best = (complete.length ? complete : rows).reduce((a, b) => (b.t.total < a.t.total ? b : a));
+  const sel = rows.find(r => r.o.supplier === S.selectedOffer) || best;
+  const notLowest = S.selectedOffer && S.selectedOffer !== best.o.supplier;
+  const grades = S.inq.lines.map(l => l.grade);
+  const needRat = notLowest && (!S.rationale.reason || !S.rationale.text.trim());
+  return `<div class="pagehead"><div><h1>Compare &amp; decide</h1><p class="sub">${esc(S.inq.ref)} · ${rows.length} offers · totals in USD</p></div>${steps()}</div>
+  <div class="split"><section class="panel"><div class="tablewrap"><table>
+    <thead><tr><th>Supplier</th>${grades.map(g => `<th class="n">${esc(g)}<br>USD/mt</th>`).join("")}<th class="n">Fixed</th><th class="n">Total</th><th>Valid until</th></tr></thead>
+    <tbody>${rows.map(r => `<tr class="clickable ${r === best ? "best" : ""} ${r === sel ? "sel" : ""}" data-pick="${esc(r.o.supplier)}" tabindex="0" aria-selected="${r === sel}">
+      <td>${esc(r.o.supplier)}${r === best ? ` <span class="pill ok">Lowest total</span>` : ""}${r.t.missing ? ` <span class="pill warn">partial</span>` : ""}</td>
+      ${r.t.lines.map(l => `<td class="n">${l.price === null ? `<span class="muted">no offer</span>` : esc(l.price)}</td>`).join("")}
+      <td class="n">${fmtUsd(r.t.fixed)}</td><td class="n"><strong>${fmtUsd(r.t.total)}</strong></td><td class="mono">${esc(fmtDt(r.o.valid))}</td></tr>`).join("")}</tbody></table></div>
+    <p class="note" style="padding:0 var(--s4) var(--s3)">Partial offers are excluded from "lowest total" (assumption A5).</p></section>
+  <aside class="panel" aria-label="Offer details"><div class="ph"><h2>${esc(sel.o.supplier)}</h2>${sel === best ? `<span class="pill ok">Lowest</span>` : ""}</div><div class="pb">
+    <div class="calc">${sel.t.lines.map(l => l.cents === null ? `${esc(l.grade)}: no offer` : `${esc(l.grade)}: ${esc(fmtQty(l.qty))} mt × ${esc(l.price)} = ${fmtUsd(l.cents)}`).join("<br>")}<br>Fixed costs: ${fmtUsd(sel.t.fixed)}<br><strong>Total: ${fmtUsd(sel.t.total)}</strong></div>
+    <dl class="kv"><dt>Valid until</dt><dd>${esc(fmtDt(sel.o.valid))}</dd><dt>Payment</dt><dd>${esc(sel.o.pay)}</dd><dt>Delivery</dt><dd>${esc(sel.o.delivery)}</dd>
+      <dt>Physical</dt><dd>${esc(sel.o.physical || "—")}</dd><dt>Comment</dt><dd>${esc(sel.o.comment || "—")}</dd></dl>
+    ${canBuy() && !S.winner ? `${sel !== best ? `<label class="f">Reason for not choosing the lowest total (required)<select id="rat-reason"><option value="">Choose a reason…</option>${RATIONALE_REASONS.map(x => `<option ${S.rationale.reason === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>
+      <label class="f">Rationale (internal only, required)<textarea id="rat-text">${esc(S.rationale.text)}</textarea></label>` : `<label class="f">Rationale (optional)<textarea id="rat-text">${esc(S.rationale.text)}</textarea></label>`}
+      <button type="button" class="primary" id="select-winner" data-s="${esc(sel.o.supplier)}" ${sel !== best && (!S.rationale.reason || !S.rationale.text.trim()) ? "disabled" : ""}>Select ${esc(sel.o.supplier)} as winner</button>` :
+      S.winner ? `<p><span class="pill acc">Winner: ${esc(S.winner)}</span></p>${S.rationale.text ? `<p class="note">Rationale: ${esc(S.rationale.reason ? S.rationale.reason + " — " : "")}${esc(S.rationale.text)}</p>` : ""}` : `<p class="note">Read-only for your role.</p>`}
+  </div></aside></div>
+  ${S.winner && canBuy() ? `<div class="actions"><a class="btn primary" href="#nomination">Next: nomination</a></div>` : ""}`;
+};
+V.nomination = () => {
+  if (!S.winner) return `<h1>Nomination</h1><p class="sub">Select a winner first.</p>`;
+  const o = S.offers.find(x => x.supplier === S.winner); const t = offerTotal(o);
+  return `<div class="pagehead"><div><h1>Nomination</h1><p class="sub">${esc(S.inq.ref)} · ${esc(S.winner)}</p></div>${steps()}</div>
+  <section class="panel"><div class="pb"><dl class="kv"><dt>Supplier</dt><dd>${esc(S.winner)}${o.physical ? " (physical: " + esc(o.physical) + ")" : ""}</dd><dt>Vessel</dt><dd>${esc(S.inq.vessel)} · IMO ${esc(VESSELS[S.inq.vessel].imo)}</dd>
+    <dt>Port / window</dt><dd>${esc(S.inq.port)} · ${esc(o.delivery)}</dd><dt>Products</dt><dd>${esc(t.lines.filter(l => l.cents !== null).map(l => l.grade + " " + fmtQty(l.qty) + " mt").join(", "))}</dd>
+    ${canSeePrices() ? `<dt>Total</dt><dd class="mono">USD ${fmtUsd(t.total)}</dd><dt>Payment</dt><dd>${esc(o.pay)}</dd>` : ""}</dl>
+    ${!canSeePrices() ? lock("prices and payment terms") : ""}
+    <div class="actions">${S.nominated ? `<span class="pill ok">Nominated</span><a class="btn" href="#worklist">Back to work list</a>` : canBuy() ? `<button type="button" class="primary" id="nominate">Create nomination</button>` : ""}</div></div></section>`;
+};
+V.notes = () => `<h1>Reviewer notes</h1>
+  <section class="panel"><div class="pb">
+  <p>This is a clickable concept of the pilot 1 purchase flow. Click through: Work list → Inquiry → Suppliers → RFQ drafts → Offers → Compare &amp; decide → Nomination. Use <strong>View as</strong> to see each role; Operator never sees prices, offers or rationale.</p>
+  <h2>Please tell us</h2>
+  <ul><li>About how many inquiries per week, and how many open at once? (we assumed ~10 and ~10)</li><li>How many suppliers/traders do you usually ask per inquiry?</li><li>Is "lowest total" the right highlight when an offer covers only some products?</li><li>Anything missing from an RFQ or an offer?</li><li>Which step takes you the most time today?</li></ul>
+  <h2>Interaction budgets (B0-R02)</h2>
+  <div class="tablewrap"><table><thead><tr><th>Task</th><th class="n">Budget</th></tr></thead><tbody>
+  <tr><td>Create an inquiry with 2 product lines</td><td class="n">25</td></tr><tr><td>Select suppliers and create RFQ drafts</td><td class="n">5</td></tr>
+  <tr><td>Enter one offer</td><td class="n">15</td></tr><tr><td>Select the lowest offer</td><td class="n">3</td></tr>
+  <tr><td>Select a non-lowest offer with rationale</td><td class="n">6</td></tr><tr><td>Create the nomination</td><td class="n">3</td></tr></tbody></table></div>
+  <p class="note">All names, e-mail addresses and prices are invented demo data. Nothing is saved; reloading resets the prototype.</p>
+  <div class="actions"><button type="button" id="reset">Reset prototype</button></div></div></section>`;
+
+// ---------- routing & events ----------
+function render() {
+  const name = (location.hash || "#worklist").slice(1); const view = V[name] ? name : "worklist";
+  document.getElementById("view").innerHTML = V[view]();
+  document.querySelectorAll("[data-nav]").forEach(a => { if (a.dataset.nav === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  document.querySelectorAll("[data-role]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.role === S.role)));
+}
+window.addEventListener("hashchange", () => { render(); document.getElementById("view").focus({ preventScroll: true }); window.scrollTo(0, 0); });
+document.addEventListener("click", e => {
+  const t = e.target.closest("button, tr[data-go], tr[data-pick]"); if (!t) return;
+  if (t.dataset.role) { S.role = t.dataset.role; render(); toast("Viewing as " + t.textContent); return; }
+  if (t.dataset.go) { location.hash = t.dataset.go; return; }
+  if (t.dataset.pick) { S.selectedOffer = t.dataset.pick; render(); return; }
+  if (t.id === "add-line") { S.inq.lines.push({ grade: "DMA 0.1%", qty: "", iso: "ISO 8217:2024", spec: "" }); render(); return; }
+  if (t.dataset.del) { S.inq.lines.splice(Number(t.dataset.del), 1); render(); return; }
+  if (t.id === "save") { toast("Draft saved (prototype only)"); return; }
+  if (t.id === "make-rfqs") { const now = new Date().toISOString().slice(11, 16) + " UTC"; S.rfqs = [...S.chosen].map(n => ({ supplier: n, generated: now, sent: "" })); S.preview = 0; location.hash = "rfq"; return; }
+  if (t.dataset.preview) { S.preview = Number(t.dataset.preview); render(); document.getElementById("draft-" + S.preview)?.scrollIntoView({ block: "nearest" }); return; }
+  if (t.dataset.copy) { const i = Number(t.dataset.copy); const txt = rfqText(SUPPLIERS.find(x => x.name === S.rfqs[i].supplier));
+    navigator.clipboard?.writeText(txt).then(() => toast("RFQ text copied"), () => toast("Copy blocked here — select the text instead")); return; }
+  if (t.dataset.sent) { const r = S.rfqs[Number(t.dataset.sent)]; r.sent = new Date().toISOString().slice(11, 16) + " UTC"; if (S.inq.status === "Draft") S.inq.status = "RFQ sent"; render(); toast("Marked as sent to " + r.supplier); return; }
+  if (t.dataset.edit) { S.editOffer = Number(t.dataset.edit); render(); return; }
+  if (t.id === "select-winner") { S.winner = t.dataset.s; S.inq.status = "Winner selected"; render(); toast("Winner selected: " + S.winner); return; }
+  if (t.id === "nominate") { S.nominated = true; S.inq.status = "Nominated"; render(); toast("Nomination created"); return; }
+  if (t.id === "reset") { location.reload(); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("tr[data-go], tr[data-pick]")) e.target.click(); });
+document.addEventListener("input", e => {
+  const el = e.target; const ds = el.dataset;
+  if (ds.k) S.inq[ds.k] = el.value;
+  else if (ds.lk) S.inq.lines[Number(ds.line)][ds.lk] = el.value;
+  else if (ds.sup) { el.checked ? S.chosen.add(ds.sup) : S.chosen.delete(ds.sup); render(); return; }
+  else if (ds.price || ds.fixed || ds.ok) { const o = S.offers[S.editOffer ?? 0];
+    if (ds.price) { if (el.value !== "" && !/^\d+(\.\d{0,2})?$/.test(el.value)) return; o.prices[ds.price] = el.value; }
+    else if (ds.fixed) { if (el.value !== "" && !/^\d+(\.\d{0,2})?$/.test(el.value)) return; o.fixed[ds.fixed] = el.value; }
+    else o[ds.ok] = el.value;
+    if (S.inq.status === "RFQ sent") S.inq.status = "Offers received";
+    if (ds.price || ds.fixed) { const id = el.id, pos = el.selectionStart; render(); const n = document.getElementById(id); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch {} } }
+    return; }
+  else if (el.id === "rat-reason") { S.rationale.reason = el.value; render(); document.getElementById("rat-reason")?.focus(); return; }
+  else if (el.id === "rat-text") { S.rationale.text = el.value; const b = document.getElementById("select-winner"); if (b && S.selectedOffer && b.dataset.s !== undefined) { const notBest = !!document.getElementById("rat-reason"); b.disabled = notBest && (!S.rationale.reason || !S.rationale.text.trim()); } return; }
+  if (ds.k === "vessel" || ds.k === "port" || ds.lk === "grade") { if (!S.rfqs.length) S.chosen.clear(); render(); }
+});
+document.addEventListener("change", e => { if (e.target.dataset.sup !== undefined) return; if (e.target.matches("select[data-k], select[data-lk]")) render(); });
+// offers move status forward once any offer exists after RFQs are sent
+const _offers = V.offers; V.offers = () => { const h = _offers(); if (S.inq.status === "RFQ sent" && S.offers.length) S.inq.status = "Offers received"; return h; };
+render();
+</script>
