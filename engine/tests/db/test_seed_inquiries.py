@@ -9,11 +9,15 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from sqlalchemy import Engine, text
+from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
     import uuid
 
+from nautical_deliverance.domain.rfq import render_rfq
 from nautical_deliverance.persistence import seed
+from nautical_deliverance.persistence.models import Rfq
+from nautical_deliverance.persistence.rfq_repo import build_context
 
 REALM = Path(__file__).parents[3] / "infra/keycloak/realm-dev.json"
 REF = re.compile(r"INQ-(\d{4})-(\d{3})")
@@ -97,7 +101,7 @@ def test_references_and_counters(seeded: Engine, org: uuid.UUID) -> None:
 @pytest.mark.req("B2-R14")
 def test_idempotent_and_unaudited(seeded: Engine) -> None:
     """A second run changes no row and writes no audit entry."""
-    tables = ("app_user", "inquiry", "inquiry_line", "inquiry_reference_counter")
+    tables = ("app_user", "inquiry", "inquiry_line", "inquiry_reference_counter", "rfq")
 
     def dump() -> str:
         return json.dumps(
@@ -113,3 +117,39 @@ def test_idempotent_and_unaudited(seeded: Engine) -> None:
     seed.seed_demo_inquiries(seeded, NOW + timedelta(days=40))
     assert dump() == before
     assert all(not q(seeded, o, "SELECT 1 FROM audit_entry") for o in seed.DEV_ORGS)
+
+
+@pytest.mark.req("B3-R14")
+@pytest.mark.parametrize("org", list(seed.DEV_ORGS))
+def test_demo_rfqs(seeded: Engine, org: uuid.UUID) -> None:
+    """Sent RFQs on rfq_sent/offers_received, 2 drafts on one Draft, a decline, frozen text."""
+    rows = q(
+        seeded,
+        org,
+        "SELECT r.*, i.status AS istatus, i.version AS iversion FROM rfq r"
+        " JOIN inquiry i ON i.id = r.inquiry_id",
+    )
+    for st in ("rfq_sent", "offers_received"):
+        assert any(r["istatus"] == st and r["status"] == "sent" for r in rows)
+    drafts = [r["inquiry_id"] for r in rows if r["status"] == "draft"]
+    assert len(drafts) == 2
+    assert len(set(drafts)) == 1
+    assert any(r["status"] == "declined" for r in rows)
+    active = [(r["inquiry_id"], r["counterparty_id"]) for r in rows if r["status"] != "withdrawn"]
+    assert len(active) == len(set(active))
+    for r in rows:
+        if r["status"] in ("sent", "declined"):
+            assert r["inquiry_version_at_send"] == r["iversion"]
+    sent = [r for r in rows if r["status"] in ("sent", "declined")]
+    with seeded.begin() as conn:
+        conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
+        s = Session(conn)
+        for r in sent:
+            rfq = s.get(Rfq, r["id"])
+            assert rfq is not None
+            ctx = build_context(s, rfq)
+            assert (rfq.sent_subject, rfq.sent_body) == render_rfq(ctx)
+            assert rfq.sent_to_email == ctx.recipient_email
+    assert all(r["sent_to_email"].endswith(".example") for r in sent)
+    emails = q(seeded, org, "SELECT email FROM contact")
+    assert all(e["email"].endswith(".example") for e in emails)
