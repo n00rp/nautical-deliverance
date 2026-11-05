@@ -1,6 +1,6 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { HistoryList } from "./HistoryList";
+import { type HistoryEntry, HistoryList } from "./HistoryList";
 
 const entries = [
   { id: "1", actor: "Ann", at: "2026-11-01T08:00:00Z", action: "create" as const, changes: [] },
@@ -35,6 +35,12 @@ describe("HistoryList", () => {
     const first = screen.getAllByRole("listitem")[0] as HTMLElement;
     expect(within(first).getByText("03 Nov 10:30 UTC")).toBeTruthy();
     expect(within(first).getByText(/Cid/)).toBeTruthy();
+  });
+
+  it("[B1-R13] history list: an entry about a related record names it", () => {
+    const e = { ...entries[0], id: "9", entity: "Contact Ann" } as HistoryEntry;
+    render(<HistoryList entries={[e]} />);
+    expect(screen.getByText("Contact Ann")).toBeTruthy();
   });
 
   it("[B1-R13] history list: empty list shows a note", () => {

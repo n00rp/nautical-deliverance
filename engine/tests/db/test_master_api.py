@@ -559,6 +559,47 @@ def test_contacts_crud_and_single_active_primary(admin: Api) -> None:
 
 
 @pytest.mark.req("B1-R07")
+def test_counterparty_history_includes_contact_and_coverage_changes(admin: Api) -> None:
+    """B1-D6: contact and coverage changes show in the counterparty's history, labelled."""
+    cp = counterparty(admin)
+    path = f"counterparties/{cp['id']}"
+    c = admin.post(f"{path}/contacts", {"name": "Ann", "email": "ann@x.example"})
+    admin.patch(f"{path}/contacts/{c['id']}", {"version": c["version"], "email": "a2@x.example"})
+    admin.put(f"{path}/coverage", {"version": cp["version"], "items": []})  # no-op: no entry
+    p1, pr = port(admin), product(admin)
+    admin.put(
+        f"{path}/coverage",
+        {"version": cp["version"], "items": [{"port_id": p1["id"], "product_id": pr["id"]}]},
+    )
+    stranger = counterparty(admin, "CP2")
+    admin.post(f"counterparties/{stranger['id']}/contacts", {"name": "Z", "email": "z@x.example"})
+
+    history = admin.get(f"{path}/history")
+
+    assert [(h["entity"], h["action"]) for h in history] == [
+        (None, "update"),
+        ("Contact Ann", "update"),
+        ("Contact Ann", "create"),
+        (None, "create"),
+    ]
+    assert history[0]["changes"].keys() == {"coverage"}
+    assert history[1]["changes"] == {"email": {"before": "ann@x.example", "after": "a2@x.example"}}
+
+
+@pytest.mark.req("B1-R07")
+def test_vessel_history_includes_approved_fuel_changes(admin: Api) -> None:
+    """B1-D6: a vessel's approved-fuel changes show in its history."""
+    v, pr = vessel(admin), product(admin)
+    admin.put(
+        f"vessels/{v['id']}/approved-fuels",
+        {"version": v["version"], "items": [{"product_id": pr["id"]}]},
+    )
+    history = admin.get(f"vessels/{v['id']}/history")
+    assert [h["action"] for h in history] == ["update", "create"]
+    assert history[0]["changes"].keys() == {"approved_fuels"}
+
+
+@pytest.mark.req("B1-R07")
 def test_coverage_put_replaces_set_audited_once_and_reactivates(
     admin: Api, app_engine: Engine
 ) -> None:

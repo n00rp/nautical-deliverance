@@ -5,6 +5,8 @@ export type HistoryEntry = {
   id: string;
   actor: string;
   at: string;
+  /** Label of a related record this entry is about, e.g. "Contact Ann". */
+  entity?: string | null;
   action: "create" | "update" | "deactivate" | "reactivate";
   changes: { field: string; before: string | null; after: string | null }[];
 };
@@ -28,7 +30,7 @@ export function HistoryList({ entries }: { entries: HistoryEntry[] }) {
       {newestFirst.map((e) => (
         <li key={e.id} data-entry={e.id} className={styles.entry}>
           <p className={styles.head}>
-            <strong>{e.actor}</strong> {VERB[e.action]}{" "}
+            <strong>{e.actor}</strong> {VERB[e.action]} {e.entity && <em>{e.entity} </em>}
             <time dateTime={e.at} className={styles.time}>
               {formatInstant(e.at)}
             </time>

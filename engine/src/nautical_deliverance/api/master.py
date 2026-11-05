@@ -304,6 +304,7 @@ class HistoryOut(_Out):
     at: datetime
     action: str
     changes: dict[str, dict[str, str | None]]
+    entity: str | None = None  # label of a related record (e.g. "Contact Ann"); None = this record
 
 
 class SuggestOut(BaseModel):
@@ -503,12 +504,24 @@ def _register(spec: _Spec) -> None:
     def history(item_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
         with _scope(principal, engine) as s:
             _load(s, model, item_id)
+            own = (AuditEntry.entity_type == entity) & (AuditEntry.entity_id == item_id)
+            if entity == "counterparty":  # B1-D6: its contacts' changes show here too
+                own = own | (Contact.counterparty_id == item_id)
             stmt = (
-                select(AuditEntry)
-                .where(AuditEntry.entity_type == entity, AuditEntry.entity_id == item_id)
+                select(AuditEntry, Contact.name)
+                .outerjoin(
+                    Contact,
+                    (AuditEntry.entity_type == "contact") & (AuditEntry.entity_id == Contact.id),
+                )
+                .where(own)
                 .order_by(AuditEntry.at.desc(), AuditEntry.id)
             )
-            return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+            return [
+                HistoryOut.model_validate(e).model_copy(
+                    update={"entity": f"Contact {name}" if name else None}
+                )
+                for e, name in s.execute(stmt)
+            ]
 
 
 def _lifecycle(url: str, out: type[BaseModel], entity: str, model: type, action: Action) -> None:
