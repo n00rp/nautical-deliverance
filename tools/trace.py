@@ -12,6 +12,13 @@ PY_REF = re.compile(r'req\("([^"]+)"\)')
 TS_REF = re.compile(rf"\[({ID})\]")
 YAML_REF = re.compile(r"#\s*req:(.*)")
 MATRIX = "docs/traceability.md"
+# Specs verified by owner review, not code (design documents), opt out in their header.
+MANUAL_MARKER = "- **Traceability:** manual"
+
+
+def _is_manual(spec: Path) -> bool:
+    head = spec.read_text(encoding="utf-8").splitlines()[:20]
+    return MANUAL_MARKER in head
 
 
 def _files(root: Path, pattern: str) -> list[Path]:
@@ -55,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         {
             m
             for spec in _files(root, "docs/superpowers/specs/*.md")
+            if not _is_manual(spec)
             for m in SPEC_ROW.findall(spec.read_text(encoding="utf-8"))
         }
     )

@@ -52,10 +52,33 @@ describe("token lint", () => {
     }
   });
 
+  it("[B1-R12] lint rejects literal font shorthand and radius", () => {
+    for (const decl of ["font: 14px Arial", "border-radius: 4px", "border-top-left-radius: 3px"]) {
+      expect(
+        lint(`.a { ${decl}; }
+`).status,
+        decl,
+      ).not.toBe(0);
+    }
+  });
+
+  it("[B1-R12] lint allows token arithmetic but not literal lengths in calc", () => {
+    const ok = ".a { padding: calc(var(--space-1) * 2); margin: calc(-1 * var(--space-2)); }\n";
+    expect(lint(ok).status).toBe(0);
+    for (const v of ["calc(var(--space-1) + 4px)", "calc(2px * 2)"]) {
+      expect(
+        lint(`.a { padding: ${v}; }
+`).status,
+        v,
+      ).not.toBe(0);
+    }
+  });
+
   it("[B1-R12] lint accepts token-only styles", () => {
     const ok = lint(
       ".a { color: var(--color-fg); font: inherit; font-family: var(--font-body);" +
-        " font-size: var(--text-md); padding: 0 var(--space-2); gap: var(--space-1); }\n",
+        " font-size: var(--text-md); padding: 0 var(--space-2); gap: var(--space-1);" +
+        " border-radius: 50%; border-bottom-left-radius: var(--radius-pill); }\n",
     );
     expect(ok.out).toBe("");
     expect(ok.status).toBe(0);
