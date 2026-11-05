@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
 import { PRODUCT_NAME } from "./productName";
+import { AppShell } from "./ui/AppShell/AppShell";
+import type { Role } from "./ui/RoleGate/RoleGate";
+
+// The engine still issues S0 roles until Part B; only roles the web knows are shown.
+const WEB_ROLES: readonly string[] = ["admin", "bunker_buyer", "operator", "viewer"];
+const isRole = (r: string): r is Role => WEB_ROLES.includes(r);
 
 type State =
   | { kind: "loading" }
@@ -55,9 +61,13 @@ export function App() {
     };
   }, []);
 
+  const user =
+    state.kind === "signedIn"
+      ? { name: state.me.organization.name, roles: state.me.roles.filter(isRole) }
+      : null;
+
   return (
-    <main>
-      <h1>{PRODUCT_NAME}</h1>
+    <AppShell productName={PRODUCT_NAME} user={user} nav={[]}>
       {state.kind === "loading" && <p role="status">Loading…</p>}
       {state.kind === "error" && <p role="alert">{state.message}</p>}
       {(state.kind === "signedOut" || state.kind === "error") && (
@@ -65,14 +75,6 @@ export function App() {
           Sign in
         </button>
       )}
-      {state.kind === "signedIn" && (
-        <dl>
-          <dt>Organization</dt>
-          <dd>{state.me.organization.name}</dd>
-          <dt>Roles</dt>
-          <dd>{state.me.roles.join(", ")}</dd>
-        </dl>
-      )}
-    </main>
+    </AppShell>
   );
 }

@@ -71,6 +71,8 @@ for (const id of [
   "ui-table--offer-table",
   "ui-detailpanel--beside-table",
   "ui-historylist--default",
+  "ui-appshell--default",
+  "ui-appshell--menu-open",
 ]) {
   test(`[B1-R13] ${id}: no horizontal page overflow at 400 px`, async ({ page }) => {
     await page.setViewportSize({ width: 400, height: 800 });
@@ -90,4 +92,16 @@ test("[B1-R13] table cells wrap long unbroken text", async ({ page }) => {
     .first()
     .evaluate((el) => getComputedStyle(el).overflowWrap);
   expect(wrap).toBe("anywhere");
+});
+
+test("[B1-R13] app shell nav collapses behind a menu button below 900 px", async ({ page }) => {
+  await page.setViewportSize({ width: 400, height: 800 });
+  await open(page, "ui-appshell--default");
+  await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeHidden();
+  await page.getByRole("button", { name: "Menu" }).click();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await expect(page.getByRole("button", { name: "Menu" })).toBeHidden();
+  await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 });

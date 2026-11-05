@@ -59,6 +59,26 @@ describe("tone contrast", () => {
   }
 });
 
+describe("shell contrast", () => {
+  const themes = {
+    light: ":root {",
+    "dark (OS)": ':root:not([data-theme="light"])',
+    "dark (pinned)": ':root[data-theme="dark"]',
+  };
+  const pairs = [
+    ["--color-accent-fg", "--color-accent"],
+    ["--color-fg", "--color-info-soft"],
+  ] as const;
+  for (const [theme, marker] of Object.entries(themes)) {
+    for (const [fg, bg] of pairs) {
+      it(`[B1-R12] ${fg} on ${bg} is at least 4.5:1 in ${theme}`, () => {
+        const block = blockAfter(marker);
+        expect(ratio(hexOf(block, fg), hexOf(block, bg))).toBeGreaterThanOrEqual(4.5);
+      });
+    }
+  }
+});
+
 // Lints source text as if it were a component module; stdin keeps the repo free of bad fixtures.
 function lint(source: string): { status: number | null; out: string } {
   const bin = join(here, "../../node_modules/stylelint/bin/stylelint.mjs");

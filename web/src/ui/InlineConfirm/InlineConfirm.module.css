@@ -1,0 +1,10 @@
+.row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.crit {
+  background-color: var(--color-crit);
+  color: var(--color-surface);
+}
