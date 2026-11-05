@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from decimal import Decimal
 
-    from sqlalchemy import Row
+    from sqlalchemy import ColumnElement, Row
     from sqlalchemy.orm import Session
 
 Counter = InquiryReferenceCounter
@@ -56,13 +56,14 @@ def _shown(user: Any) -> Any:  # noqa: ANN401
     return func.coalesce(func.nullif(user.name, ""), user.email)
 
 
-def _rfq_count(*statuses: RfqStatus) -> Any:  # noqa: ANN401
-    """Correlated count of the inquiry's RFQs in the given statuses."""
-    return (
-        select(func.count())
-        .where(Rfq.inquiry_id == Inquiry.id, Rfq.status.in_([x.value for x in statuses]))
-        .scalar_subquery()
-    )
+def is_active_rfq() -> ColumnElement[bool]:
+    """Return the one definition of an active RFQ: anything not withdrawn."""
+    return Rfq.status != RfqStatus.WITHDRAWN.value
+
+
+def _rfq_count(*where: ColumnElement[bool]) -> Any:  # noqa: ANN401
+    """Correlated count of the inquiry's RFQs that satisfy every condition."""
+    return select(func.count()).where(Rfq.inquiry_id == Inquiry.id, *where).scalar_subquery()
 
 
 def list_rows(
@@ -79,9 +80,9 @@ def list_rows(
             Port.time_zone.label("port_time_zone"),
             Inquiry.eta,
             _shown(AppUser).label("buyer_name"),
-            # Active RFQs (anything not withdrawn); "sent" includes the ones a supplier declined.
-            _rfq_count(RfqStatus.DRAFT, RfqStatus.SENT, RfqStatus.DECLINED).label("rfq_total"),
-            _rfq_count(RfqStatus.SENT, RfqStatus.DECLINED).label("rfq_sent"),
+            # Active RFQs; "sent" is the active ones that left Draft (a declined one was sent).
+            _rfq_count(is_active_rfq()).label("rfq_total"),
+            _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)
         .join(Port, Port.id == Inquiry.port_id)

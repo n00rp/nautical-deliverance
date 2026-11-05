@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session  # noqa: TC002
 
 from nautical_deliverance.domain.identity import Principal  # noqa: TC001
+from nautical_deliverance.domain.rfq import single_address
 from nautical_deliverance.persistence.db import org_session
 
 if TYPE_CHECKING:
@@ -110,14 +111,12 @@ def check(ok: Any, message: str) -> AfterValidator:  # noqa: ANN401
 
 def email_ok(value: str) -> bool:
     """Plausible e-mail address."""
-    local, sep, domain = value.partition("@")
+    domain = value.partition("@")[2]
     return (
         len(value) <= 254  # noqa: PLR2004
-        and bool(sep and local)
-        and "@" not in domain
+        and single_address(value)
         and "." in domain
         and all(domain.split("."))
-        and not any(c.isspace() for c in value)
     )
 
 

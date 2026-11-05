@@ -26,9 +26,15 @@ from nautical_deliverance.api.rfq_models import (
 from nautical_deliverance.api.users import get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.inquiry import Status, ready_to_leave_draft
-from nautical_deliverance.domain.rfq import RfqStatus, can_rfq_transition, render_rfq
+from nautical_deliverance.domain.rfq import (
+    RfqStatus,
+    can_rfq_transition,
+    render_rfq,
+    single_address,
+)
 from nautical_deliverance.persistence import rfq_repo
 from nautical_deliverance.persistence.audit import Action, record_change
+from nautical_deliverance.persistence.inquiry_repo import is_active_rfq
 from nautical_deliverance.persistence.models import (
     AuditEntry,
     Contact,
@@ -78,7 +84,9 @@ def _contact_problem(contact: Contact | None, counterparty_id: uuid.UUID | None)
         return "Contact belongs to another counterparty"
     if not contact.active:
         return "Inactive contact"
-    return None if contact.email else "Contact has no e-mail address"
+    if not contact.email:
+        return "Contact has no e-mail address"
+    return None if single_address(contact.email) else "Contact e-mail cannot be used in a mail link"
 
 
 def _check_recipients(s: Session, inquiry_id: uuid.UUID, recipients: Sequence[RecipientIn]) -> None:
@@ -96,11 +104,7 @@ def _check_recipients(s: Session, inquiry_id: uuid.UUID, recipients: Sequence[Re
         )
     }
     active = set(
-        s.scalars(
-            select(Rfq.counterparty_id).where(
-                Rfq.inquiry_id == inquiry_id, rfq_repo.is_active_rfq()
-            )
-        )
+        s.scalars(select(Rfq.counterparty_id).where(Rfq.inquiry_id == inquiry_id, is_active_rfq()))
     )
     batch: set[uuid.UUID] = set()
     problems: list[dict[str, str]] = []
@@ -224,7 +228,11 @@ def create_rfqs(
 def get_preview(rfq_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
     """Return the exact text and mail link: live for a draft, frozen once sent."""
     with scope(principal, engine) as s:
-        return rfq_repo.preview(s, _rfq(s, rfq_id))
+        try:
+            return rfq_repo.preview(s, _rfq(s, rfq_id))
+        except ValueError as exc:  # a stored address that cannot go into a mail link
+            field = "contact_id"
+            raise unprocessable(field, "Contact e-mail cannot be used in a mail link") from exc
 
 
 @router.patch("/rfqs/{rfq_id}", response_model=RfqItem)
@@ -316,6 +324,12 @@ def mark_sent(
         if problem:
             field = "contact_id"
             raise unprocessable(field, problem)
+        if not s.get(Counterparty, rfq.counterparty_id).active:  # type: ignore[union-attr]
+            field = "counterparty_id"
+            raise unprocessable(field, "Inactive counterparty")
+        if inq.buyer_id is None:
+            field = "buyer_id"
+            raise unprocessable(field, "Assign a buyer before sending")
         if rfq.response_deadline <= now:
             field, message = "response_deadline", "Deadline has passed"
             raise unprocessable(field, message)

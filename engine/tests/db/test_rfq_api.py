@@ -447,19 +447,28 @@ def test_preview_has_no_forbidden_data(admin: Rc, world: SimpleNamespace) -> Non
         op = world.users[Role.OPERATOR].user_id
         s.execute(update(AppUser).where(AppUser.id == op).values(name=mk["operator_name"]))
         s.execute(update(LegalEntity).values(name=mk["legal_entity_name"]))
+    mk["agent_email"] = "mk-agent.example"
+
+    def scan(stage: str) -> None:
+        for item in admin.api(f"/inquiries/{i['id']}/rfqs"):
+            mine = next(c for c, k in names.items() if item["counterparty_name"] == mk[k])
+            p = admin.api(f"/rfqs/{item['id']}/preview")
+            text_ = "\n".join(str(v) for v in p.values())
+            for key, value in mk.items():
+                if OWNER.get(key) != mine:
+                    assert value not in text_, (stage, mine, key)
+            assert item["email"] in text_
+
+    scan("live")
+    for item in admin.api(f"/inquiries/{i['id']}/rfqs"):  # freeze the text with markers planted
+        r = admin.http.post(f"/api/v1/rfqs/{item['id']}/mark-sent", json={"version": 1})
+        assert r.status_code == OK, r.text
+    with org_session(world.org, admin.engine) as s:
         s.execute(
             update(Inquiry).where(Inquiry.id == uuid.UUID(i["id"]))
             .values(status="cancelled", cancel_reason=mk["cancel_reason"])
         )  # fmt: skip
-    mk["agent_email"] = "mk-agent.example"
-    for item in admin.api(f"/inquiries/{i['id']}/rfqs"):
-        mine = next(c for c, k in names.items() if item["counterparty_name"] == mk[k])
-        p = admin.api(f"/rfqs/{item['id']}/preview")
-        text_ = "\n".join(str(v) for v in p.values())
-        for key, value in mk.items():
-            if OWNER.get(key) != mine:
-                assert value not in text_, (mine, key)
-        assert item["email"] in text_
+    scan("frozen")
 
 
 # --- B3-R01: validation --------------------------------------------------------------------------
@@ -715,3 +724,76 @@ def test_work_list_counts_active_and_sent_rfqs(admin: Rc, inq: Json) -> None:
     # Alpha sent, Beta declined, Gamma withdrawn then redrafted: dropping DRAFT would give 2.
     assert (row["rfq_total"], row["rfq_sent"]) == (3, 2)
     assert admin.fresh(inq)["rfq_deadline"] == DEADLINE
+
+
+# --- B3-R05: a stored contact address that cannot go into a mail link -------------------------
+
+
+def set_email(w: SimpleNamespace, engine: Engine, key: str, email: str) -> None:
+    """Store an address straight in the database (master data would refuse it)."""
+    with org_session(w.org, engine) as s:
+        s.execute(update(Contact).where(Contact.id == w.ct[key]).values(email=email))
+
+
+@pytest.mark.req("B3-R05")
+@pytest.mark.parametrize("bad", ["a?cc=x@y.example", "a,b@x.example", "a;b@x.example"])
+def test_stored_bad_contact_is_422_not_500(
+    admin: Rc, inq: Json, world: SimpleNamespace, app_engine: Engine, bad: str
+) -> None:
+    """Create, patch, preview and mark-sent answer 422 for an unusable stored address."""
+    draft = admin.make(inq["id"], ("Beta", "b1"))[0]
+    set_email(world, app_engine, "a1", bad)
+    r = admin.post(inq["id"], [("Alpha", "a1")])
+    assert errors(r)["recipients[0].contact_id"] == "Contact e-mail cannot be used in a mail link"
+    cp_ok = admin.make(inq["id"], ("Alpha", "a2"))[0]
+    r = admin.http.patch(
+        f"/api/v1/rfqs/{cp_ok['id']}",
+        json={"version": cp_ok["version"], "contact_id": str(world.ct["a1"])},
+    )
+    assert errors(r) == {"contact_id": "Contact e-mail cannot be used in a mail link"}
+    set_email(world, app_engine, "b1", bad)
+    r = admin.http.get(f"/api/v1/rfqs/{draft['id']}/preview")
+    assert errors(r) == {"contact_id": "Contact e-mail cannot be used in a mail link"}
+    r = admin.http.post(f"/api/v1/rfqs/{draft['id']}/mark-sent", json={"version": draft["version"]})
+    assert errors(r) == {"contact_id": "Contact e-mail cannot be used in a mail link"}
+
+
+# --- B3-R03: the Operator never learns who or how many were contacted (ruling R6) ----------------
+
+HIDDEN = {"rfq_total": None, "rfq_sent": None}
+
+
+def sent_inquiry(admin: Rc, inq: Json) -> None:
+    """Two RFQs, one sent: the inquiry has a deadline, counts and an audit trail."""
+    a, _ = admin.make(inq["id"], ("Alpha", "a1"), ("Beta", "b1"))
+    r = admin.http.post(f"/api/v1/rfqs/{a['id']}/mark-sent", json={"version": a["version"]})
+    assert r.status_code == OK, r.text
+
+
+def rfq_deadline_in(history: list[Json]) -> bool:
+    """Whether any history entry mentions the RFQ deadline."""
+    return any("rfq_deadline" in e["changes"] for e in history)
+
+
+@pytest.mark.req("B3-R03")
+@pytest.mark.parametrize("role", list(Role))
+def test_rfq_counts_and_deadline_by_role(
+    settings: Settings, app_engine: Engine, world: SimpleNamespace, role: Role
+) -> None:
+    """List, get and history show RFQ facts to Admin, Buyer and Viewer, never to the Operator."""
+    admin = make_client(settings, app_engine, world, Role.ADMIN)
+    i = admin.inquiry()
+    sent_inquiry(admin, i)
+    c = make_client(settings, app_engine, world, role)
+    row, one = c.listing()[0], c.get(i["id"])
+    history = c.api(f"/inquiries/{i['id']}/history")
+    if role is Role.OPERATOR:
+        assert {k: row[k] for k in HIDDEN} == HIDDEN
+        assert (one["rfq_deadline"], rfq_deadline_in(history)) == (None, False)
+        # The entry that only set the deadline is gone; the create and status entries stay.
+        assert len(history) == len(admin.api(f"/inquiries/{i['id']}/history")) - 1
+        assert "rfq_deadline" not in str(history)
+    else:
+        assert (row["rfq_total"], row["rfq_sent"]) == (2, 1)
+        assert one["rfq_deadline"] == DEADLINE
+        assert rfq_deadline_in(history)

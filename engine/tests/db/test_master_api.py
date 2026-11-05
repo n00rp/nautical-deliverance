@@ -680,3 +680,16 @@ def test_suggest_returns_all_and_some(admin: Api) -> None:
     assert [c["name"] for c in result["some"]] == ["Partial"]
     bad = admin.http.get(f"{BASE}/counterparties/suggest?port_id={p['id']}")
     assert bad.status_code == UNPROCESSABLE
+
+
+@pytest.mark.req("B3-R05")
+@pytest.mark.parametrize("bad", ["a?cc=x@y.example", "a,b@x.example", "a;b@x.example"])
+def test_contact_email_must_be_a_single_mailto_address(admin: Api, bad: str) -> None:
+    """Create and patch refuse an address that could not go into a mail link."""
+    cp = counterparty(admin)
+    path = f"{BASE}/counterparties/{cp['id']}/contacts"
+    r = admin.http.post(path, json={"name": "N", "email": bad})
+    assert list(fields(r)) == ["email"]
+    c = admin.post(f"counterparties/{cp['id']}/contacts", {"name": "N", "email": "n@x.example"})
+    r = admin.http.patch(f"{path}/{c['id']}", json={"version": c["version"], "email": bad})
+    assert list(fields(r)) == ["email"]

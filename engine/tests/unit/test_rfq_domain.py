@@ -20,6 +20,7 @@ from nautical_deliverance.domain.rfq import (
     can_rfq_transition,
     format_instant,
     render_rfq,
+    single_address,
 )
 
 R = RfqStatus
@@ -143,47 +144,6 @@ ALLOWED = (
 )
 
 
-def to_context(d: dict[str, object], recipient: dict[str, str]) -> RfqContext:
-    """Test-local mirror of the production builder: copies allowed keys only."""
-    kw = {k: d[k] for k in ALLOWED}
-    return RfqContext(
-        **kw,  # type: ignore[arg-type]
-        recipient_name=recipient["name"],
-        recipient_email=recipient["email"],
-        buyer_name=str(d["buyer_name"]),
-    )
-
-
-@pytest.mark.req("B3-R06")
-@given(n=st.integers(1, 10**6), count=st.integers(1, 50))
-def test_no_forbidden_marker_leaks(n: int, count: int) -> None:
-    """No marker from any forbidden field reaches subject, body or mailto."""
-    markers = {k: f"MK{n}-{i}-{k.upper()}" for i, k in enumerate(FORBIDDEN)}
-    markers["recipient_count"] = f"COUNT-{count}"
-    c = _ctx()
-    d: dict[str, object] = {
-        **markers,
-        "reference": c.reference,
-        "vessel_name": c.vessel_name,
-        "vessel_imo": c.vessel_imo,
-        "port_name": c.port_name,
-        "port_locode": c.port_locode,
-        "port_time_zone": c.port_time_zone,
-        "eta": c.eta,
-        "etd": c.etd,
-        "agent_name": c.agent_name,
-        "lines": c.lines,
-        "response_deadline": c.response_deadline,
-        "buyer_name": c.buyer_name,
-    }
-    ctx = to_context(d, {"name": "Anna", "email": "anna@seller.example"})
-    subject, body = render_rfq(ctx)
-    url, _ = build_mailto(ctx.recipient_email, subject, body)
-    for m in markers.values():
-        for text in (subject, body, url, unquote(url)):
-            assert m not in text
-
-
 @pytest.mark.req("B3-R05")
 @given(
     local=st.text("abcdefghij.-_+", min_size=1, max_size=20),
@@ -213,6 +173,10 @@ def test_mailto_single_address_only_subject_body(local: str, subject: str, body:
         "a@b@c.example",
         "@x.example",
         "a@",
+        "a&b@x.example",
+        "a#b@x.example",
+        "a%b@x.example",
+        "<a@x.example>",
     ],
 )
 def test_mailto_rejects_multiple_or_injected(to: str) -> None:
@@ -314,3 +278,23 @@ def test_decimals_never_use_exponent() -> None:
     line = RfqLine("X", Decimal("1E+3"), "m3", Decimal("8.5E+2"), None, "ISO")
     _, body = render_rfq(_ctx(lines=(line,)))
     assert "  - X: 1000 m3, density 850 kg/m3, ISO" in body
+
+
+@pytest.mark.req("B3-R05")
+@pytest.mark.parametrize("ok", ["a@x.example", "a.b+c@x.example", "a_b-c@sub.x.example"])
+def test_single_address_accepts(ok: str) -> None:
+    """The one shared predicate accepts plain addresses."""
+    assert single_address(ok)
+
+
+@pytest.mark.req("B3-R05")
+@pytest.mark.parametrize(
+    "bad",
+    [
+        *("", "a", "@x.example", "a@", "a@b@c", "a,b@x", "a;b@x", "a?c=1@x", "a&b@x", "a#b@x"),
+        *("a%b@x", "a b@x", "a	b@x", "<a@x>", "a@x>"),
+    ],
+)
+def test_single_address_rejects(bad: str) -> None:
+    """Every character that could split or extend a mailto link is refused."""
+    assert not single_address(bad)

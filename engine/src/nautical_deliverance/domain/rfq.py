@@ -118,16 +118,22 @@ def render_rfq(ctx: RfqContext) -> tuple[str, str]:
     return subject, body
 
 
+def single_address(value: str) -> bool:
+    """Exactly one plain address: one ``@``, local part and domain, nothing that splits a link."""
+    local, sep, domain = value.partition("@")
+    return bool(
+        sep
+        and local
+        and domain
+        and "@" not in domain
+        and not any(c in value for c in ",;?&#%<>")
+        and not any(c.isspace() for c in value)
+    )
+
+
 def build_mailto(to: str, subject: str, body: str) -> tuple[str, bool]:
     """Return ``(url, body_included)``; the body is dropped if the link exceeds MAILTO_MAX."""
-    local, _, domain = to.partition("@")
-    if (
-        not local
-        or not domain
-        or "@" in domain
-        or any(c in to for c in ",;?")
-        or any(c.isspace() for c in to)
-    ):
+    if not single_address(to):
         msg = "to must be a single e-mail address"
         raise ValueError(msg)
     head = f"mailto:{quote(to, safe='@')}?subject={quote(subject, safe='')}"

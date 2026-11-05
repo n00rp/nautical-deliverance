@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
-from nautical_deliverance.domain.rfq import RfqContext, RfqLine, RfqStatus, build_mailto, render_rfq
-from nautical_deliverance.persistence.inquiry_repo import line_rows
+from nautical_deliverance.domain.rfq import RfqContext, RfqLine, build_mailto, render_rfq
+from nautical_deliverance.persistence.inquiry_repo import is_active_rfq, line_rows
 from nautical_deliverance.persistence.master_repo import counterparties_covering
 from nautical_deliverance.persistence.models import (
     AppUser,
@@ -25,13 +25,7 @@ if TYPE_CHECKING:
     import uuid
     from collections.abc import Collection
 
-    from sqlalchemy import ColumnElement
     from sqlalchemy.orm import Session
-
-
-def is_active_rfq() -> ColumnElement[bool]:
-    """Return the one definition of an active RFQ: anything not withdrawn."""
-    return Rfq.status != RfqStatus.WITHDRAWN.value
 
 
 def build_context(session: Session, rfq: Rfq) -> RfqContext:

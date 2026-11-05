@@ -11,7 +11,7 @@ from sqlalchemy.exc import DBAPIError
 
 from nautical_deliverance.domain.identity import Role
 from nautical_deliverance.persistence.db import org_session
-from nautical_deliverance.persistence.models import AppUser, Contact, Inquiry, Rfq
+from nautical_deliverance.persistence.models import AppUser, Contact, Counterparty, Inquiry, Rfq
 from tests.db.test_inquiry_api import CONFLICT, CREATED, NOT_FOUND, OK, UNPROCESSABLE, errors
 from tests.db.test_rfq_api import Rc, make_client, rfq_world
 
@@ -261,3 +261,19 @@ def test_every_action_is_audited_and_history_is_newest_first(
     assert [h["action"] for h in admin.api(f"/rfqs/{c['id']}/history")] == ["create"]
     assert len(admin.audit("rfq", [a["id"]])) == len(hist)
     assert admin.http.get(f"/api/v1/rfqs/{uuid.uuid4()}/history").status_code == NOT_FOUND
+
+
+@pytest.mark.req("B3-R08")
+def test_mark_sent_rechecks_counterparty_and_buyer(
+    admin: Rc, inq: Json, world: SimpleNamespace
+) -> None:
+    """A draft whose supplier was deactivated, or whose inquiry lost its buyer, is not sent."""
+    a, b = admin.make(inq["id"], ("Alpha", "a1"), ("Beta", "b1"))
+    with org_session(world.org, admin.engine) as s:
+        s.execute(
+            update(Counterparty).where(Counterparty.id == world.cp["Alpha"]).values(active=False)
+        )
+    assert errors(act(admin, a, "mark-sent")) == {"counterparty_id": "Inactive counterparty"}
+    set_inquiry(admin, inq["id"], buyer_id=None)
+    assert errors(act(admin, b, "mark-sent")) == {"buyer_id": "Assign a buyer before sending"}
+    assert inquiry_row(admin, inq["id"])[0] == "draft"
