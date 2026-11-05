@@ -64,6 +64,9 @@ RFQ_REJECT: list[tuple[str, dict[str, Any]]] = [
     ("rfq_sent_consistent", {"status": "declined", **SENT, "sent_body": None}),
     ("rfq_sent_consistent", {"status": "sent", **SENT, "sent_at": None}),
     ("rfq_sent_consistent", {"status": "withdrawn", **SENT}),
+    ("rfq_sent_consistent", {"status": "draft", "sent_subject": "s"}),
+    ("rfq_sent_consistent", {"status": "withdrawn", "sent_to_email": "a@b.c"}),
+    ("rfq_sent_consistent", {"status": "sent", **SENT, "inquiry_version_at_send": None}),
 ]
 
 
@@ -159,6 +162,7 @@ def test_foreign_keys_cannot_cross_organizations(
         {"sent_to_email": "x@y.z"},
         {"sent_subject": "other"},
         {"sent_body": "other"},
+        {"sent_body": None},
         {"inquiry_version_at_send": 2},
     ],
 )
