@@ -6,7 +6,7 @@ import { TextField } from "./TextField";
 describe("TextField", () => {
   afterEach(cleanup);
 
-  it("[B1-R14] label, hint and error are associated with the input", async () => {
+  it("[B1-R13] label, hint and error are associated with the input", async () => {
     const onChange = vi.fn();
     render(
       <TextField
@@ -27,7 +27,7 @@ describe("TextField", () => {
     expect(onChange).toHaveBeenCalledWith("A");
   });
 
-  it("[B1-R14] a plain field has no description and no invalid flag", () => {
+  it("[B1-R13] a plain field has no description and no invalid flag", () => {
     render(<TextField id="v" label="Vessel" value="x" onChange={vi.fn()} disabled />);
     const input = screen.getByLabelText("Vessel");
     expect(input.hasAttribute("aria-describedby")).toBe(false);

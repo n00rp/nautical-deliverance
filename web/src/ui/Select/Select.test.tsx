@@ -19,7 +19,7 @@ describe("Select", () => {
     Element.prototype.scrollIntoView = () => undefined;
   });
 
-  it("[B1-R14] the label and error are associated with the trigger", () => {
+  it("[B1-R13] the label and error are associated with the trigger", () => {
     render(
       <Select
         id="s"
@@ -37,7 +37,7 @@ describe("Select", () => {
     expect(trigger.textContent).toContain("Select…");
   });
 
-  it("[B1-R14] choosing an option calls onChange; disabled options cannot be chosen", async () => {
+  it("[B1-R13] choosing an option calls onChange; disabled options cannot be chosen", async () => {
     const onChange = vi.fn();
     render(<Select id="s" label="Fuel" value="a" options={[...options]} onChange={onChange} />);
     const trigger = screen.getByRole("combobox", { name: "Fuel" });

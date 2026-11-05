@@ -7,7 +7,7 @@ import { FormSummary } from "./FormSummary";
 describe("FormSummary", () => {
   afterEach(cleanup);
 
-  it("[B1-R14] each summary link focuses its field", async () => {
+  it("[B1-R13] each summary link focuses its field", async () => {
     render(
       <>
         <FormSummary
@@ -25,7 +25,7 @@ describe("FormSummary", () => {
     await userEvent.click(screen.getByRole("link", { name: "Gone" }));
   });
 
-  it("[B1-R14] singular title, and nothing when there are no errors", () => {
+  it("[B1-R13] singular title, and nothing when there are no errors", () => {
     const { container, rerender } = render(
       <FormSummary errors={[{ fieldId: "a", message: "m" }]} />,
     );
@@ -34,7 +34,7 @@ describe("FormSummary", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("[B1-R14] FieldError renders an alert with its id", () => {
+  it("[B1-R13] FieldError renders an alert with its id", () => {
     render(<FieldError id="x-error">Bad</FieldError>);
     expect(screen.getByRole("alert").id).toBe("x-error");
   });

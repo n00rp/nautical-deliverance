@@ -90,7 +90,8 @@ function lint(source: string): { status: number | null; out: string } {
   return { status: r.status, out: r.stdout + r.stderr };
 }
 
-describe("token lint", () => {
+// Each case spawns stylelint (a Node process); under parallel load the 5 s default is too tight.
+describe("token lint", { timeout: 30_000 }, () => {
   it("[B1-R12] lint rejects literal colour", () => {
     const bad = lint(".a { color: #fff; }\n");
     expect(bad.status).not.toBe(0);

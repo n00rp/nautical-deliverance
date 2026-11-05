@@ -6,7 +6,7 @@ import { Checkbox } from "./Checkbox";
 describe("Checkbox", () => {
   afterEach(cleanup);
 
-  it("[B1-R14] the label names the checkbox and clicking it toggles", async () => {
+  it("[B1-R13] the label names the checkbox and clicking it toggles", async () => {
     const onChange = vi.fn();
     render(<Checkbox id="c" label="Confirm" checked={false} onChange={onChange} />);
     await userEvent.click(screen.getByText("Confirm"));
@@ -14,14 +14,14 @@ describe("Checkbox", () => {
     expect(screen.getByRole("checkbox", { name: "Confirm" })).toBeTruthy();
   });
 
-  it("[B1-R14] disabled checkbox does not toggle", async () => {
+  it("[B1-R13] disabled checkbox does not toggle", async () => {
     const onChange = vi.fn();
     render(<Checkbox id="c" label="Confirm" checked disabled onChange={onChange} />);
     await userEvent.click(screen.getByRole("checkbox"));
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("[B1-R14] a hidden label still names the checkbox", () => {
+  it("[B1-R13] a hidden label still names the checkbox", () => {
     render(
       <Checkbox
         id="c"
