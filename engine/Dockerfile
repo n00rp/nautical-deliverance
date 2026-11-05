@@ -9,7 +9,13 @@ RUN uv sync --frozen --no-dev --no-install-project
 FROM python:3.14.10-slim-trixie@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
 ENV PATH=/app/.venv/bin:$PATH PYTHONPATH=/app/src PYTHONUNBUFFERED=1
 # pip (with its vendored msgpack/urllib3/setuptools) is unused at runtime; drop it with its CVEs.
-RUN useradd --system --uid 10001 --no-create-home nd     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/lib/python3.14/ensurepip /usr/local/bin/pip*
+# R16: CVE-2026-109518 (apt < 3.0.4) is fixed in Debian but not yet in this base digest;
+# remove this targeted upgrade once the python base image ships apt >= 3.0.4.
+RUN apt-get update \
+    && apt-get install -y --only-upgrade --no-install-recommends apt libapt-pkg7.0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --no-create-home nd \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/lib/python3.14/ensurepip /usr/local/bin/pip*
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY alembic.ini ./
