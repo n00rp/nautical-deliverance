@@ -24,11 +24,19 @@ DB_DOWN = "Database unavailable"
 STALE = "Record was changed by someone else"
 
 
+def _field(loc: tuple[int | str, ...]) -> str:
+    """Error location without the "body"/"query" prefix: ``lines[0].quantity``, ``items.name``."""
+    out = ""
+    for part in loc[1:]:
+        out += f"[{part}]" if isinstance(part, int) else f"{'.' if out else ''}{part}"
+    return out
+
+
 def field_errors(exc: RequestValidationError) -> JSONResponse:
     """422 as {"detail": [{"field", "message"}]} for every validation failure."""
     detail = [
         {
-            "field": ".".join(str(p) for p in err["loc"][1:]),
+            "field": _field(err["loc"]),
             "message": str(err["msg"]).removeprefix("Value error, "),
         }
         for err in exc.errors()
