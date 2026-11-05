@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ActiveFilter, MasterApi, Rec } from "../masterApi";
 import { Button } from "../ui/Button/Button";
 import { DetailPanel } from "../ui/DetailPanel/DetailPanel";
@@ -39,6 +39,8 @@ export function MasterDataPage({ config, api, roles }: MasterDataPageProps) {
   const reloadList = useCallback(() => {
     setTick((t) => t + 1);
   }, []);
+  // Id of a record this page just created: its form takes focus when it opens.
+  const created = useRef<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -143,6 +145,10 @@ export function MasterDataPage({ config, api, roles }: MasterDataPageProps) {
           roles={roles}
           refs={refs}
           onChanged={reloadList}
+          focusOnLoad={created.current === id}
+          onCreated={(newId) => {
+            created.current = newId;
+          }}
         />
       )}
     </div>
@@ -156,20 +162,47 @@ type RecordPanelProps = {
   roles: Role[];
   refs: Refs;
   onChanged: () => void;
+  focusOnLoad: boolean;
+  onCreated: (id: string) => void;
 };
 
-function RecordPanel({ config, id, api, roles, refs, onChanged }: RecordPanelProps) {
+function RecordPanel({
+  config,
+  id,
+  api,
+  roles,
+  refs,
+  onChanged,
+  focusOnLoad,
+  onCreated,
+}: RecordPanelProps) {
   const isNew = id === "new";
   const type = config.path;
   const toast = useToast();
   const [rec, setRec] = useState<Rec | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [tick, setTick] = useState(0);
+  // `wanted` counts conflicts; `epoch` is what the last completed fetch answered for.
+  const wanted = useRef(0);
+  const [epoch, setEpoch] = useState(0);
+  const formBox = useRef<HTMLDivElement>(null);
+  // Refetch without touching drafts: forms keep their own state, only versions move on.
   const reload = useCallback(() => {
     setTick((t) => t + 1);
     onChanged();
   }, [onChanged]);
-  const fail = useFail(reload);
+  // A conflict resets every draft to the latest server state once it has been fetched.
+  const reset = useCallback(() => {
+    wanted.current += 1;
+    reload();
+  }, [reload]);
+  const fail = useFail(reset);
+  const opened = isNew || rec !== null;
+  useEffect(() => {
+    if (opened && focusOnLoad) {
+      formBox.current?.querySelector<HTMLElement>("input, button")?.focus();
+    }
+  }, [opened, focusOnLoad]);
 
   useEffect(() => {
     if (isNew) return;
@@ -179,6 +212,7 @@ function RecordPanel({ config, id, api, roles, refs, onChanged }: RecordPanelPro
         if (!live) return;
         setRec(r);
         setHistory(h);
+        setEpoch(wanted.current);
       },
       (e: unknown) => {
         if (live) toast(describe(e), "crit");
@@ -197,7 +231,7 @@ function RecordPanel({ config, id, api, roles, refs, onChanged }: RecordPanelPro
     }, fail);
   };
 
-  const ctx = rec && { rec, refs, api, roles, onFail: fail, reload };
+  const ctx = rec && { rec, refs, api, roles, onFail: fail, reload, epoch };
   return (
     <>
       <DetailPanel
@@ -216,28 +250,31 @@ function RecordPanel({ config, id, api, roles, refs, onChanged }: RecordPanelPro
                 </StatusPill>
               </div>
             )}
-            <EditForm
-              key={rec ? `${rec.id}:${String(rec.version)}` : "new"}
-              name="Details"
-              fields={config.fields}
-              initial={initialValues(config.fields, rec ?? undefined)}
-              refs={refs}
-              roles={roles}
-              submitLabel={rec ? "Save" : "Create"}
-              onFail={fail}
-              onSubmit={async (body) => {
-                if (rec) {
-                  await api.update(type, rec.id, rec.version, body);
-                  toast("Saved", "ok");
-                  reload();
-                } else {
-                  const created = await api.create(type, body);
-                  toast("Created", "ok");
-                  onChanged();
-                  go(`${type}/${created.id}`);
-                }
-              }}
-            />
+            <div ref={formBox}>
+              <EditForm
+                key={`${id}:${String(epoch)}`}
+                name="Details"
+                fields={config.fields}
+                initial={initialValues(config.fields, rec ?? undefined)}
+                refs={refs}
+                roles={roles}
+                submitLabel={rec ? "Save" : "Create"}
+                onFail={fail}
+                onSubmit={async (body) => {
+                  if (rec) {
+                    await api.update(type, rec.id, rec.version, body);
+                    toast("Saved", "ok");
+                    reload();
+                  } else {
+                    const created = await api.create(type, body);
+                    toast("Created", "ok");
+                    onChanged();
+                    onCreated(created.id);
+                    go(`${type}/${created.id}`);
+                  }
+                }}
+              />
+            </div>
             {rec && (
               <div>
                 <RoleGate allow={["admin"]} roles={roles}>

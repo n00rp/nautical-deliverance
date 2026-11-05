@@ -25,7 +25,10 @@ export type ExtraCtx = {
   api: MasterApi;
   roles: Role[];
   onFail: (e: unknown) => void;
+  /** Refetch the record and lists; unsaved drafts stay. */
   reload: () => void;
+  /** Bumps when a conflict forces everything to reset to the server state. */
+  epoch: number;
 };
 
 export type MasterConfig = {

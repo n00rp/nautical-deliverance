@@ -161,25 +161,30 @@ const SINGLE: Named[] = [{ id: "", name: "" }];
 
 /** Replace-the-set editor: coverage matrix (ports x products) or approved fuels (products). */
 export function SetPanel({ ctx, spec }: { ctx: ExtraCtx; spec: SetSpec }) {
-  const { api, rec, refs, roles, onFail, reload } = ctx;
+  const { api, rec, refs, roles, onFail, reload, epoch } = ctx;
   const toast = useToast();
   const url = spec.url(rec.id);
+  // `saved` is the server's set; null until it has loaded (Save stays off, so an empty
+  // draft can never overwrite a set that has not been read).
+  const [saved, setSaved] = useState<SetItem[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [version, setVersion] = useState(rec.version);
   const rows = spec.rows ? (refs[spec.rows] ?? []).map(named) : SINGLE;
   const cols = (refs[spec.cols] ?? []).map(named);
+  const load = (s: { items: SetItem[] }) => {
+    setSaved(s.items);
+    setSelected(new Set(s.items.map(keyOf)));
+  };
 
+  // Not keyed on the record version: saving the details must not reset ticks in progress.
   useEffect(() => {
     let live = true;
     api.getSet(url).then((s) => {
-      if (!live) return;
-      setSelected(new Set(s.items.map(keyOf)));
-      setVersion(s.version);
+      if (live) load(s);
     }, onFail);
     return () => {
       live = false;
     };
-  }, [api, url, rec.version, onFail]);
+  }, [api, url, epoch, onFail]);
 
   const cell = (r: Named, c: Named) => {
     const key = keyOf(spec.item(r.id, c.id));
@@ -202,11 +207,21 @@ export function SetPanel({ ctx, spec }: { ctx: ExtraCtx; spec: SetSpec }) {
     );
   };
 
+  const dirty =
+    saved !== null &&
+    (selected.size !== saved.length || saved.some((i) => !selected.has(keyOf(i))));
+
   const save = () => {
-    const items = rows.flatMap((r) =>
-      cols.map((c) => spec.item(r.id, c.id)).filter((i) => selected.has(keyOf(i))),
-    );
-    api.putSet(url, version, items).then(() => {
+    if (!saved) return;
+    const shown = rows.flatMap((r) => cols.map((c) => spec.item(r.id, c.id)));
+    const shownKeys = new Set(shown.map(keyOf));
+    // Entries on inactive ports/products are not drawn; they are carried through unchanged.
+    const items = [
+      ...shown.filter((i) => selected.has(keyOf(i))),
+      ...saved.filter((i) => !shownKeys.has(keyOf(i))),
+    ];
+    api.putSet(url, rec.version, items).then((s) => {
+      load(s);
       toast(spec.saved, "ok");
       reload();
     }, onFail);
@@ -236,7 +251,7 @@ export function SetPanel({ ctx, spec }: { ctx: ExtraCtx; spec: SetSpec }) {
         )}
         <RoleGate allow={["admin"]} roles={roles}>
           <div className={css.actions}>
-            <Button variant="primary" onClick={save}>
+            <Button variant="primary" onClick={save} disabled={!dirty}>
               {spec.saveLabel}
             </Button>
           </div>

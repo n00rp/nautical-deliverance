@@ -29,7 +29,7 @@ const COVERAGE: SetSpec = {
   title: "Coverage",
   saveLabel: "Save coverage",
   saved: "Coverage saved",
-  url: (id) => `counterparties/${id}/coverage`,
+  url: (id) => `counterparties/${encodeURIComponent(id)}/coverage`,
   rows: "ports",
   rowHeader: "Port",
   cols: "products",
@@ -40,7 +40,7 @@ const FUELS: SetSpec = {
   title: "Approved fuels",
   saveLabel: "Save approved fuels",
   saved: "Approved fuels saved",
-  url: (id) => `vessels/${id}/approved-fuels`,
+  url: (id) => `vessels/${encodeURIComponent(id)}/approved-fuels`,
   cols: "products",
   item: (_row, product_id) => ({ product_id }),
 };

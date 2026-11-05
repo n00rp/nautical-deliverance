@@ -12,7 +12,7 @@
 | B1-R08 | web/src/admin/MasterDataPage.test.tsx, web/src/ui/DateTimeField/DateTimeField.test.tsx |
 | B1-R09 | engine/tests/db/test_coverage_queries.py, engine/tests/db/test_master_api.py |
 | B1-R10 | engine/tests/db/test_seed_master.py |
-| B1-R11 | web/src/App.test.tsx, web/src/admin/MasterDataPage.test.tsx, web/src/admin/budget.test.tsx, web/src/admin/routes.test.ts, web/src/masterApi.test.ts |
+| B1-R11 | web/src/App.test.tsx, web/src/admin/MasterDataPage.test.tsx, web/src/admin/budget.test.tsx, web/src/admin/drafts.test.tsx, web/src/admin/routes.test.ts, web/src/masterApi.test.ts |
 | B1-R12 | .github/workflows/ci.yml, web/src/ui/tokens.test.ts |
 | B1-R13 | .github/workflows/ci.yml, web/src/ui/AppShell/AppShell.test.tsx, web/src/ui/Button/Button.test.tsx, web/src/ui/DetailPanel/DetailPanel.test.tsx, web/src/ui/EmptyState/EmptyState.test.tsx, web/src/ui/HistoryList/HistoryList.test.tsx, web/src/ui/InlineConfirm/InlineConfirm.test.tsx, web/src/ui/LockedNote/LockedNote.test.tsx, web/src/ui/Panel/Panel.test.tsx, web/src/ui/RoleGate/RoleGate.test.tsx, web/src/ui/StatusPill/StatusPill.test.tsx, web/src/ui/Table/Table.test.tsx, web/src/ui/Toast/Toast.test.tsx |
 | B1-R14 | web/src/ui/Checkbox/Checkbox.test.tsx, web/src/ui/FormSummary/FormSummary.test.tsx, web/src/ui/NumberField/NumberField.test.tsx, web/src/ui/Select/Select.test.tsx, web/src/ui/TextField/TextField.test.tsx |

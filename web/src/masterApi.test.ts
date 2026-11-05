@@ -156,6 +156,12 @@ describe("master API client", () => {
     });
   });
 
+  it("[B1-R11] ids from the URL are encoded in request paths", async () => {
+    const f = stub(json({}));
+    await api.get("ports", "../x/y");
+    expect((f.mock.calls[0] as [string])[0]).toBe(`${B}/ports/..%2Fx%2Fy`);
+  });
+
   it("[B1-R11] an unreadable error body still gives an ApiError", async () => {
     stub(new Response("<html>", { status: 502 }));
     await expect(api.get("ports", "x")).rejects.toMatchObject({ status: 502, issues: [] });

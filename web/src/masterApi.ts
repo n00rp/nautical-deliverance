@@ -51,19 +51,20 @@ export function createMasterApi(token: string) {
   }
 
   const active = (on: boolean) => (on ? "reactivate" : "deactivate");
-  const contacts = (cp: string) => `counterparties/${cp}/contacts`;
+  const enc = encodeURIComponent;
+  const contacts = (cp: string) => `counterparties/${enc(cp)}/contacts`;
 
   return {
     list: (type: MasterType, filter: ActiveFilter, q?: string) =>
       call<Rec[]>("GET", `${type}?${new URLSearchParams({ active: filter, ...(q ? { q } : {}) })}`),
-    get: (type: MasterType, id: string) => call<Rec>("GET", `${type}/${id}`),
+    get: (type: MasterType, id: string) => call<Rec>("GET", `${type}/${enc(id)}`),
     create: (type: MasterType, body: Body) => call<Rec>("POST", type, body),
     update: (type: MasterType, id: string, version: number, body: Body) =>
-      call<Rec>("PATCH", `${type}/${id}`, { ...body, version }),
+      call<Rec>("PATCH", `${type}/${enc(id)}`, { ...body, version }),
     setActive: (type: MasterType, id: string, version: number, on: boolean) =>
-      call<Rec>("POST", `${type}/${id}/${active(on)}`, { version }),
+      call<Rec>("POST", `${type}/${enc(id)}/${active(on)}`, { version }),
     async history(type: MasterType, id: string): Promise<HistoryEntry[]> {
-      const raw = await call<RawHistory[]>("GET", `${type}/${id}/history`);
+      const raw = await call<RawHistory[]>("GET", `${type}/${enc(id)}/history`);
       return raw.map((e) => ({
         ...e,
         changes: Object.entries(e.changes).map(([field, c]) => ({ field, ...c })),
@@ -72,9 +73,9 @@ export function createMasterApi(token: string) {
     contacts: (cp: string) => call<Rec[]>("GET", `${contacts(cp)}?active=all`),
     addContact: (cp: string, body: Body) => call<Rec>("POST", contacts(cp), body),
     updateContact: (cp: string, id: string, version: number, body: Body) =>
-      call<Rec>("PATCH", `${contacts(cp)}/${id}`, { ...body, version }),
+      call<Rec>("PATCH", `${contacts(cp)}/${enc(id)}`, { ...body, version }),
     setContactActive: (cp: string, id: string, version: number, on: boolean) =>
-      call<Rec>("POST", `${contacts(cp)}/${id}/${active(on)}`, { version }),
+      call<Rec>("POST", `${contacts(cp)}/${enc(id)}/${active(on)}`, { version }),
     /** `path` is e.g. `counterparties/<id>/coverage` or `vessels/<id>/approved-fuels`. */
     getSet: (path: string) => call<SetState>("GET", path),
     putSet: (path: string, version: number, items: SetItem[]) =>

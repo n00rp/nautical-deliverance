@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, type FieldIssue } from "../api";
 import type { Body, Rec } from "../masterApi";
 import { Button } from "../ui/Button/Button";
@@ -61,6 +61,19 @@ export function EditForm({
   const [forbidden, setForbidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const disabled = !roles.includes("admin");
+  const form = useRef<HTMLFormElement>(null);
+  const refocus = useRef(false);
+  // A different role or a reloaded record may allow what was forbidden before.
+  const context = `${roles.join()}|${JSON.stringify(initial)}`;
+  useEffect(() => {
+    setForbidden(false);
+  }, [context]);
+  // The submit button is disabled while busy, which drops focus: put it back afterwards.
+  useEffect(() => {
+    if (busy || !refocus.current) return;
+    refocus.current = false;
+    form.current?.querySelector<HTMLElement>("button[type=submit]")?.focus();
+  }, [busy]);
   const id = (key: string) => `${name.toLowerCase()}-${key}`;
 
   const set = (key: string, value: string) => {
@@ -70,6 +83,7 @@ export function EditForm({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    refocus.current = form.current?.contains(document.activeElement) ?? false;
     setBusy(true);
     try {
       await onSubmit(toBody(fields, values));
