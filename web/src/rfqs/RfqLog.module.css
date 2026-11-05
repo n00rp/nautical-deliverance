@@ -1,0 +1,92 @@
+.links {
+  display: flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+
+.main {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.message {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.message dt {
+  margin-top: var(--space-2);
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.message dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.body {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  background-color: var(--color-surface);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.mail {
+  display: inline-flex;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius);
+  background-color: var(--color-accent);
+  color: var(--color-accent-fg);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.mail:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.note {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.deadline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* A status word never breaks mid-word in a narrow column. */
+.nowrap {
+  white-space: nowrap;
+}

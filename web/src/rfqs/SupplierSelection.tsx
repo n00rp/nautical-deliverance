@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FieldIssue } from "../api";
-import { describe, useFail } from "../admin/errors";
+import { describe } from "../admin/errors";
+import { useReload } from "../admin/useReload";
 import { goInquiry } from "../admin/routes";
 import { useSave } from "../admin/useSave";
 import type { Inquiry, InquiryApi } from "../inquiryApi";
@@ -264,11 +265,7 @@ export function SupplierSelection({ inquiryId, api, roles }: SupplierSelectionPr
     rfqs: RfqItem[];
   } | null>(null);
   const [failed, setFailed] = useState(false);
-  const [tick, setTick] = useState(0);
-  const reload = useCallback(() => {
-    setTick((t) => t + 1);
-  }, []);
-  const fail = useFail(reload);
+  const { tick, fail } = useReload();
 
   useEffect(() => {
     if (!allowed) return;

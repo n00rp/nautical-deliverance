@@ -33,6 +33,21 @@
 | B2-R13 | web/src/App.test.tsx, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiries/inquiryBudget.test.tsx, web/src/ui/LockedNote/LockedNote.test.tsx |
 | B2-R14 | engine/tests/db/test_seed_inquiries.py |
 | B2-R15 | .github/workflows/ci.yml |
+| B3-R01 | engine/tests/db/test_rfq_api.py, engine/tests/db/test_rfq_schema.py |
+| B3-R02 | engine/tests/db/test_rfq_api.py, engine/tests/db/test_rfq_schema.py |
+| B3-R03 | engine/tests/db/test_rfq_api.py |
+| B3-R04 | engine/tests/db/test_rfq_api.py |
+| B3-R05 | engine/tests/db/test_rfq_api.py, engine/tests/unit/test_rfq_domain.py |
+| B3-R06 | engine/tests/db/test_rfq_api.py, engine/tests/unit/test_rfq_domain.py |
+| B3-R07 | engine/tests/unit/test_rfq_domain.py |
+| B3-R08 | engine/tests/db/test_rfq_actions.py, engine/tests/db/test_rfq_api.py |
+| B3-R09 | engine/tests/db/test_rfq_actions.py, engine/tests/unit/test_rfq_domain.py |
+| B3-R10 | engine/tests/db/test_rfq_actions.py, engine/tests/db/test_rfq_api.py |
+| B3-R11 | engine/tests/db/test_rfq_actions.py, engine/tests/db/test_rfq_api.py |
+| B3-R12 | engine/tests/unit/test_rfq_domain.py, web/src/rfqs/RfqLog.test.tsx |
+| B3-R13 | engine/tests/db/test_rfq_api.py, web/src/App.test.tsx, web/src/admin/routes.test.ts, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiries/WorkList.test.tsx, web/src/rfqApi.test.ts, web/src/rfqs/RfqLog.test.tsx, web/src/rfqs/SupplierSelection.test.tsx, web/src/rfqs/rfqBudget.test.tsx |
+| B3-R14 | engine/tests/db/test_seed_inquiries.py |
+| B3-R15 | .github/workflows/ci.yml |
 | S0-R01 | .github/workflows/ci.yml |
 | S0-R02 | engine/tests/unit/test_health.py |
 | S0-R03 | engine/tests/db/test_me.py, engine/tests/unit/test_auth.py, web/src/App.test.tsx, web/src/api.test.ts, web/src/auth.test.ts |

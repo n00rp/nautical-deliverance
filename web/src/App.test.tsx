@@ -27,6 +27,11 @@ vi.mock("./inquiryApi", async (orig) => {
   };
 });
 
+vi.mock("./rfqApi", async (orig) => {
+  const { logApi } = await import("./rfqs/testSupport");
+  return { ...(await orig<typeof import("./rfqApi")>()), createRfqApi: () => logApi() };
+});
+
 const user = { access_token: "tok", expired: false };
 const me = {
   user_id: "u-1",
@@ -220,5 +225,15 @@ describe("App inquiries", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "New inquiry" })).toBeTruthy();
+  });
+
+  it("[B3-R13] the rfqs route opens the RFQ log", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue(me);
+    window.location.hash = "#/inquiries/i1/rfqs";
+    render(<App />);
+
+    expect(await screen.findByRole("table", { name: "RFQs" })).toBeTruthy();
+    expect(await screen.findByText("Alpha Marine")).toBeTruthy();
   });
 });

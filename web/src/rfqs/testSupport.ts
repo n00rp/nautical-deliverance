@@ -1,6 +1,6 @@
 // Sample suppliers and a stand-in RFQ client, shared by the SupplierSelection tests and story.
-import type { InquiryApi } from "../inquiryApi";
-import type { RfqApi, RfqItem, Suggestion, Suggestions } from "../rfqApi";
+import type { Inquiry, InquiryApi } from "../inquiryApi";
+import type { RfqApi, RfqItem, RfqPreview, Suggestion, Suggestions } from "../rfqApi";
 import { inquiry } from "../inquiries/pageSupport";
 
 const contact = (id: string, name: string, primary = false) => ({
@@ -71,5 +71,67 @@ export function rfqApi(
     getSuggestions: () => Promise.resolve(groups),
     listRfqs: () => Promise.resolve(log),
     createRfqs: () => Promise.resolve([]),
+  };
+}
+
+export const draftRfq: RfqItem = {
+  ...sentRfq,
+  id: "r0",
+  counterparty_name: "Alpha Marine",
+  contact_name: "Alpha Primary",
+  email: "alpha.primary@example.test",
+  sent_at: null,
+  status: "draft",
+  version: 1,
+};
+export const declinedRfq: RfqItem = {
+  ...sentRfq,
+  id: "r2",
+  counterparty_name: "Gamma Marine",
+  contact_name: "Gamma Primary",
+  email: "gamma.primary@example.test",
+  status: "declined",
+};
+export const changedRfq: RfqItem = {
+  ...sentRfq,
+  id: "r3",
+  counterparty_name: "Delta Marine",
+  contact_name: "Delta Primary",
+  email: "delta.primary@example.test",
+  changed_since_sent: true,
+};
+
+export const preview: RfqPreview = {
+  to: "beta.primary@example.test",
+  subject: "RFQ INQ-2611-001 – Northern Star – Rotterdam",
+  body: "Dear Beta Primary,\nplease quote 500 mt VLSFO 0.5% & MGO.\nBea Buyer",
+  mailto:
+    "mailto:beta.primary@example.test?subject=RFQ%20INQ-2611-001&body=Dear%20Beta%20Primary%2C",
+  body_in_link: true,
+};
+
+/**
+ * A stateful stand-in for the log routes: Mark sent turns the draft into a sent RFQ and the
+ * inquiry into "RFQ sent", as the engine does for the first send.
+ */
+export function logApi(log: RfqItem[] = [draftRfq, sentRfq], msg: RfqPreview = preview) {
+  let rfqs = log.map((x) => ({ ...x }));
+  let status: Inquiry["status"] = "draft";
+  const change = (id: string, to: RfqItem["status"]) => {
+    rfqs = rfqs.map((x) => (x.id === id ? { ...x, status: to, version: x.version + 1 } : x));
+    if (to === "sent") status = "rfq_sent";
+    return Promise.resolve(rfqs.find((x) => x.id === id) ?? draftRfq);
+  };
+  return {
+    getInquiry: () => Promise.resolve(inquiry({ status })),
+    listRfqs: () => Promise.resolve(rfqs.map((x) => ({ ...x }))),
+    getPreview: () => Promise.resolve(msg),
+    patchRfq: (id: string, _version: number, body: { response_deadline?: string }) => {
+      rfqs = rfqs.map((x) => (x.id === id ? { ...x, ...body, version: x.version + 1 } : x));
+      return Promise.resolve(rfqs.find((x) => x.id === id) ?? draftRfq);
+    },
+    markSent: (id: string) => change(id, "sent"),
+    withdrawRfq: (id: string) => change(id, "withdrawn"),
+    declineRfq: (id: string) => change(id, "declined"),
   };
 }

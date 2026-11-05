@@ -697,7 +697,7 @@ def test_changed_since_sent(admin: Rc, inq: Json, world: SimpleNamespace) -> Non
 
 @pytest.mark.req("B3-R13")
 def test_work_list_counts_active_and_sent_rfqs(admin: Rc, inq: Json) -> None:
-    """rfq_total counts every RFQ but withdrawn ones (drafts included); rfq_sent counts sent and declined."""
+    """rfq_total counts drafts, sent and declined RFQs; rfq_sent counts sent and declined."""
     assert admin.api("/inquiries")[0]["rfq_total"] == 0
     a, b, c = admin.make(inq["id"], ("Alpha", "a1"), ("Beta", "b1"), ("Gamma", "c1"))
 

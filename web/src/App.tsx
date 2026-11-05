@@ -6,6 +6,7 @@ import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
 import type { TokenSource } from "./http";
 import { InquiryPage } from "./inquiries/InquiryPage";
+import { RfqLog } from "./rfqs/RfqLog";
 import { SupplierSelection } from "./rfqs/SupplierSelection";
 import { createRfqApi } from "./rfqApi";
 import { WorkList } from "./inquiries/WorkList";
@@ -130,7 +131,15 @@ export function App() {
             roles={user.roles}
           />
         )}
-        {user && api && inquiryApi && inquiries?.id && inquiries.view !== "suppliers" && (
+        {user && suppliersApi && inquiries?.id && inquiries.view === "rfqs" && (
+          <RfqLog
+            key={inquiries.id}
+            inquiryId={inquiries.id}
+            api={suppliersApi}
+            roles={user.roles}
+          />
+        )}
+        {user && api && inquiryApi && inquiries?.id && !inquiries.view && (
           <InquiryPage
             key={inquiries.id}
             id={inquiries.id}
