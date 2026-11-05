@@ -4,21 +4,27 @@ import { MasterDataPage } from "./admin/MasterDataPage";
 import { parseAdmin, useHash } from "./admin/routes";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
-import { createMasterApi } from "./masterApi";
+import { createMasterApi, type TokenSource } from "./masterApi";
 import { PRODUCT_NAME } from "./productName";
 import { AppShell } from "./ui/AppShell/AppShell";
 import type { Role } from "./ui/RoleGate/RoleGate";
 import { ToastHost, ToastProvider } from "./ui/Toast/Toast";
 
-// The engine still issues S0 roles until Part B; only roles the web knows are shown.
+// The engine already drops unknown roles; this guard narrows the type for the web.
 const WEB_ROLES: readonly string[] = ["admin", "bunker_buyer", "operator", "viewer"];
 const isRole = (r: string): r is Role => WEB_ROLES.includes(r);
 
 type State =
   | { kind: "loading" }
   | { kind: "signedOut" }
-  | { kind: "signedIn"; me: Me; token: string }
+  | { kind: "signedIn"; me: Me }
   | { kind: "error"; message: string };
+
+// The token is read per request: oidc-client-ts renews it in the background (about 5 min).
+const tokens: TokenSource = {
+  token: async () => (await userManager.getUser())?.access_token ?? "",
+  renew: async () => (await userManager.signinSilent())?.access_token ?? null,
+};
 
 function cleanUrl() {
   window.history.replaceState({}, document.title, window.location.pathname);
@@ -39,7 +45,7 @@ async function load(): Promise<State> {
   }
   const user = await userManager.getUser();
   if (!user || user.expired) return { kind: "signedOut" };
-  return { kind: "signedIn", me: await fetchMe(user.access_token), token: user.access_token };
+  return { kind: "signedIn", me: await fetchMe(user.access_token) };
 }
 
 function loadSafely(): Promise<State> {
@@ -70,8 +76,8 @@ export function App() {
     state.kind === "signedIn"
       ? { name: state.me.organization.name, roles: state.me.roles.filter(isRole) }
       : null;
-  const token = state.kind === "signedIn" ? state.token : null;
-  const api = useMemo(() => (token ? createMasterApi(token) : null), [token]);
+  const signedIn = state.kind === "signedIn";
+  const api = useMemo(() => (signedIn ? createMasterApi(tokens) : null), [signedIn]);
   const route = parseAdmin(useHash());
 
   return (

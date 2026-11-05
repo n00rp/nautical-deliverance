@@ -23,7 +23,13 @@ describe("Checkbox", () => {
 
   it("[B1-R14] a hidden label still names the checkbox", () => {
     render(
-      <Checkbox id="c" label="Rotterdam – VLSFO 0.5%" checked={false} onChange={vi.fn()} hideLabel />,
+      <Checkbox
+        id="c"
+        label="Rotterdam – VLSFO 0.5%"
+        checked={false}
+        onChange={vi.fn()}
+        hideLabel
+      />,
     );
     expect(screen.getByRole("checkbox", { name: "Rotterdam – VLSFO 0.5%" })).toBeTruthy();
   });

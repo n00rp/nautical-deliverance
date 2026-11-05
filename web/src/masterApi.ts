@@ -33,12 +33,19 @@ async function failure(response: Response): Promise<ApiError> {
   return new ApiError(response.status, isIssues(detail) ? detail : []);
 }
 
-/** Typed client for /api/v1/master, bound to one access token. */
-export function createMasterApi(token: string) {
+/** Where the client gets its bearer token: the current one per request, and a renewed one. */
+export type TokenSource = {
+  token: () => Promise<string>;
+  /** Silent sign-in; resolves to the new access token, or null when there is none. */
+  renew: () => Promise<string | null>;
+};
+
+/** Typed client for /api/v1/master. A 401 triggers one renewal and one retry. */
+export function createMasterApi(auth: TokenSource) {
   const root = `${import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, "")}/api/v1/master`;
 
-  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`${root}/${path}`, {
+  const send = (method: string, path: string, token: string, body?: unknown) =>
+    fetch(`${root}/${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -46,6 +53,13 @@ export function createMasterApi(token: string) {
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+
+  async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+    let response = await send(method, path, await auth.token(), body);
+    if (response.status === 401) {
+      const fresh = await auth.renew().catch(() => null);
+      if (fresh) response = await send(method, path, fresh, body);
+    }
     if (!response.ok) throw await failure(response);
     return (await response.json()) as T;
   }

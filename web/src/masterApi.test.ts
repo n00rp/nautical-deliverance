@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe as describeError } from "./admin/errors";
 import { ApiError } from "./api";
 import { createMasterApi } from "./masterApi";
 
@@ -14,7 +15,8 @@ function stub(response: Response) {
   return f;
 }
 
-const api = createMasterApi("tok");
+const noRenew = vi.fn().mockResolvedValue(null);
+const api = createMasterApi({ token: () => Promise.resolve("tok"), renew: noRenew });
 const B = "http://api.test/api/v1/master";
 const C = `${B}/counterparties/c1/contacts`;
 
@@ -165,5 +167,57 @@ describe("master API client", () => {
   it("[B1-R11] an unreadable error body still gives an ApiError", async () => {
     stub(new Response("<html>", { status: 502 }));
     await expect(api.get("ports", "x")).rejects.toMatchObject({ status: 502, issues: [] });
+  });
+
+  it("[B1-R11] the token is fetched per request, so a renewed one is used", async () => {
+    const token = vi.fn().mockResolvedValueOnce("old").mockResolvedValueOnce("new");
+    const f = vi.fn().mockImplementation(() => Promise.resolve(json([])));
+    vi.stubGlobal("fetch", f);
+    const a = createMasterApi({ token, renew: noRenew });
+    await a.list("ports", "all");
+    await a.list("ports", "all");
+    const auth = f.mock.calls.map((c) => (c[1] as RequestInit).headers);
+    expect(auth[0]).toMatchObject({ Authorization: "Bearer old" });
+    expect(auth[1]).toMatchObject({ Authorization: "Bearer new" });
+  });
+
+  it("[B1-R11] an expired token (401) is renewed once and the call retried with the new one", async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(json({ detail: "expired" }, 401))
+      .mockResolvedValueOnce(json([{ id: "p1" }]));
+    vi.stubGlobal("fetch", f);
+    const renew = vi.fn().mockResolvedValue("fresh");
+    const a = createMasterApi({ token: () => Promise.resolve("stale"), renew });
+    await expect(a.list("ports", "all")).resolves.toEqual([{ id: "p1" }]);
+    expect(renew).toHaveBeenCalledTimes(1);
+    expect(f).toHaveBeenCalledTimes(2);
+    expect((f.mock.calls[1] as [string, RequestInit])[1].headers).toMatchObject({
+      Authorization: "Bearer fresh",
+    });
+  });
+
+  it.each([
+    ["renewal fails", () => Promise.reject(new Error("login_required"))],
+    ["renewal gives no token", () => Promise.resolve(null)],
+  ])("[B1-R11] a 401 when %s ends as a session-expired error", async (_n, renew) => {
+    const f = vi.fn().mockResolvedValue(json({ detail: "expired" }, 401));
+    vi.stubGlobal("fetch", f);
+    const a = createMasterApi({ token: () => Promise.resolve("stale"), renew });
+    const err = await a.list("ports", "all").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 401 });
+    expect(describeError(err)).toBe("Session expired — sign in again");
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("[B1-R11] a 401 that persists after renewal is not retried again", async () => {
+    const f = vi.fn().mockResolvedValue(json({ detail: "no" }, 401));
+    vi.stubGlobal("fetch", f);
+    const a = createMasterApi({
+      token: () => Promise.resolve("stale"),
+      renew: () => Promise.resolve("fresh"),
+    });
+    await expect(a.list("ports", "all")).rejects.toMatchObject({ status: 401 });
+    expect(f).toHaveBeenCalledTimes(2);
   });
 });

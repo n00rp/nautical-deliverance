@@ -63,7 +63,11 @@ describe("step budget", () => {
     await click(contact.getByRole("button", { name: "Add contact" }));
 
     const coverage = within(await screen.findByRole("region", { name: "Coverage" }));
-    for (const name of ["Rotterdam – VLSFO 0.5%", "Rotterdam – DMA 0.1%", "Singapore – VLSFO 0.5%"]) {
+    for (const name of [
+      "Rotterdam – VLSFO 0.5%",
+      "Rotterdam – DMA 0.1%",
+      "Singapore – VLSFO 0.5%",
+    ]) {
       await click(await coverage.findByRole("checkbox", { name }));
     }
     await click(coverage.getByRole("button", { name: "Save coverage" }));
