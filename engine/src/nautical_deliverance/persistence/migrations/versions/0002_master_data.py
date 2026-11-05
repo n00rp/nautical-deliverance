@@ -130,6 +130,10 @@ def upgrade() -> None:
         )
         op.execute(f"CREATE TABLE {table} ({COMMON}, {DDL[table]}{extra})")
         _rls(table, "SELECT, INSERT, UPDATE")
+    op.execute(  # at most one active primary contact per counterparty
+        "CREATE UNIQUE INDEX contact_one_primary_idx ON contact (organization_id, counterparty_id)"
+        " WHERE is_primary AND active"
+    )
     op.execute(
         "CREATE TABLE audit_entry (id uuid PRIMARY KEY DEFAULT gen_random_uuid(),"
         " organization_id uuid NOT NULL REFERENCES organization (id),"
