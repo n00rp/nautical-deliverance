@@ -56,7 +56,7 @@ A role switcher in the prototype header lets the reviewer see each role's view.
 | B0-R05 | Operator view | Switching to Operator hides every price, offer and rationale on every screen. |
 | B0-R06 | Demo data anonymized (D-066) | Vessel, supplier, trader, person and company names are invented; e-mail addresses use `.example`; no real company names appear anywhere in the prototype. |
 | B0-R07 | Craft (E11) and accessibility (E10) | Design tokens only (no ad-hoc colours/spacing), one icon set, no emoji icons, keyboard-operable, visible focus, WCAG 2.2 AA contrast, consistent units and formats (mt, USD, UTC with local port time). |
-| B0-R08 | Review loop | The owner shares the link; her feedback is recorded as a list of findings in the repository (`docs/reviews/b0-review.md`, anonymized) and each finding is resolved or explicitly deferred before B1 starts. |
+| B0-R08 | Review loop | The owner shares the link; her feedback is recorded as a list of findings in the repository (`docs/reviews/b0-review.md`, anonymized) and each finding is routed to the sub-project it affects (resolved there or explicitly deferred). Amended by D-078: her feedback is input, not a gate — B1 starts without it, and assumptions A1–A5 hold until she says otherwise. |
 
 ## 5. Out of scope
 - Any backend, persistence, authentication, or real e-mail.
