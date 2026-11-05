@@ -1,6 +1,6 @@
 # B3 Supplier Selection and RFQ — Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-05 (including proposed decisions B3-D9–B3-D12)
 - **Date:** 2026-11-05
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md), build step B3 (D-076); D-070 (RFQ confidentiality, `mailto:`), B0-D8 (pre-selection), B0 screens S3/S4; builds on [B1](2026-11-05-b1-domain-and-design-system-design.md) coverage (B1-R09) and [B2](2026-11-05-b2-inquiries-design.md) inquiries.
 - **Goal:** From an inquiry, the buyer selects suppliers/traders with suggestions per port, generates one individual RFQ draft per recipient, opens it in their own e-mail client, marks it sent, and follows every recipient in the RFQ log — with the brief's confidentiality rules guaranteed and proven.
