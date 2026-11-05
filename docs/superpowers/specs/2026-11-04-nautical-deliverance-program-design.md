@@ -1,6 +1,6 @@
 # Nautical Deliverance — Program Specification
 
-- **Status:** Approved by owner 2026-11-04
+- **Status:** Approved by owner 2026-11-04. **Goal, scope and build order superseded on 2026-11-05 by D-065** — see [2026-11-05-bunker-procurement-program-design.md](2026-11-05-bunker-procurement-program-design.md); weather routing parked, not discarded.
 - **Date:** 2026-11-04
 - **Scope of this document:** Program level. Defines goals, confirmed decisions, evaluation criteria, decomposition into sub-projects and build order. It does **not** specify any sub-project in detail; each sub-project gets its own spec → plan → implementation cycle.
 
