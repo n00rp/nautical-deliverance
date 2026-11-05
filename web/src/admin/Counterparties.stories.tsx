@@ -23,9 +23,9 @@ function createApi() {
         port("p3", "GIGIB", "Gibraltar", "Europe/Gibraltar"),
       ],
       products: [
-        rec("pr1", { name: "VLSFO", default_unit: "mt" }),
-        rec("pr2", { name: "MGO", default_unit: "mt" }),
-        rec("pr3", { name: "HSFO", default_unit: "mt" }),
+        rec("pr1", { name: "VLSFO 0.5%", default_unit: "mt" }),
+        rec("pr2", { name: "DMA 0.1%", default_unit: "mt" }),
+        rec("pr3", { name: "HSFO 3.5%", default_unit: "mt" }),
       ],
     },
     {

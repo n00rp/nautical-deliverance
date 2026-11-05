@@ -4,7 +4,9 @@ Run as nd_owner (ND_SEED_DEV_DATA=true). Everything is idempotent (natural-key
 ``ON CONFLICT DO NOTHING`` / ``WHERE NOT EXISTS``): a second run changes no row.
 
 Demo data only: ports are real public data; companies, vessels and people are invented and
-e-mails use the reserved ``.example`` TLD. No audit entries are written: this is bootstrap data
+e-mails use the reserved ``.example`` TLD and phones
+are Ofcom's drama range (+44 20 7946 0000-0999). No audit entries are written: this is
+bootstrap data
 that exists before any actor does, and the audit log records only user-driven changes (B1-D12).
 
 IMO numbers are synthetic: chosen only to satisfy the check digit, they may coincide with real
@@ -32,12 +34,12 @@ DEV_ORGS = {
     uuid.UUID("22222222-2222-4222-8222-222222222222"): "Borealis Tankers",
 }
 
-PRODUCTS = (  # name, default unit
-    ("VLSFO", "mt"), ("HSFO", "mt"), ("ULSFO", "mt"), ("MGO", "mt"),
-    ("Bio-VLSFO B30", "mt"), ("Bio-MGO B30", "mt"), ("LNG", "m3"), ("Methanol", "mt"),
+PRODUCTS = (  # name, default unit (spec §3.1, per the brief)
+    ("HSFO 3.5%", "mt"), ("VLSFO 0.5%", "mt"), ("DMA 0.1%", "mt"), ("Biofuel", "mt"),
+    ("B24", "mt"), ("B30", "mt"), ("B100", "mt"), ("Bio diesel FAME", "mt"),
 )  # fmt: skip
 ISO = ("ISO 8217:2005", "ISO 8217:2010", "ISO 8217:2012", "ISO 8217:2017", "ISO 8217:2024")
-REASONS = ("Routine replenishment", "Regulatory fuel switch", "Price opportunity")
+REASONS = ("Bunkers only", "Working cargo", "Debunkering")
 PORTS = (  # locode, name, country, IANA zone
     ("NLRTM", "Rotterdam", "NL", "Europe/Amsterdam"),
     ("SGSIN", "Singapore", "SG", "Asia/Singapore"),
@@ -52,8 +54,8 @@ PORTS = (  # locode, name, country, IANA zone
     ("BRSSZ", "Santos", "BR", "America/Sao_Paulo"),
     ("ZADUR", "Durban", "ZA", "Africa/Johannesburg"),
 )
-_CONV = ("VLSFO", "HSFO", "ULSFO", "MGO")
-_BIO = (*_CONV, "Bio-VLSFO B30", "Bio-MGO B30")
+_CONV = ("VLSFO 0.5%", "HSFO 3.5%", "DMA 0.1%")
+_BIO = (*_CONV, "B24", "B30", "Biofuel")
 
 # Per organization: legal entities (code, name); vessels (name, imo, type, dwt, flag, entity
 # code, approved fuels); counterparties (name, type, notes, contacts, coverage {port: products}).
@@ -65,7 +67,7 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
             ("Acme Aurora", "9391012", "Aframax tanker", 115000, "MH", "AMH", _BIO),
             ("Acme Meridian", "9391024", "Suezmax tanker", 158000, "SG", "ATS", _BIO),
             ("Acme Polaris", "9391036", "Panamax bulk carrier", 82000, "MT", "AMH", _CONV),
-            ("Acme Horizon", "9391048", "Container ship", 98000, "LR", "AMH", (*_CONV, "LNG")),
+            ("Acme Horizon", "9391048", "Container ship", 98000, "LR", "AMH", _CONV),
             ("Acme Tern", "9391050", "Product tanker", 50000, "SG", "ATS", _CONV),
             ("Acme Vega", "9391062", "Capesize bulk carrier", 180000, "MH", "AMH", _BIO),
         ),
@@ -74,7 +76,7 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                 "Alpha Fuels",
                 "physical_supplier",
                 "Barge fleet in ARA and Antwerp.",
-                (("Anna Verhoeven", "anna.verhoeven@alphafuels.example", "+31 10 555 0101"),),
+                (("Anna Verhoeven", "anna.verhoeven@alphafuels.example", "+44 20 7946 0101"),),
                 dict.fromkeys(("NLRTM", "BEANR"), _BIO),
             ),
             (
@@ -83,7 +85,7 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                 "Strong in Singapore and Busan.",
                 (
                     ("Ben Tan", "ben.tan@bravomarine.example", None),
-                    ("Mei Lim", "mei.lim@bravomarine.example", "+65 555 0102"),
+                    ("Mei Lim", "mei.lim@bravomarine.example", "+44 20 7946 0102"),
                 ),
                 {"SGSIN": _BIO, "KRPUS": _CONV},
             ),
@@ -92,7 +94,7 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                 "physical_supplier",
                 "Gibraltar and Algeciras stems.",
                 (("Carlos Ruiz", "carlos.ruiz@charliebunkers.example", None),),
-                {"GIGIB": _CONV, "ESALG": ("VLSFO", "MGO")},
+                {"GIGIB": _CONV, "ESALG": ("VLSFO 0.5%", "DMA 0.1%")},
             ),
             (
                 "Delta Energy Trading",
@@ -100,9 +102,9 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                 "Trader; physical supplier relationship: Alpha Fuels (RTM), Bravo (SIN).",
                 (("Dana Olsen", "dana.olsen@deltatrading.example", None),),
                 {
-                    "NLRTM": ("VLSFO", "MGO", "HSFO"),
-                    "SGSIN": ("VLSFO", "MGO"),
-                    "USHOU": ("VLSFO", "MGO"),
+                    "NLRTM": ("VLSFO 0.5%", "DMA 0.1%", "HSFO 3.5%"),
+                    "SGSIN": ("VLSFO 0.5%", "DMA 0.1%"),
+                    "USHOU": ("VLSFO 0.5%", "DMA 0.1%"),
                 },
             ),
             (
@@ -110,31 +112,39 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                 "trader",
                 "Broker; sources from local barge operators.",
                 (("Eva Lindqvist", "eva.lindqvist@echobrokers.example", None),),
-                {"AEFJR": ("VLSFO", "HSFO"), "GRPIR": ("VLSFO",), "MTMAR": ("MGO",)},
+                {
+                    "AEFJR": ("VLSFO 0.5%", "HSFO 3.5%"),
+                    "GRPIR": ("VLSFO 0.5%",),
+                    "MTMAR": ("DMA 0.1%",),
+                },
             ),
             (
                 "Foxtrot Petroleum",
                 "both",
                 "Own barges in Fujairah, trades elsewhere.",
                 (
-                    ("Farid Haddad", "farid.haddad@foxtrotpetroleum.example", "+971 9 555 0103"),
+                    ("Farid Haddad", "farid.haddad@foxtrotpetroleum.example", "+44 20 7946 0103"),
                     ("Fatima Noor", "fatima.noor@foxtrotpetroleum.example", None),
                 ),
-                {"AEFJR": _BIO, "NLRTM": ("VLSFO", "MGO", "ULSFO"), "ZADUR": ("VLSFO", "MGO")},
+                {
+                    "AEFJR": _BIO,
+                    "NLRTM": ("VLSFO 0.5%", "DMA 0.1%", "B30"),
+                    "ZADUR": ("VLSFO 0.5%", "DMA 0.1%"),
+                },
             ),
             (
                 "Golf Gulf Supply",
                 "physical_supplier",
                 "Texas Gulf coast.",
                 (("Grace Miller", "grace.miller@golfgulf.example", None),),
-                {"USHOU": _CONV, "BRSSZ": ("VLSFO", "MGO")},
+                {"USHOU": _CONV, "BRSSZ": ("VLSFO 0.5%", "DMA 0.1%")},
             ),
             (
                 "Hotel Harbour Fuels",
                 "both",
-                "Mediterranean hub; LNG and methanol on request.",
+                "Mediterranean hub; Biofuel blends on request.",
                 (("Hugo Costa", "hugo.costa@hotelharbour.example", None),),
-                {"GRPIR": _BIO, "MTMAR": _CONV, "GIGIB": ("VLSFO", "MGO", "Bio-VLSFO B30")},
+                {"GRPIR": _BIO, "MTMAR": _CONV, "GIGIB": ("VLSFO 0.5%", "DMA 0.1%", "B30")},
             ),
         ),
     },
@@ -144,9 +154,25 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
             ("Borealis Fjord", "9402017", "LR2 tanker", 110000, "NO", "BMA", _BIO),
             ("Borealis Saga", "9402029", "MR tanker", 49000, "NO", "BMA", _CONV),
             ("Borealis Nord", "9402031", "VLCC", 300000, "MH", "BMA", _BIO),
-            ("Borealis Ymir", "9402043", "LNG carrier", 85000, "GB", "BGC", ("MGO", "LNG")),
+            (
+                "Borealis Ymir",
+                "9402043",
+                "LNG carrier",
+                85000,
+                "GB",
+                "BGC",
+                ("DMA 0.1%", "HSFO 3.5%"),
+            ),
             ("Borealis Skarv", "9402055", "Chemical tanker", 40000, "NO", "BMA", _CONV),
-            ("Borealis Rune", "9402067", "Ro-ro cargo", 20000, "SE", "BMA", ("ULSFO", "MGO")),
+            (
+                "Borealis Rune",
+                "9402067",
+                "Ro-ro cargo",
+                20000,
+                "SE",
+                "BMA",
+                ("VLSFO 0.5%", "DMA 0.1%"),
+            ),
         ),
         "counterparties": (
             (
@@ -161,7 +187,7 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                 "physical_supplier",
                 "Mediterranean and Gibraltar.",
                 (("Olivia Perez", "olivia.perez@oscarfuels.example", None),),
-                {"ESALG": _CONV, "GIGIB": _CONV, "MTMAR": ("VLSFO", "MGO")},
+                {"ESALG": _CONV, "GIGIB": _CONV, "MTMAR": ("VLSFO 0.5%", "DMA 0.1%")},
             ),
             (
                 "Papa Supply Co",
@@ -171,27 +197,34 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                     ("Peter Wong", "peter.wong@papasupply.example", None),
                     ("Priya Nair", "priya.nair@papasupply.example", None),
                 ),
-                {"SGSIN": _BIO, "KRPUS": ("VLSFO", "MGO")},
+                {"SGSIN": _BIO, "KRPUS": ("VLSFO 0.5%", "DMA 0.1%")},
             ),
             (
                 "Quebec Trading",
                 "trader",
                 "Trader; physical supplier relationship: November Bunkers, Oscar.",
                 (("Quentin Berg", "quentin.berg@quebectrading.example", None),),
-                {"NLRTM": ("VLSFO", "MGO", "HSFO"), "GIGIB": ("VLSFO", "MGO")},
+                {
+                    "NLRTM": ("VLSFO 0.5%", "DMA 0.1%", "HSFO 3.5%"),
+                    "GIGIB": ("VLSFO 0.5%", "DMA 0.1%"),
+                },
             ),
             (
                 "Romeo Energy Partners",
                 "trader",
                 "Global trader, strong in the Gulf.",
                 (("Rania Saleh", "rania.saleh@romeoenergy.example", None),),
-                {"AEFJR": ("VLSFO", "HSFO", "MGO"), "USHOU": ("VLSFO",), "SGSIN": ("VLSFO", "MGO")},
+                {
+                    "AEFJR": ("VLSFO 0.5%", "HSFO 3.5%", "DMA 0.1%"),
+                    "USHOU": ("VLSFO 0.5%",),
+                    "SGSIN": ("VLSFO 0.5%", "DMA 0.1%"),
+                },
             ),
             (
                 "Sierra Oil",
                 "both",
                 "Own storage in Piraeus.",
-                (("Sofia Papas", "sofia.papas@sierraoil.example", "+30 21 0555 0104"),),
+                (("Sofia Papas", "sofia.papas@sierraoil.example", "+44 20 7946 0104"),),
                 {"GRPIR": _BIO, "MTMAR": _CONV},
             ),
             (
@@ -199,14 +232,14 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
                 "physical_supplier",
                 "Houston and Santos.",
                 (("Tom Hargrove", "tom.hargrove@tangofuel.example", None),),
-                {"USHOU": _CONV, "BRSSZ": ("VLSFO", "MGO", "HSFO")},
+                {"USHOU": _CONV, "BRSSZ": ("VLSFO 0.5%", "DMA 0.1%", "HSFO 3.5%")},
             ),
             (
                 "Uniform Bunkering",
                 "both",
                 "South Africa and Fujairah.",
                 (("Uma Naidoo", "uma.naidoo@uniformbunkering.example", None),),
-                {"ZADUR": _CONV, "AEFJR": ("VLSFO", "MGO")},
+                {"ZADUR": _CONV, "AEFJR": ("VLSFO 0.5%", "DMA 0.1%")},
             ),
         ),
     },

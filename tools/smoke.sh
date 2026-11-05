@@ -61,8 +61,8 @@ check_master() { # check_master <user>: seeded ports and a suggestion with both 
   [[ "$n" =~ ^[0-9]+$ ]] || n=0
   ((n >= 10)) \
     && ok "GET /master/ports for $1 >= 10" || fail "ports for $1: $ports"
-  prods="$(curl -sf -H "Authorization: Bearer $tok" "$api/products?q=VLSFO" | json "[p['id'] for p in d if p['name']=='VLSFO'][0]" 2>/dev/null || true)"
-  pq="product_id=$prods&product_id=$(curl -sf -H "Authorization: Bearer $tok" "$api/products?q=MGO" | json "[p['id'] for p in d if p['name']=='MGO'][0]" 2>/dev/null || true)"
+  prods="$(curl -sf -H "Authorization: Bearer $tok" "$api/products?q=VLSFO" | json "[p['id'] for p in d if p['name']=='VLSFO 0.5%'][0]" 2>/dev/null || true)"
+  pq="product_id=$prods&product_id=$(curl -sf -H "Authorization: Bearer $tok" "$api/products?q=DMA" | json "[p['id'] for p in d if p['name']=='DMA 0.1%'][0]" 2>/dev/null || true)"
   for pid in $(echo "$ports" | json "' '.join(p['id'] for p in d)" 2>/dev/null || true); do
     out="$(curl -sf -H "Authorization: Bearer $tok" "$api/counterparties/suggest?port_id=$pid&$pq" || true)"
     a="$(echo "$out" | json "len(d['all'])" 2>/dev/null || true)"

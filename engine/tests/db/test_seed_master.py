@@ -2,6 +2,7 @@
 """The demo master-data seed (B1-R10): realistic, invented, idempotent, per organization."""
 
 import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -81,7 +82,8 @@ def test_domain_cases(seeded: Engine, org: uuid.UUID) -> None:
     assert any("supplier" in (t["notes"] or "").lower() for t in traders)
     ports = q(seeded, org, "SELECT id FROM port")
     prods = [
-        p["id"] for p in q(seeded, org, "SELECT id FROM product WHERE name IN ('VLSFO', 'MGO')")
+        p["id"]
+        for p in q(seeded, org, "SELECT id FROM product WHERE name IN ('VLSFO 0.5%', 'DMA 0.1%')")
     ]
     assert len(prods) == 2
     with org_session(org, seeded) as s:
@@ -93,6 +95,24 @@ def test_domain_cases(seeded: Engine, org: uuid.UUID) -> None:
             for p in ports
         ]
     assert any(a and b for a, b in found)
+
+
+@pytest.mark.req("B1-R10")
+@pytest.mark.parametrize("org", list(seed.DEV_ORGS))
+def test_spec_catalogue_and_fictional_phones(seeded: Engine, org: uuid.UUID) -> None:
+    """Spec §3.1 products (all mt) and reasons exactly; phones only Ofcom drama numbers (M5)."""
+    prods = {(r["name"], r["default_unit"]) for r in q(seeded, org, "SELECT * FROM product")}
+    assert prods == {
+        (n, "mt")
+        for n in (
+            "HSFO 3.5%", "VLSFO 0.5%", "DMA 0.1%", "Biofuel", "B24", "B30", "B100",
+            "Bio diesel FAME",
+        )
+    }  # fmt: skip
+    reasons = {r["name"] for r in q(seeded, org, "SELECT name FROM bunkering_reason")}
+    assert reasons == {"Bunkers only", "Working cargo", "Debunkering"}
+    phones = [r["phone"] for r in q(seeded, org, "SELECT phone FROM contact")]
+    assert all(p is None or re.fullmatch(r"\+44 20 7946 0\d{3}", p) for p in phones)
 
 
 @pytest.mark.req("B1-R10")

@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Select } from "./Select";
 
 const options = [
-  { value: "vlsfo", label: "VLSFO" },
-  { value: "mgo", label: "MGO" },
-  { value: "hsfo", label: "HSFO", disabled: true },
+  { value: "vlsfo", label: "VLSFO 0.5%" },
+  { value: "mgo", label: "DMA 0.1%" },
+  { value: "hsfo", label: "HSFO 3.5%", disabled: true },
 ];
 
 const meta = {

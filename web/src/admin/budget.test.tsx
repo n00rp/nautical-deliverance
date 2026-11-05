@@ -29,8 +29,8 @@ describe("step budget", () => {
         }),
       ],
       products: [
-        rec("pr1", { name: "VLSFO", default_unit: "mt" }),
-        rec("pr2", { name: "MGO", default_unit: "mt" }),
+        rec("pr1", { name: "VLSFO 0.5%", default_unit: "mt" }),
+        rec("pr2", { name: "DMA 0.1%", default_unit: "mt" }),
       ],
     });
     window.location.hash = "#/admin/counterparties";
@@ -63,7 +63,7 @@ describe("step budget", () => {
     await click(contact.getByRole("button", { name: "Add contact" }));
 
     const coverage = within(await screen.findByRole("region", { name: "Coverage" }));
-    for (const name of ["Rotterdam – VLSFO", "Rotterdam – MGO", "Singapore – VLSFO"]) {
+    for (const name of ["Rotterdam – VLSFO 0.5%", "Rotterdam – DMA 0.1%", "Singapore – VLSFO 0.5%"]) {
       await click(await coverage.findByRole("checkbox", { name }));
     }
     await click(coverage.getByRole("button", { name: "Save coverage" }));
