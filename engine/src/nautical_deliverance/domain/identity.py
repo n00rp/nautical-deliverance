@@ -21,3 +21,5 @@ class Principal:
     user_id: uuid.UUID
     organization_id: uuid.UUID
     roles: frozenset[Role]
+    name: str = ""
+    email: str = ""

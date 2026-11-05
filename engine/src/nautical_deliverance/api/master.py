@@ -21,7 +21,6 @@ from pydantic import (
 from sqlalchemy import Engine, func, or_, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
-from nautical_deliverance.api.auth import get_principal
 from nautical_deliverance.api.common import (
     Strict,
     check,
@@ -30,6 +29,7 @@ from nautical_deliverance.api.common import (
     scope,
     unprocessable,
 )
+from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.master import (
     CounterpartyType,
@@ -39,7 +39,6 @@ from nautical_deliverance.domain.master import (
     tz_valid,
 )
 from nautical_deliverance.persistence.audit import Action, record_change
-from nautical_deliverance.persistence.db import get_engine
 from nautical_deliverance.persistence.master_repo import counterparties_covering
 from nautical_deliverance.persistence.models import (
     AuditEntry,
@@ -64,19 +63,18 @@ router = APIRouter(prefix="/master")
 _NOT_FOUND = "Not found"
 
 
-def get_master_engine() -> Engine:
-    """Database engine dependency (overridable in tests)."""
-    return get_engine()
+# The same dependency object as current_user uses, so overriding either covers both.
+get_master_engine = get_users_engine
 
 
-def require_reader(principal: Annotated[Principal, Depends(get_principal)]) -> Principal:
+def require_reader(principal: Annotated[Principal, Depends(current_user)]) -> Principal:
     """Any caller with a known role may read."""
     if not principal.roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
     return principal
 
 
-def require_admin(principal: Annotated[Principal, Depends(get_principal)]) -> Principal:
+def require_admin(principal: Annotated[Principal, Depends(current_user)]) -> Principal:
     """Only admins may write."""
     if Role.ADMIN not in principal.roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
