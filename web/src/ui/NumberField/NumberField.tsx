@@ -11,6 +11,8 @@ export type NumberFieldProps = {
   value: string;
   onChange: (value: string) => void;
   decimals: number;
+  /** Called with false while the text is not a valid number (value is then ""), true again after. */
+  onValidityChange?: (valid: boolean) => void;
   unit?: string;
   error?: string;
   hint?: string;
@@ -24,6 +26,7 @@ export function NumberField({
   value,
   onChange,
   decimals,
+  onValidityChange,
   unit,
   disabled,
   error,
@@ -33,15 +36,27 @@ export function NumberField({
   const [draft, setDraft] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | undefined>();
 
+  // The parent changed the value to something the draft does not mean (e.g. a form reset).
+  const parsed = draft === null ? null : normalizeDecimal(draft, decimals);
+  const stale = parsed !== null && ("value" in parsed ? parsed.value !== value : value !== "");
+  if (stale) {
+    setDraft(null);
+    setLocalError(undefined);
+  }
+
   const edit = (raw: string) => {
     setDraft(raw);
     const r = normalizeDecimal(raw, decimals);
     if ("value" in r) {
       setLocalError(undefined);
       onChange(r.value);
+      onValidityChange?.(true);
     } else {
-      // Value stays unchanged; a trailing separator is merely unfinished, flagged on blur.
+      // Never leave a stale value with the parent: clear it and say the input is invalid.
+      // A trailing separator is merely unfinished, so its message waits for blur.
       setLocalError(/[.,]$/.test(raw) ? undefined : r.error);
+      onChange("");
+      onValidityChange?.(false);
     }
   };
 
@@ -63,7 +78,7 @@ export function NumberField({
             inputMode="decimal"
             autoComplete="off"
             className={styles.input}
-            value={draft ?? value}
+            value={stale ? value : (draft ?? value)}
             disabled={disabled}
             required={field.required}
             onChange={(e) => edit(e.target.value)}

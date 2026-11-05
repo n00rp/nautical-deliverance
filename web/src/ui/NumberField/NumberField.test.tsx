@@ -19,6 +19,9 @@ describe("normalizeDecimal", () => {
     ["-12,5", "-12.5"],
     [".5", "0.5"],
     ["007", "7"],
+    ["-0", "0"],
+    ["-0.00", "0.00"],
+    ["-0.10", "-0.10"],
     ["", ""],
   ])("[B1-R14] normalizeDecimal keeps precision: %j -> %j", (input, value) => {
     expect(normalizeDecimal(input, 2)).toEqual({ value });
@@ -30,6 +33,15 @@ describe("normalizeDecimal", () => {
       expect(normalizeDecimal(input, 3)).toHaveProperty("error");
     },
   );
+
+  it.each([
+    ["0.123", "0.123"],
+    ["0,125", "0.125"],
+    [".125", "0.125"],
+    ["-0,125", "-0.125"],
+  ])("[B1-R14] a 0-led head is a decimal, never a thousands group: %j", (input, value) => {
+    expect(normalizeDecimal(input, 3)).toEqual({ value });
+  });
 
   it("[B1-R14] normalizeDecimal refuses to round: too many decimals", () => {
     expect(normalizeDecimal("1.234", 2)).toHaveProperty("error");
@@ -43,7 +55,7 @@ describe("normalizeDecimal", () => {
         fc.stringMatching(/^(0|[1-9]\d{0,24})$/),
         fc.option(fc.stringMatching(/^\d{1,2}$/), { nil: "" }),
       )
-      .filter(([neg, int, frac]) => !(neg && int === "0" && frac === ""))
+      .filter(([neg, int, frac]) => !(neg && int === "0" && /^0*$/.test(frac)))
       .map(([neg, int, frac]) => `${neg ? "-" : ""}${int}${frac ? `.${frac}` : ""}`);
     fc.assert(
       fc.property(canonical, (s) => {
@@ -63,20 +75,32 @@ describe("normalizeDecimal", () => {
   });
 });
 
-function Harness({ onValue }: { onValue?: (v: string) => void }) {
+function Harness({
+  onValue,
+  onValid,
+}: {
+  onValue?: (v: string) => void;
+  onValid?: (v: boolean) => void;
+}) {
   const [v, setV] = useState("");
   return (
-    <NumberField
-      id="qty"
-      label="Quantity"
-      value={v}
-      decimals={2}
-      unit="MT"
-      onChange={(x) => {
-        setV(x);
-        onValue?.(x);
-      }}
-    />
+    <>
+      <button type="button" onClick={() => setV("")}>
+        reset
+      </button>
+      <NumberField
+        id="qty"
+        label="Quantity"
+        value={v}
+        decimals={2}
+        unit="MT"
+        onValidityChange={onValid}
+        onChange={(x) => {
+          setV(x);
+          onValue?.(x);
+        }}
+      />
+    </>
   );
 }
 
@@ -97,18 +121,53 @@ describe("NumberField", () => {
     expect((input as HTMLInputElement).value).toBe("1234.56");
   });
 
-  it("[B1-R14] garbage paste shows a field error and leaves the value unchanged", async () => {
+  it("[B1-R14] garbage paste shows a field error, clears the value and signals invalid", async () => {
     const onValue = vi.fn();
-    render(<Harness onValue={onValue} />);
+    const onValid = vi.fn();
+    render(<Harness onValue={onValue} onValid={onValid} />);
     const input = screen.getByLabelText("Quantity");
     await userEvent.click(input);
     await userEvent.paste("12abc");
-    expect(onValue).not.toHaveBeenCalled();
+    expect(onValue).toHaveBeenLastCalledWith("");
+    expect(onValid).toHaveBeenLastCalledWith(false);
     expect(screen.getByRole("alert").textContent).toMatch(/Enter a number/);
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(input.getAttribute("aria-describedby")).toContain("qty-error");
     await userEvent.tab();
     expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("[B1-R14] valid input after invalid signals valid again with the exact value", async () => {
+    const onValue = vi.fn();
+    const onValid = vi.fn();
+    render(<Harness onValue={onValue} onValid={onValid} />);
+    const input = screen.getByLabelText("Quantity");
+    await userEvent.type(input, "1x");
+    expect(onValid).toHaveBeenLastCalledWith(false);
+    await userEvent.type(input, "{Backspace}2");
+    expect(onValid).toHaveBeenLastCalledWith(true);
+    expect(onValue).toHaveBeenLastCalledWith("12");
+  });
+
+  it("[B1-R14] a parent reset while the field has a draft replaces the draft", async () => {
+    render(<Harness />);
+    const input = screen.getByLabelText<HTMLInputElement>("Quantity");
+    await userEvent.type(input, "5");
+    expect(input.value).toBe("5");
+    await userEvent.click(screen.getByRole("button", { name: "reset" }));
+    expect(input.value).toBe("");
+  });
+
+  it("[B1-R14] a parent value that differs from an invalid draft replaces it and its error", () => {
+    const { rerender } = render(
+      <NumberField id="n" label="Amount" value="" decimals={2} onChange={vi.fn()} />,
+    );
+    const input = screen.getByLabelText<HTMLInputElement>("Amount");
+    fireEvent.change(input, { target: { value: "12abc" } });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    rerender(<NumberField id="n" label="Amount" value="7" decimals={2} onChange={vi.fn()} />);
+    expect(input.value).toBe("7");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("[B1-R14] an unfinished trailing separator is not flagged until blur", () => {

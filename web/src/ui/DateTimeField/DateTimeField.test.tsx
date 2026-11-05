@@ -11,6 +11,27 @@ describe("formatInstant", () => {
     expect(formatInstant("2026-11-12T06:00:00Z", tz)).toBe("12 Nov 06:00 UTC · 07:00 local");
   });
 
+  it("[B1-R08] formatInstant uses fixed 3-letter English months, all twelve", () => {
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    months.forEach((m, i) => {
+      const iso = `2026-${String(i + 1).padStart(2, "0")}-05T09:05:00Z`;
+      expect(formatInstant(iso, "UTC")).toBe(`05 ${m} 09:05 UTC · 09:05 local`);
+    });
+  });
+
   it("[B1-R08] formatInstant shows only UTC without a zone and passes junk through", () => {
     expect(formatInstant("2026-11-12T06:00:00Z")).toBe("12 Nov 06:00 UTC");
     expect(formatInstant("not a date", "Europe/Amsterdam")).toBe("not a date");

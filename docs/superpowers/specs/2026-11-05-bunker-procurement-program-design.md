@@ -27,6 +27,7 @@ Build an internal web application for bunker (marine fuel) procurement that supp
 | D-076 | Build order per §5 (replaces D-023). |
 | D-077 | Pilot 1 is ready per §6. |
 | D-078 | The build proceeds on our own judgment without waiting for the brief author's feedback; her feedback is input to whichever sub-project it affects, not a gate (amends B0-R08). Assumptions recorded in sub-project specs hold until she says otherwise. |
+| D-079 | License allow-list extended with CC-BY-4.0 (build-time data packages such as caniuse-lite), with attribution in THIRD_PARTY_NOTICES.md. D-061 (0BSD, Zlib) applies on main too. GPL/AGPL remain blocked. |
 
 ## 3. Evaluation criteria
 

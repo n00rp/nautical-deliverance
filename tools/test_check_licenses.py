@@ -117,3 +117,14 @@ def test_d044_extra_licenses_allowed_and_gpl_agpl_blocked(tmp_path: Path) -> Non
     )
     for bad in ("GPL-2.0-only", "GPL-3.0-or-later", "AGPL-3.0-only", "AGPL-3.0-or-later"):
         assert _run(tmp_path, [_pip("bad", bad)], {}).returncode == 1
+
+
+@pytest.mark.req("S0-R10")
+def test_d061_d079_licenses_allowed_and_gpl_agpl_still_blocked(tmp_path: Path) -> None:
+    extra = ["0BSD", "Zlib", "CC-BY-4.0"]
+    assert _run(tmp_path, [_pip(f"p{i}", lic) for i, lic in enumerate(extra)], {}).returncode == 0
+    assert (
+        _run(tmp_path, [], {lic: [_pnpm(f"n{i}")] for i, lic in enumerate(extra)}).returncode == 0
+    )
+    for bad in ("GPL-3.0-only", "AGPL-3.0-only"):
+        assert _run(tmp_path, [_pip("bad", bad)], {}).returncode == 1

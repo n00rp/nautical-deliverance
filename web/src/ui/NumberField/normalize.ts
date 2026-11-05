@@ -5,7 +5,7 @@ const INVALID = "Enter a number such as 1234.56";
 type Result = { value: string } | { error: string };
 
 const groupsOk = (s: string, sep: string): boolean =>
-  new RegExp(`^\\d{1,3}(?:\\${sep}\\d{3})+$`).test(s);
+  new RegExp(`^[1-9]\\d{0,2}(?:\\${sep}\\d{3})+$`).test(s);
 
 /**
  * Exact decimal text -> canonical "-?\d+(\.\d+)?" string. Pure string work, no float is ever
@@ -33,7 +33,9 @@ export function normalizeDecimal(input: string, decimals: number): Result {
       if (tail === "" || (head.includes(other) && !groupsOk(head, other))) {
         return { error: INVALID };
       }
-      if (seps.length === 1 && tail.length === 3) return { error: AMBIGUOUS };
+      // A head of 0 (or none) cannot carry a thousands group, so 0.125 is a decimal.
+      const grouping = head !== "" && !head.startsWith("0");
+      if (seps.length === 1 && tail.length === 3 && grouping) return { error: AMBIGUOUS };
       int = head.split(other).join("");
       frac = tail;
     } else if (seps.includes(other) || !groupsOk(body, dec)) {
@@ -47,5 +49,6 @@ export function normalizeDecimal(input: string, decimals: number): Result {
     return { error: decimals === 0 ? "Whole numbers only" : `At most ${decimals} decimal places` };
   }
   int = int.replace(/^0+(?=\d)/, "") || "0";
-  return { value: `${sign}${int}${frac ? `.${frac}` : ""}` };
+  const zero = int === "0" && /^0*$/.test(frac); // no negative zero
+  return { value: `${zero ? "" : sign}${int}${frac ? `.${frac}` : ""}` };
 }

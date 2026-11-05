@@ -19,7 +19,8 @@ const meta = {
           "Exact decimal text, never a JS number. Paste `1 234,56` or `1,234.56` and the value becomes `1234.56`. " +
           "Both `,` and `.` work as decimal separator when unambiguous. A lone separator followed by exactly 3 digits " +
           "(`1,234`) is ambiguous (thousands or decimals?) and is rejected with a request to clarify. " +
-          "More decimals than allowed are rejected, never rounded.",
+          "More decimals than allowed are rejected, never rounded. While the text is invalid the field reports " +
+          '`onChange("")` and `onValidityChange(false)`, so a form must block submit until validity is true again.',
       },
     },
   },
