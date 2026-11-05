@@ -1,6 +1,6 @@
 # B1 Domain Model, Master Data and Design System — Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-05 (including proposed decisions B1-D9–B1-D13)
 - **Date:** 2026-11-05
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md), build step B1 (D-076); UX per [B0](2026-11-05-b0-ux-concept-design.md)
 - **Goal:** The data foundation every later step builds on — roles, legal entities, vessels, ports, counterparties with contacts and coverage, product catalogue, audit log, admin pages — and the complete design system for pilot 1.
