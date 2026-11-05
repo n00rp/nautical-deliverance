@@ -6,9 +6,11 @@ export type CheckboxProps = {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  /** Keep the label for assistive technology but do not draw it (dense matrices). */
+  hideLabel?: boolean;
 };
 
-export function Checkbox({ id, label, checked, onChange, disabled }: CheckboxProps) {
+export function Checkbox({ id, label, checked, onChange, disabled, hideLabel }: CheckboxProps) {
   return (
     <div className={styles.row}>
       <input
@@ -19,7 +21,7 @@ export function Checkbox({ id, label, checked, onChange, disabled }: CheckboxPro
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <label htmlFor={id} className={styles.label}>
+      <label htmlFor={id} className={hideLabel ? styles.hidden : styles.label}>
         {label}
       </label>
     </div>

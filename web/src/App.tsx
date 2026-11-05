@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ADMIN_NAV, configFor } from "./admin/configs";
+import { MasterDataPage } from "./admin/MasterDataPage";
+import { parseAdmin, useHash } from "./admin/routes";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
+import { createMasterApi } from "./masterApi";
 import { PRODUCT_NAME } from "./productName";
 import { AppShell } from "./ui/AppShell/AppShell";
 import type { Role } from "./ui/RoleGate/RoleGate";
+import { ToastHost, ToastProvider } from "./ui/Toast/Toast";
 
 // The engine still issues S0 roles until Part B; only roles the web knows are shown.
 const WEB_ROLES: readonly string[] = ["admin", "bunker_buyer", "operator", "viewer"];
@@ -12,7 +17,7 @@ const isRole = (r: string): r is Role => WEB_ROLES.includes(r);
 type State =
   | { kind: "loading" }
   | { kind: "signedOut" }
-  | { kind: "signedIn"; me: Me }
+  | { kind: "signedIn"; me: Me; token: string }
   | { kind: "error"; message: string };
 
 function cleanUrl() {
@@ -34,7 +39,7 @@ async function load(): Promise<State> {
   }
   const user = await userManager.getUser();
   if (!user || user.expired) return { kind: "signedOut" };
-  return { kind: "signedIn", me: await fetchMe(user.access_token) };
+  return { kind: "signedIn", me: await fetchMe(user.access_token), token: user.access_token };
 }
 
 function loadSafely(): Promise<State> {
@@ -65,16 +70,36 @@ export function App() {
     state.kind === "signedIn"
       ? { name: state.me.organization.name, roles: state.me.roles.filter(isRole) }
       : null;
+  const token = state.kind === "signedIn" ? state.token : null;
+  const api = useMemo(() => (token ? createMasterApi(token) : null), [token]);
+  const route = parseAdmin(useHash());
 
   return (
-    <AppShell productName={PRODUCT_NAME} user={user} nav={[]}>
-      {state.kind === "loading" && <p role="status">Loading…</p>}
-      {state.kind === "error" && <p role="alert">{state.message}</p>}
-      {(state.kind === "signedOut" || state.kind === "error") && (
-        <button type="button" onClick={() => void userManager.signinRedirect()}>
-          Sign in
-        </button>
-      )}
-    </AppShell>
+    <ToastProvider>
+      <AppShell
+        productName={PRODUCT_NAME}
+        user={user}
+        nav={user ? ADMIN_NAV : []}
+        current={route ? `#/admin/${route.path}` : undefined}
+      >
+        {state.kind === "loading" && <p role="status">Loading…</p>}
+        {state.kind === "error" && <p role="alert">{state.message}</p>}
+        {(state.kind === "signedOut" || state.kind === "error") && (
+          <button type="button" onClick={() => void userManager.signinRedirect()}>
+            Sign in
+          </button>
+        )}
+        {user && api && route && (
+          <MasterDataPage
+            key={route.path}
+            config={configFor(route.path)}
+            api={api}
+            roles={user.roles}
+          />
+        )}
+        {user && !route && <p>Choose a master-data page from the menu.</p>}
+      </AppShell>
+      <ToastHost />
+    </ToastProvider>
   );
 }

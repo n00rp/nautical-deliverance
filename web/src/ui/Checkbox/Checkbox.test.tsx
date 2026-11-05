@@ -20,4 +20,11 @@ describe("Checkbox", () => {
     await userEvent.click(screen.getByRole("checkbox"));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("[B1-R14] a hidden label still names the checkbox", () => {
+    render(
+      <Checkbox id="c" label="Rotterdam – VLSFO" checked={false} onChange={vi.fn()} hideLabel />,
+    );
+    expect(screen.getByRole("checkbox", { name: "Rotterdam – VLSFO" })).toBeTruthy();
+  });
 });

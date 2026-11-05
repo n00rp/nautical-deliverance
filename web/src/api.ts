@@ -4,13 +4,18 @@ export type Me = {
   roles: string[];
 };
 
+/** One 422 field error from the engine: `{"detail": [{"field", "message"}]}`. */
+export type FieldIssue = { field: string; message: string };
+
 export class ApiError extends Error {
   readonly status: number;
+  readonly issues: FieldIssue[];
 
-  constructor(status: number) {
+  constructor(status: number, issues: FieldIssue[] = []) {
     super(`Request failed with status ${String(status)}`);
     this.name = "ApiError";
     this.status = status;
+    this.issues = issues;
   }
 }
 

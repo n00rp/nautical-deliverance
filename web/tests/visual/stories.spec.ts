@@ -24,6 +24,10 @@ const open = async (page: import("@playwright/test").Page, id: string) => {
     );
     await document.fonts.ready;
   });
+  // Page stories load their data asynchronously: wait until the coverage matrix is drawn.
+  if (id.startsWith("admin-")) {
+    await page.getByRole("region", { name: "Coverage" }).getByRole("checkbox").first().waitFor();
+  }
 };
 
 test("[B1-R13] no orphan baselines", () => {
