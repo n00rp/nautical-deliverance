@@ -40,12 +40,13 @@
   },
   "users": [
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000001",
       "username": "admin@acme.test",
       "email": "admin@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "admin",
-      "lastName": "acme.test",
+      "firstName": "Ada",
+      "lastName": "Admin",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -63,12 +64,13 @@
       ]
     },
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000002",
       "username": "bunker_buyer@acme.test",
       "email": "bunker_buyer@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "bunker_buyer",
-      "lastName": "acme.test",
+      "firstName": "Bea",
+      "lastName": "Buyer",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -86,12 +88,13 @@
       ]
     },
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000003",
       "username": "operator@acme.test",
       "email": "operator@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "operator",
-      "lastName": "acme.test",
+      "firstName": "Olle",
+      "lastName": "Operator",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -109,12 +112,13 @@
       ]
     },
     {
+      "id": "aaaaaaaa-0000-4000-8000-000000000004",
       "username": "viewer@acme.test",
       "email": "viewer@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "viewer",
-      "lastName": "acme.test",
+      "firstName": "Vera",
+      "lastName": "Viewer",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -132,12 +136,13 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000001",
       "username": "admin@borealis.test",
       "email": "admin@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "admin",
-      "lastName": "borealis.test",
+      "firstName": "Alma",
+      "lastName": "Admin",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"
@@ -155,12 +160,13 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000002",
       "username": "bunker_buyer@borealis.test",
       "email": "bunker_buyer@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "bunker_buyer",
-      "lastName": "borealis.test",
+      "firstName": "Bo",
+      "lastName": "Buyer",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"
@@ -178,12 +184,13 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000003",
       "username": "operator@borealis.test",
       "email": "operator@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "operator",
-      "lastName": "borealis.test",
+      "firstName": "Otto",
+      "lastName": "Operator",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"
@@ -201,12 +208,13 @@
       ]
     },
     {
+      "id": "bbbbbbbb-0000-4000-8000-000000000004",
       "username": "viewer@borealis.test",
       "email": "viewer@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "viewer",
-      "lastName": "borealis.test",
+      "firstName": "Vide",
+      "lastName": "Viewer",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"

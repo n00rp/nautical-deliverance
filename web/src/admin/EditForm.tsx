@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ApiError, type FieldIssue } from "../api";
+import { useEffect, useState } from "react";
 import type { Body, Rec } from "../masterApi";
 import { Button } from "../ui/Button/Button";
 import { Checkbox } from "../ui/Checkbox/Checkbox";
@@ -10,6 +9,7 @@ import { RoleGate, type Role } from "../ui/RoleGate/RoleGate";
 import { Select } from "../ui/Select/Select";
 import { TextField } from "../ui/TextField/TextField";
 import css from "./Admin.module.css";
+import { useSave } from "./useSave";
 import type { FieldDef, Refs, Values } from "./types";
 
 export type EditFormProps = {
@@ -57,45 +57,19 @@ export function EditForm({
   wide,
 }: EditFormProps) {
   const [values, setValues] = useState(initial);
-  const [issues, setIssues] = useState<FieldIssue[]>([]);
-  const [forbidden, setForbidden] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const { form, issues, clear, forbidden, setForbidden, busy, submit } = useSave(onFail);
   const disabled = !roles.includes("admin");
-  const form = useRef<HTMLFormElement>(null);
-  const refocus = useRef(false);
   // A different role or a reloaded record may allow what was forbidden before.
   const context = `${roles.join()}|${JSON.stringify(initial)}`;
   useEffect(() => {
     setForbidden(false);
-  }, [context]);
-  // The submit button is disabled while busy, which drops focus: put it back afterwards.
-  useEffect(() => {
-    if (busy || !refocus.current) return;
-    refocus.current = false;
-    form.current?.querySelector<HTMLElement>("button[type=submit]")?.focus();
-  }, [busy]);
+  }, [context, setForbidden]);
   const id = (key: string) => `${name.toLowerCase()}-${key}`;
 
   const set = (key: string, value: string) => {
     setValues((v) => ({ ...v, [key]: value }));
-    setIssues((all) => all.filter((i) => i.field !== key));
+    clear((field) => field === key);
   };
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    refocus.current = form.current?.contains(document.activeElement) ?? false;
-    setBusy(true);
-    try {
-      await onSubmit(toBody(fields, values));
-      setIssues([]);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 422) setIssues(err.issues);
-      else if (err instanceof ApiError && err.status === 403) setForbidden(true);
-      else onFail(err);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const control = (f: FieldDef) => {
     const common = {
@@ -136,10 +110,11 @@ export function EditForm({
 
   return (
     <form
+      ref={form}
       aria-label={name}
       noValidate
       className={wide ? css.grid : css.form}
-      onSubmit={(e) => void submit(e)}
+      onSubmit={(e) => void submit(() => onSubmit(toBody(fields, values)))(e)}
     >
       <div className={css.span}>
         <FormSummary errors={issues.map((i) => ({ fieldId: id(i.field), message: i.message }))} />

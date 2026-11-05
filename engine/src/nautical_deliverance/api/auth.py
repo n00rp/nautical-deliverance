@@ -34,6 +34,10 @@ def _uuid(value: object) -> uuid.UUID | None:
         return None
 
 
+def _text(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
 def get_principal(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
@@ -68,4 +72,10 @@ def get_principal(
     if not isinstance(raw_roles, list) or not all(isinstance(r, str) for r in raw_roles):
         raise _forbidden(_NO_ROLES)
     known = {r.value for r in Role}
-    return Principal(user_id, org_id, frozenset(Role(r) for r in raw_roles if r in known))
+    return Principal(
+        user_id,
+        org_id,
+        frozenset(Role(r) for r in raw_roles if r in known),
+        _text(claims.get("name")) or _text(claims.get("preferred_username")),
+        _text(claims.get("email")),
+    )

@@ -1,0 +1,115 @@
+# ruff: noqa: PLR2004, S608
+"""Demo users and inquiries (B2-R14): realistic, relative to seed time, idempotent."""
+
+import json
+import re
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import pytest
+from sqlalchemy import Engine, text
+
+if TYPE_CHECKING:
+    import uuid
+
+from nautical_deliverance.persistence import seed
+
+REALM = Path(__file__).parents[3] / "infra/keycloak/realm-dev.json"
+REF = re.compile(r"INQ-(\d{4})-(\d{3})")
+NOW = datetime.now(UTC)
+
+
+@pytest.fixture(scope="module")
+def seeded(owner_engine: Engine) -> Engine:
+    """Engine with orgs, master data, users and inquiries seeded at NOW."""
+    seed.seed_dev_orgs(owner_engine)
+    seed.seed_demo_master(owner_engine)
+    seed.seed_demo_inquiries(owner_engine, NOW)
+    return owner_engine
+
+
+def q(engine: Engine, org: uuid.UUID, sql: str) -> list[dict[str, Any]]:
+    """Run ``sql`` scoped to ``org`` and return dict rows."""
+    with engine.begin() as conn:
+        conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
+        return [dict(r) for r in conn.execute(text(sql)).mappings()]
+
+
+@pytest.mark.req("B2-R14")
+def test_users_match_realm(seeded: Engine) -> None:
+    """The 8 realm users, with realm id (the Keycloak sub), name, e-mail and roles."""
+    realm = json.loads(REALM.read_text(encoding="utf-8"))["users"]
+    assert len(realm) == 8
+    got: dict[str, dict[str, Any]] = {}
+    for org in seed.DEV_ORGS:
+        got |= {str(r["id"]): r for r in q(seeded, org, "SELECT * FROM app_user")}
+    for u in realm:
+        row = got[u["id"]]
+        assert str(row["organization_id"]) == u["attributes"]["org_id"][0]
+        assert row["name"] == f"{u['firstName']} {u['lastName']}"
+        assert row["email"] == u["email"]
+        assert row["roles"] == u["realmRoles"]
+
+
+@pytest.mark.req("B2-R14")
+@pytest.mark.parametrize("org", list(seed.DEV_ORGS))
+def test_inquiry_variety(seeded: Engine, org: uuid.UUID) -> None:
+    """>= 6 inquiries covering draft, unassigned, cancelled, m3+density, ETA < 48 h, warning."""
+    inq = q(seeded, org, "SELECT * FROM inquiry")
+    assert len(inq) >= 6
+    drafts = [i for i in inq if i["status"] == "draft"]
+    assert len(drafts) >= 3
+    assert any(i["buyer_id"] is None for i in drafts)
+    assert any(i["status"] == "cancelled" and i["cancel_reason"].strip() for i in inq)
+    assert q(seeded, org, "SELECT 1 FROM inquiry_line WHERE unit = 'm3' AND density IS NOT NULL")
+    assert any(NOW <= i["eta"] <= NOW + timedelta(hours=48) for i in inq)
+    assert all(i["eta"] and i["etd"] and i["eta"] > NOW for i in inq if i["status"] != "cancelled")
+    unapproved = q(
+        seeded,
+        org,
+        "SELECT 1 FROM inquiry_line l JOIN inquiry i ON i.id = l.inquiry_id WHERE NOT EXISTS"
+        " (SELECT 1 FROM vessel_approved_fuel f WHERE f.vessel_id = i.vessel_id"
+        " AND f.product_id = l.product_id)",
+    )
+    assert unapproved
+    per = q(seeded, org, "SELECT count(*) AS n FROM inquiry_line GROUP BY inquiry_id")
+    assert all(1 <= p["n"] <= 10 for p in per)
+
+
+@pytest.mark.req("B2-R14")
+@pytest.mark.parametrize("org", list(seed.DEV_ORGS))
+def test_references_and_counters(seeded: Engine, org: uuid.UUID) -> None:
+    """References are INQ-yymm-nnn, gap-free per month, and match the counter."""
+    month = NOW.strftime("%y%m")
+    refs = sorted(r["reference"] for r in q(seeded, org, "SELECT reference FROM inquiry"))
+    nums = [int(m[2]) for r in refs if (m := REF.fullmatch(r)) and m[1] == month]
+    assert len(nums) == len(refs)
+    assert nums == list(range(1, len(refs) + 1))
+    counter = q(
+        seeded,
+        org,
+        f"SELECT next_value FROM inquiry_reference_counter WHERE year_month = '{month}'",
+    )
+    assert counter[0]["next_value"] == len(refs) + 1
+
+
+@pytest.mark.req("B2-R14")
+def test_idempotent_and_unaudited(seeded: Engine) -> None:
+    """A second run changes no row and writes no audit entry."""
+    tables = ("app_user", "inquiry", "inquiry_line", "inquiry_reference_counter")
+
+    def dump() -> str:
+        return json.dumps(
+            {
+                f"{o}/{t}": q(seeded, o, f"SELECT * FROM {t} ORDER BY 1, 2")
+                for o in seed.DEV_ORGS
+                for t in tables
+            },
+            default=str,
+        )
+
+    before = dump()
+    seed.seed_demo_inquiries(seeded, NOW + timedelta(days=40))
+    assert dump() == before
+    assert all(not q(seeded, o, "SELECT 1 FROM audit_entry") for o in seed.DEV_ORGS)

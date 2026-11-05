@@ -1,0 +1,172 @@
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { InquiryListItem } from "../inquiryApi";
+import type { Role } from "../ui/RoleGate/RoleGate";
+import { ToastHost, ToastProvider } from "../ui/Toast/Toast";
+import { item } from "./testSupport";
+import { WorkList } from "./WorkList";
+
+beforeAll(() => {
+  // jsdom lacks the pointer/scroll APIs Radix Select uses.
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => undefined;
+  Element.prototype.releasePointerCapture = () => undefined;
+  Element.prototype.scrollIntoView = () => undefined;
+});
+afterEach(() => {
+  cleanup();
+  window.location.hash = "";
+});
+
+function setup(rows: InquiryListItem[] = [item("1")], roles: Role[] = ["admin"]) {
+  const listInquiries = vi.fn().mockResolvedValue(rows);
+  render(
+    <ToastProvider>
+      <WorkList api={{ listInquiries }} roles={roles} />
+      <ToastHost />
+    </ToastProvider>,
+  );
+  return listInquiries;
+}
+
+const lastParams = (f: ReturnType<typeof setup>) => f.mock.lastCall?.[0] as unknown;
+
+describe("WorkList", () => {
+  it("[B2-R12] renders the columns and a row", async () => {
+    setup([item("1", { status: "rfq_sent" })]);
+    const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent);
+    expect(headers).toEqual(["Reference", "Vessel", "Port", "ETA", "Status", "Next step", "Buyer"]);
+    const row = within(await screen.findByRole("row", { name: /INQ-2611-001/ }));
+    expect(row.getByText("Test Vessel")).toBeTruthy();
+    expect(row.getByText("Rotterdam")).toBeTruthy();
+    expect(row.getByText("12 Nov 06:00 UTC · 07:00 local")).toBeTruthy();
+    expect(row.getAllByText("RFQ sent")).toHaveLength(2); // status pill and next step
+    expect(row.getByText("Bea Buyer")).toBeTruthy();
+  });
+
+  it("[B2-R12] next step: draft selects suppliers, cancelled shows a dash", async () => {
+    setup([item("1"), item("2", { status: "cancelled" })]);
+    const draft = within(await screen.findByRole("row", { name: /INQ-2611-001/ }));
+    expect(draft.getByText("Select suppliers")).toBeTruthy();
+    const cancelled = within(screen.getByRole("row", { name: /INQ-2611-002/ }));
+    expect(cancelled.getByText("—")).toBeTruthy();
+  });
+
+  it("[B2-R12] a null ETA says ETA missing and never warns", async () => {
+    setup([item("1", { eta: null })]);
+    expect(await screen.findByText("ETA missing")).toBeTruthy();
+    expect(screen.queryByText(/not nominated/)).toBeNull();
+  });
+
+  it("[B2-R12] the warning shows only when eta_warning is set", async () => {
+    setup([item("1", { eta_warning: true }), item("2")]);
+    const warned = within(await screen.findByRole("row", { name: /INQ-2611-001/ }));
+    expect(warned.getByText("ETA in < 48 h, not nominated")).toBeTruthy();
+    expect(screen.getAllByText(/not nominated/)).toHaveLength(1);
+  });
+
+  it("[B2-R12] a passed ETA says ETA passed instead of the 48 h text", async () => {
+    setup([item("1", { eta: "2020-01-01T00:00:00Z", eta_warning: true })]);
+    expect(await screen.findByText("ETA passed, not nominated")).toBeTruthy();
+    expect(screen.queryByText(/< 48 h/)).toBeNull();
+  });
+
+  it("[B2-R12] shows Unassigned without a buyer", async () => {
+    setup([item("1", { buyer_name: null })]);
+    expect(await screen.findByText("Unassigned")).toBeTruthy();
+  });
+
+  it("[B2-R12] Review Focus 5: shows the buyer name from the API, whatever their roles", async () => {
+    setup([item("1", { buyer_name: "Former Buyer" })], ["viewer"]);
+    expect(await screen.findByText("Former Buyer")).toBeTruthy();
+  });
+
+  it("[B2-R12] the default query has no status filter, so cancelled is excluded", async () => {
+    const f = setup();
+    await screen.findByText("INQ-2611-001");
+    expect(f).toHaveBeenCalledWith({ sort: "eta" });
+  });
+
+  it("[B2-R12] the status filter sends status", async () => {
+    const f = setup();
+    await userEvent.click(await screen.findByRole("combobox", { name: "Status" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Cancelled" }));
+    await waitFor(() => {
+      expect(lastParams(f)).toEqual({ status: "cancelled", sort: "eta" });
+    });
+    await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
+    await userEvent.click(await screen.findByRole("option", { name: "All" }));
+    await waitFor(() => {
+      expect(lastParams(f)).toEqual({ status: "all", sort: "eta" });
+    });
+  });
+
+  it("[B2-R12] search is debounced by 250 ms", async () => {
+    const f = setup();
+    await screen.findByText("INQ-2611-001");
+    await userEvent.type(screen.getByRole("textbox", { name: "Search" }), "rott");
+    expect(f).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(lastParams(f)).toEqual({ q: "rott", sort: "eta" });
+    });
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it("[B2-R12] sort sends sort=reference", async () => {
+    const f = setup();
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sort" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Reference" }));
+    await waitFor(() => {
+      expect(lastParams(f)).toEqual({ sort: "reference" });
+    });
+  });
+
+  it("[B2-R12] Mine sends mine for buyers and admins, and is hidden from operators", async () => {
+    const f = setup();
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Mine" }));
+    await waitFor(() => {
+      expect(lastParams(f)).toEqual({ mine: true, sort: "eta" });
+    });
+    cleanup();
+    setup([item("1")], ["operator"]);
+    await screen.findByText("INQ-2611-001");
+    expect(screen.queryByRole("checkbox", { name: "Mine" })).toBeNull();
+  });
+
+  it("[B2-R12] New inquiry is for admin, buyer and operator but not viewer", async () => {
+    setup([item("1")], ["operator"]);
+    await userEvent.click(await screen.findByRole("button", { name: "New inquiry" }));
+    expect(window.location.hash).toBe("#/inquiries/new");
+    cleanup();
+    setup([item("1")], ["viewer"]);
+    await screen.findByText("INQ-2611-001");
+    expect(screen.queryByRole("button", { name: "New inquiry" })).toBeNull();
+  });
+
+  it("[B2-R12] selecting a row opens the inquiry", async () => {
+    setup([item("abc")]);
+    await userEvent.click(await screen.findByText("INQ-2611-abc"));
+    expect(window.location.hash).toBe("#/inquiries/abc");
+  });
+
+  it("[B2-R12] shows the empty state", async () => {
+    setup([]);
+    expect(await screen.findByText("No inquiries")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "New inquiry" })).toHaveLength(1);
+  });
+
+  it("[B2-R12] a failed load shows a toast", async () => {
+    const listInquiries = vi.fn().mockRejectedValue(new Error("boom"));
+    render(
+      <ToastProvider>
+        <WorkList api={{ listInquiries }} roles={["admin"]} />
+        <ToastHost />
+      </ToastProvider>,
+    );
+    expect(await screen.findByText("boom")).toBeTruthy();
+    // A failure is not an empty result.
+    expect(await screen.findByText("Could not load inquiries")).toBeTruthy();
+    expect(screen.queryByText("No inquiries")).toBeNull();
+  });
+});

@@ -18,6 +18,18 @@ export function parseAdmin(hash: string): { path: MasterType; id: string | undef
   return config ? { path: config.path, id: m?.[2] } : null;
 }
 
+/** `#/inquiries` or `#/inquiries/<id|new>`; an empty hash, `#/` and `#/inquiries/` are the start page. */
+export function parseInquiries(hash: string): { id: string | undefined } | null {
+  const path = hash.replace(/^#\/?/, "").replace(/\/$/, "");
+  if (path === "") return { id: undefined };
+  const m = /^inquiries(?:\/([^/]+))?$/.exec(path);
+  return m ? { id: m[1] } : null;
+}
+
+export const goInquiry = (sub: string) => {
+  window.location.hash = `#/inquiries/${sub}`;
+};
+
 export const go = (sub: string) => {
   window.location.hash = `#/admin/${sub}`;
 };

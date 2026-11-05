@@ -59,7 +59,13 @@ def _client(settings: Settings, jwks_error: Exception | None = None) -> TestClie
 
     @app.get("/_principal")
     def _principal(p: Annotated[Principal, Depends(get_principal)]) -> dict[str, Any]:
-        return {"user": str(p.user_id), "org": str(p.organization_id), "roles": sorted(p.roles)}
+        return {
+            "user": str(p.user_id),
+            "org": str(p.organization_id),
+            "roles": sorted(p.roles),
+            "name": p.name,
+            "email": p.email,
+        }
 
     return TestClient(app)
 

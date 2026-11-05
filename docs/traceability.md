@@ -18,6 +18,21 @@
 | B1-R14 | web/src/ui/NumberField/NumberField.test.tsx |
 | B1-R15 | tools/test_trace.py |
 | B1-R16 | .github/workflows/ci.yml |
+| B2-R01 | engine/tests/db/test_users.py |
+| B2-R02 | engine/tests/db/test_inquiry_api.py, engine/tests/db/test_inquiry_schema.py |
+| B2-R03 | engine/tests/db/test_inquiry_schema.py |
+| B2-R04 | engine/tests/db/test_inquiry_api.py |
+| B2-R05 | engine/tests/db/test_inquiry_api.py, engine/tests/unit/test_inquiry_domain.py |
+| B2-R06 | engine/tests/db/test_inquiry_actions.py, engine/tests/db/test_inquiry_api.py, engine/tests/unit/test_inquiry_domain.py |
+| B2-R07 | engine/tests/db/test_inquiry_api.py, engine/tests/unit/test_inquiry_domain.py |
+| B2-R08 | engine/tests/db/test_inquiry_actions.py |
+| B2-R09 | engine/tests/db/test_inquiry_api.py, web/src/inquiries/InquiryPage.test.tsx |
+| B2-R10 | engine/tests/db/test_inquiry_api.py, web/src/inquiries/InquiryPage.test.tsx |
+| B2-R11 | engine/tests/db/test_inquiry_actions.py, engine/tests/db/test_inquiry_api.py, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiryApi.test.ts |
+| B2-R12 | engine/tests/db/test_inquiry_api.py, web/src/App.test.tsx, web/src/admin/routes.test.ts, web/src/inquiries/WorkList.test.tsx, web/src/inquiryApi.test.ts |
+| B2-R13 | web/src/App.test.tsx, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiries/inquiryBudget.test.tsx, web/src/ui/LockedNote/LockedNote.test.tsx |
+| B2-R14 | engine/tests/db/test_seed_inquiries.py |
+| B2-R15 | .github/workflows/ci.yml |
 | S0-R01 | .github/workflows/ci.yml |
 | S0-R02 | engine/tests/unit/test_health.py |
 | S0-R03 | engine/tests/db/test_me.py, engine/tests/unit/test_auth.py, web/src/App.test.tsx, web/src/api.test.ts, web/src/auth.test.ts |

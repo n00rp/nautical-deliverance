@@ -76,6 +76,16 @@ check_master() { # check_master <user>: seeded ports and a suggestion with both 
 check_master viewer@acme.test
 check_master viewer@borealis.test
 
+check_inquiries() { # check_inquiries <user>: the seeded demo inquiries are listed
+  local tok n
+  if ! tok="$(token "$1")" || [[ -z "$tok" ]]; then fail "token for $1"; return; fi
+  n="$(curl -sf -H "Authorization: Bearer $tok" http://localhost:8080/api/v1/inquiries | json "len(d)" 2>/dev/null || true)"
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  ((n >= 1)) && ok "GET /inquiries for $1 >= 1 ($n)" || fail "inquiries for $1: got '$n'"
+}
+check_inquiries bunker_buyer@acme.test
+check_inquiries bunker_buyer@borealis.test
+
 for svc in engine web; do
   img="nautical-deliverance/$svc:$TAG"
   user="$(docker inspect --format '{{.Config.User}}' "$img")"

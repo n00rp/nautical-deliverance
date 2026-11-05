@@ -2,9 +2,10 @@
 
 import uuid
 from datetime import datetime  # noqa: TC003 - same
+from decimal import Decimal  # noqa: TC003 - SQLAlchemy resolves annotations at runtime
 
-from sqlalchemy import DateTime, ForeignKey, Text, func, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import DateTime, ForeignKey, Numeric, SmallInteger, Text, func, text
+from sqlalchemy.dialects.postgresql import ARRAY, CHAR, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -29,6 +30,9 @@ class AppUser(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    name: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    email: Mapped[str] = mapped_column(Text, server_default=text("''"))
+    roles: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
 
 
 class _Master:
@@ -157,3 +161,61 @@ class AuditEntry(Base):
     changes: Mapped[dict[str, dict[str, str | None]]] = mapped_column(
         JSONB, server_default=text("'{}'::jsonb")
     )
+
+
+class Inquiry(Base):
+    """A bunker inquiry; DB FKs are composite (organization_id, x_id)."""
+
+    __tablename__ = "inquiry"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"))
+    reference: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'draft'"))
+    vessel_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vessel.id"))
+    legal_entity_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("legal_entity.id"))
+    port_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("port.id"))
+    bunkering_reason_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bunkering_reason.id"))
+    voyage: Mapped[str | None] = mapped_column(Text)
+    operator_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    requester_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    buyer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
+    eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    etd: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    agent_name: Mapped[str | None] = mapped_column(Text)
+    agent_email: Mapped[str | None] = mapped_column(Text)
+    internal_comments: Mapped[str | None] = mapped_column(Text)
+    cancel_reason: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class InquiryLine(Base):
+    """One product line of an inquiry (1..10)."""
+
+    __tablename__ = "inquiry_line"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"))
+    inquiry_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inquiry.id", ondelete="CASCADE"))
+    position: Mapped[int] = mapped_column(SmallInteger)
+    product_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("product.id"))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3))
+    unit: Mapped[str] = mapped_column(Text)
+    density: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
+    spec_notes: Mapped[str | None] = mapped_column(Text)
+    iso_spec_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("iso_spec_version.id"))
+
+
+class InquiryReferenceCounter(Base):
+    """Next sequence number per organization and UTC month (yymm)."""
+
+    __tablename__ = "inquiry_reference_counter"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organization.id"), primary_key=True
+    )
+    year_month: Mapped[str] = mapped_column(CHAR(4), primary_key=True)
+    next_value: Mapped[int]

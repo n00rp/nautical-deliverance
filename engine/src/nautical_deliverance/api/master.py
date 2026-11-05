@@ -6,17 +6,12 @@ audited in the same transaction with the caller as actor.
 """
 
 import uuid
-from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-import psycopg.errors
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -24,10 +19,17 @@ from pydantic import (
     create_model,
 )
 from sqlalchemy import Engine, func, or_, select
-from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
-from nautical_deliverance.api.auth import get_principal
+from nautical_deliverance.api.common import (
+    Strict,
+    check,
+    conflict,
+    email_ok,
+    scope,
+    unprocessable,
+)
+from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.master import (
     CounterpartyType,
@@ -37,7 +39,6 @@ from nautical_deliverance.domain.master import (
     tz_valid,
 )
 from nautical_deliverance.persistence.audit import Action, record_change
-from nautical_deliverance.persistence.db import get_engine, org_session
 from nautical_deliverance.persistence.master_repo import counterparties_covering
 from nautical_deliverance.persistence.models import (
     AuditEntry,
@@ -54,30 +55,26 @@ from nautical_deliverance.persistence.models import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Sequence
 
-    from fastapi.exceptions import RequestValidationError
 
 router = APIRouter(prefix="/master")
 
-_DB_DOWN = "Database unavailable"
-_STALE = "Record was changed by someone else"
 _NOT_FOUND = "Not found"
 
 
-def get_master_engine() -> Engine:
-    """Database engine dependency (overridable in tests)."""
-    return get_engine()
+# The same dependency object as current_user uses, so overriding either covers both.
+get_master_engine = get_users_engine
 
 
-def require_reader(principal: Annotated[Principal, Depends(get_principal)]) -> Principal:
+def require_reader(principal: Annotated[Principal, Depends(current_user)]) -> Principal:
     """Any caller with a known role may read."""
     if not principal.roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
     return principal
 
 
-def require_admin(principal: Annotated[Principal, Depends(get_principal)]) -> Principal:
+def require_admin(principal: Annotated[Principal, Depends(current_user)]) -> Principal:
     """Only admins may write."""
     if Role.ADMIN not in principal.roles:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Forbidden")
@@ -93,115 +90,29 @@ ActiveFilter = Annotated[Literal["true", "false", "all"], Query()]
 # --- errors ----------------------------------------------------------------------------------
 
 
-def field_errors(exc: RequestValidationError) -> JSONResponse:
-    """422 as {"detail": [{"field", "message"}]} for every validation failure."""
-    detail = [
-        {
-            "field": ".".join(str(p) for p in err["loc"][1:]),
-            "message": str(err["msg"]).removeprefix("Value error, "),
-        }
-        for err in exc.errors()
-    ]
-    return JSONResponse(
-        {"detail": jsonable_encoder(detail)}, status_code=status.HTTP_422_UNPROCESSABLE_CONTENT
-    )
-
-
-def validation_handler(_: Request, exc: Exception) -> JSONResponse:
-    """Exception handler registered by the app factory."""
-    return field_errors(cast("RequestValidationError", exc))
-
-
-def _unprocessable(field: str, message: str) -> HTTPException:
-    return HTTPException(
-        status.HTTP_422_UNPROCESSABLE_CONTENT, [{"field": field, "message": message}]
-    )
-
-
-# Violated constraint name -> (field, message). Unknown constraints stay a 500 (a real bug).
-_CONSTRAINTS = {
-    "legal_entity_org_code_key": ("code", "Code already exists"),
-    "port_org_locode_key": ("locode", "LOCODE already exists"),
-    "vessel_org_imo_key": ("imo", "IMO already exists"),
-    "product_org_name_key": ("name", "Name already exists"),
-    "iso_spec_version_org_name_key": ("name", "Name already exists"),
-    "bunkering_reason_org_name_key": ("name", "Name already exists"),
-    "vessel_legal_entity_fk": ("legal_entity_id", "Unknown legal entity"),
-    "contact_one_primary_idx": ("is_primary", "Counterparty already has an active primary contact"),
-    "coverage_org_cp_port_product_key": ("items", "Duplicate coverage entry"),
-    "coverage_port_fk": ("items.port_id", "Unknown port"),
-    "coverage_product_fk": ("items.product_id", "Unknown product"),
-    "vessel_approved_fuel_org_vessel_product_key": ("items", "Duplicate approved fuel"),
-    "vessel_approved_fuel_product_fk": ("items.product_id", "Unknown product"),
-}
-
-
-@contextmanager
-def _scope(principal: Principal, engine: Engine) -> Iterator[Session]:
-    """Organization-scoped transaction mapping database failures to HTTP errors."""
-    try:
-        with org_session(principal.organization_id, engine) as session:
-            yield session
-    except OperationalError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _DB_DOWN) from exc
-    except IntegrityError as exc:
-        diag = exc.orig.diag if isinstance(exc.orig, psycopg.Error) else None
-        mapped = _CONSTRAINTS.get(diag.constraint_name or "") if diag else None
-        if mapped is None:
-            raise
-        raise _unprocessable(*mapped) from exc
-
-
 # --- request/response models -----------------------------------------------------------------
-
-
-def _check(ok: Any, message: str) -> AfterValidator:  # noqa: ANN401
-    def validate(value: str) -> str:
-        if not ok(value):
-            raise ValueError(message)
-        return value
-
-    return AfterValidator(validate)
-
-
-def _email_ok(value: str) -> bool:
-    local, sep, domain = value.partition("@")
-    return (
-        len(value) <= 254  # noqa: PLR2004
-        and bool(sep and local)
-        and "@" not in domain
-        and "." in domain
-        and all(domain.split("."))
-        and not any(c.isspace() for c in value)
-    )
 
 
 _Trim = StringConstraints(strip_whitespace=True, min_length=1)
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 Short = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
 Note = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
-Imo = Annotated[str, _Trim, _check(imo_valid, "Invalid IMO number")]
-Locode = Annotated[str, _Trim, _check(locode_valid, "Invalid UN/LOCODE (e.g. NLRTM)")]
-TimeZone = Annotated[str, _Trim, _check(tz_valid, "Unknown IANA time zone")]
+Imo = Annotated[str, _Trim, check(imo_valid, "Invalid IMO number")]
+Locode = Annotated[str, _Trim, check(locode_valid, "Invalid UN/LOCODE (e.g. NLRTM)")]
+TimeZone = Annotated[str, _Trim, check(tz_valid, "Unknown IANA time zone")]
 Country = Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^[A-Z]{2}$")]
-Email = Annotated[str, _Trim, _check(_email_ok, "Invalid e-mail address")]
+Email = Annotated[str, _Trim, check(email_ok, "Invalid e-mail address")]
 Dwt = Annotated[int, Field(gt=0, le=2_000_000_000)]
 
 
-class _Strict(BaseModel):
-    """No unknown fields: actor/at/organization can never be supplied by a client."""
-
-    model_config = ConfigDict(extra="forbid", use_enum_values=True)
-
-
-class LegalEntityIn(_Strict):
+class LegalEntityIn(Strict):
     """Legal entity fields."""
 
     name: Name
     code: Short
 
 
-class VesselIn(_Strict):
+class VesselIn(Strict):
     """Vessel fields."""
 
     name: Name
@@ -213,7 +124,7 @@ class VesselIn(_Strict):
     default_operator: uuid.UUID | None = None
 
 
-class PortIn(_Strict):
+class PortIn(Strict):
     """Port fields."""
 
     locode: Locode
@@ -222,7 +133,7 @@ class PortIn(_Strict):
     time_zone: TimeZone
 
 
-class CounterpartyIn(_Strict):
+class CounterpartyIn(Strict):
     """Counterparty fields."""
 
     name: Name
@@ -230,20 +141,20 @@ class CounterpartyIn(_Strict):
     notes: Note | None = None
 
 
-class ProductIn(_Strict):
+class ProductIn(Strict):
     """Product fields."""
 
     name: Name
     default_unit: Unit = Unit.MT
 
 
-class NameIn(_Strict):
+class NameIn(Strict):
     """Reference data that is just a name (ISO spec versions, bunkering reasons)."""
 
     name: Name
 
 
-class ContactIn(_Strict):
+class ContactIn(Strict):
     """Contact fields."""
 
     name: Name
@@ -252,33 +163,33 @@ class ContactIn(_Strict):
     is_primary: bool = False
 
 
-class VersionIn(_Strict):
+class VersionIn(Strict):
     """Body of deactivate/reactivate."""
 
     version: int = Field(ge=1)
 
 
-class CoverageItem(_Strict):
+class CoverageItem(Strict):
     """A port/product pair a counterparty supplies."""
 
     port_id: uuid.UUID
     product_id: uuid.UUID
 
 
-class FuelItem(_Strict):
+class FuelItem(Strict):
     """A product a vessel may take."""
 
     product_id: uuid.UUID
 
 
-class CoverageIn(_Strict):
+class CoverageIn(Strict):
     """Replacement coverage set."""
 
     version: int = Field(ge=1)
     items: list[CoverageItem]
 
 
-class ApprovedFuelsIn(_Strict):
+class ApprovedFuelsIn(Strict):
     """Replacement approved-fuel set."""
 
     version: int = Field(ge=1)
@@ -335,7 +246,7 @@ def _patch(name: str, inp: type[BaseModel]) -> type[BaseModel]:
     }
     return create_model(
         f"{name}Patch",
-        __base__=_Strict,
+        __base__=Strict,
         version=(Annotated[int, Field(ge=1)], ...),
         **optional,
     )
@@ -373,7 +284,7 @@ def _apply(  # noqa: PLR0913, PLR0917
 ) -> None:
     """Check the version, apply changed values, bump, audit. No-op when nothing differs."""
     if row.version != version:
-        raise HTTPException(status.HTTP_409_CONFLICT, _STALE)
+        raise conflict()
     changed = {k: v for k, v in values.items() if getattr(row, k) != v}
     if not changed:
         return
@@ -470,17 +381,17 @@ def _register(spec: _Spec) -> None:
     def list_items(
         principal: Reader, engine: Eng, active: ActiveFilter = "true", q: str | None = None
     ) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             return [out.model_validate(r) for r in _listing(s, model, active, q, spec.search)]
 
     @router.get(f"/{path}/{{item_id}}", response_model=out)
     def get_item(item_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             return out.model_validate(_load(s, model, item_id))
 
     @router.post(f"/{path}", response_model=out, status_code=status.HTTP_201_CREATED)
     def create_item(body: inp, principal: Admin, engine: Eng) -> object:  # type: ignore[valid-type]
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             data = {k: getattr(body, k) for k in fields}
             return out.model_validate(_create(s, principal, entity, model, data))
 
@@ -491,7 +402,7 @@ def _register(spec: _Spec) -> None:
         principal: Admin,
         engine: Eng,
     ) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             row = _load(s, model, item_id, lock=True)
             values, version = _split(body)
             _apply(s, principal, entity, row, values, "update", version)
@@ -502,7 +413,7 @@ def _register(spec: _Spec) -> None:
 
     @router.get(f"/{path}/{{item_id}}/history", response_model=list[HistoryOut])
     def history(item_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             _load(s, model, item_id)
             own = (AuditEntry.entity_type == entity) & (AuditEntry.entity_id == item_id)
             if entity == "counterparty":  # B1-D6: its contacts' changes show here too
@@ -529,7 +440,7 @@ def _lifecycle(url: str, out: type[BaseModel], entity: str, model: type, action:
 
     @router.post(url, response_model=out, name=f"{action}_{entity}")
     def change(item_id: uuid.UUID, body: VersionIn, principal: Admin, engine: Eng) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             row = _load(s, model, item_id, lock=True)
             _apply(s, principal, entity, row, {"active": active}, action, body.version)
             return out.model_validate(row)
@@ -545,7 +456,7 @@ def suggest(
 ) -> object:
     """Active suppliers at the port covering all, or only some, of the products."""
     out = OUTS["counterparties"]
-    with _scope(principal, engine) as s:
+    with scope(principal, engine) as s:
         return {
             mode: [
                 out.model_validate(c)
@@ -579,7 +490,7 @@ def list_contacts(
     item_id: uuid.UUID, principal: Reader, engine: Eng, active: ActiveFilter = "true"
 ) -> object:
     """Contacts of one counterparty."""
-    with _scope(principal, engine) as s:
+    with scope(principal, engine) as s:
         _load(s, Counterparty, item_id)
         stmt = (
             select(Contact)
@@ -596,14 +507,14 @@ def get_contact(
     item_id: uuid.UUID, contact_id: uuid.UUID, principal: Reader, engine: Eng
 ) -> object:
     """One contact."""
-    with _scope(principal, engine) as s:
+    with scope(principal, engine) as s:
         return ContactOut.model_validate(_contact(s, item_id, contact_id))
 
 
 @router.post(CONTACTS, response_model=ContactOut, status_code=status.HTTP_201_CREATED)
 def create_contact(item_id: uuid.UUID, body: ContactIn, principal: Admin, engine: Eng) -> object:
     """Add a contact."""
-    with _scope(principal, engine) as s:
+    with scope(principal, engine) as s:
         _load(s, Counterparty, item_id)
         data = {k: getattr(body, k) for k in ContactIn.model_fields}
         row = _create(s, principal, "contact", Contact, {**data, "counterparty_id": item_id})
@@ -619,7 +530,7 @@ def update_contact(
     engine: Eng,
 ) -> object:
     """Change a contact."""
-    with _scope(principal, engine) as s:
+    with scope(principal, engine) as s:
         row = _contact(s, item_id, contact_id, lock=True)
         values, version = _split(body)
         _apply(s, principal, "contact", row, values, "update", version)
@@ -635,7 +546,7 @@ def _contact_lifecycle(verb: Literal["deactivate", "reactivate"]) -> None:
     def change(
         item_id: uuid.UUID, contact_id: uuid.UUID, body: VersionIn, principal: Admin, engine: Eng
     ) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             row = _contact(s, item_id, contact_id, lock=True)
             _apply(s, principal, "contact", row, {"active": active}, verb, body.version)
             return ContactOut.model_validate(row)
@@ -661,10 +572,10 @@ def _replace_set(  # noqa: PLR0913, PLR0917
 ) -> None:
     """Make the active children equal `items`; reactivate before inserting; audit once."""
     if parent.version != version:
-        raise HTTPException(status.HTTP_409_CONFLICT, _STALE)
+        raise conflict()
     wanted = [tuple(getattr(i, c) for c in key_cols) for i in items]
     if len(set(wanted)) != len(wanted):
-        raise _unprocessable("items", "Duplicate entries")  # noqa: EM101
+        raise unprocessable("items", "Duplicate entries")  # noqa: EM101
     wanted_set = set(wanted)
     existing = {
         tuple(getattr(r, c) for c in key_cols): r
@@ -736,7 +647,7 @@ class _SetSpec:
 def _register_set(spec: _SetSpec) -> None:
     @router.get(spec.url, response_model=SetOut, name=f"get_{spec.url.rsplit('/', 1)[1]}")
     def read(item_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             parent = _load(s, spec.parent_model, item_id)
             return _current_set(s, parent, spec.child, spec.parent_col, spec.key_cols)
 
@@ -747,7 +658,7 @@ def _register_set(spec: _SetSpec) -> None:
         principal: Admin,
         engine: Eng,
     ) -> object:
-        with _scope(principal, engine) as s:
+        with scope(principal, engine) as s:
             parent = _load(s, spec.parent_model, item_id, lock=True)
             _replace_set(
                 s,

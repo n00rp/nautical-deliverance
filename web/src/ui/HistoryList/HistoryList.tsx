@@ -7,7 +7,7 @@ export type HistoryEntry = {
   at: string;
   /** Label of a related record this entry is about, e.g. "Contact Ann". */
   entity?: string | null;
-  action: "create" | "update" | "deactivate" | "reactivate";
+  action: keyof typeof VERB;
   changes: { field: string; before: string | null; after: string | null }[];
 };
 
@@ -16,6 +16,9 @@ const VERB = {
   update: "updated",
   deactivate: "deactivated",
   reactivate: "reactivated",
+  take: "took",
+  cancel: "cancelled",
+  duplicate: "duplicated",
 } as const;
 
 const show = (v: string | null) => v ?? "—";

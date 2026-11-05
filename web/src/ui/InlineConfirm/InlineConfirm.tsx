@@ -6,6 +6,7 @@ export type InlineConfirmProps = {
   label: string;
   confirmLabel: string;
   onConfirm: () => void;
+  disabled?: boolean;
   tone?: "default" | "crit";
   /** Armed state resets after this many ms. */
   timeoutMs?: number;
@@ -15,6 +16,7 @@ export function InlineConfirm({
   label,
   confirmLabel,
   onConfirm,
+  disabled = false,
   tone = "default",
   timeoutMs = 8000,
 }: InlineConfirmProps) {
@@ -32,7 +34,7 @@ export function InlineConfirm({
   }, [armed, timeoutMs]);
   if (!armed) {
     return (
-      <Button variant="secondary" onClick={() => setArmed(true)}>
+      <Button variant="secondary" disabled={disabled} onClick={() => setArmed(true)}>
         {label}
       </Button>
     );

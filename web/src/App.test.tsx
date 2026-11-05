@@ -19,6 +19,14 @@ vi.mock("./masterApi", async (orig) => {
   return { ...(await orig<typeof import("./masterApi")>()), createMasterApi: () => fakeApi() };
 });
 
+vi.mock("./inquiryApi", async (orig) => {
+  const { inquiryApi } = await import("./inquiries/pageSupport");
+  return {
+    ...(await orig<typeof import("./inquiryApi")>()),
+    createInquiryApi: () => ({ ...inquiryApi(), listInquiries: () => Promise.resolve([]) }),
+  };
+});
+
 const user = { access_token: "tok", expired: false };
 const me = {
   user_id: "u-1",
@@ -165,17 +173,52 @@ describe("App master data", () => {
     render(<App />);
 
     const nav = await screen.findByRole("navigation", { name: "Main" });
-    expect(nav.querySelectorAll("a")).toHaveLength(7);
+    expect(nav.querySelectorAll("a")).toHaveLength(8);
+    expect(nav.querySelector("a")?.textContent).toBe("Inquiries");
     expect(screen.getByText("Master data")).toBeTruthy();
     expect(await screen.findByRole("heading", { name: "Ports" })).toBeTruthy();
     expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Ports");
   });
 
-  it("[B1-R11] without an admin route the signed-in user is pointed at the menu", async () => {
+  it("[B1-R11] an unknown route points the signed-in user at the menu", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue(me);
+    window.location.hash = "#/nowhere";
+    render(<App />);
+
+    expect(await screen.findByText(/Page not found/)).toBeTruthy();
+  });
+});
+
+describe("App inquiries", () => {
+  it("[B2-R12] the work list is the start page", async () => {
     auth.getUser.mockResolvedValue(user);
     vi.mocked(fetchMe).mockResolvedValue(me);
     render(<App />);
 
-    expect(await screen.findByText(/Choose a master-data page/)).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Inquiries" })).toBeTruthy();
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Inquiries");
+  });
+
+  it.each(["", "#/", "#/inquiries", "#/inquiries/"])(
+    "[B2-R12] the hash %j opens the work list",
+    async (hash) => {
+      auth.getUser.mockResolvedValue(user);
+      vi.mocked(fetchMe).mockResolvedValue(me);
+      window.location.hash = hash;
+      render(<App />);
+
+      expect(await screen.findByRole("heading", { name: "Inquiries" })).toBeTruthy();
+    },
+  );
+
+  it("[B2-R13] an inquiry id route opens the inquiry page", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue(me);
+    window.location.hash = "#/inquiries/new";
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "New inquiry" })).toBeTruthy();
   });
 });

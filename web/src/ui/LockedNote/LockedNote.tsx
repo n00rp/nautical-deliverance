@@ -1,5 +1,10 @@
 import styles from "./LockedNote.module.css";
 
-export function LockedNote({ what }: { what: string }) {
-  return <p className={styles.note}>Hidden for your role: {what}</p>;
+/** Says what is hidden for the role, or (with `message`) why a field cannot change. */
+export function LockedNote(props: { what: string } | { message: string }) {
+  return (
+    <p className={styles.note}>
+      {"message" in props ? props.message : `Hidden for your role: ${props.what}`}
+    </p>
+  );
 }
