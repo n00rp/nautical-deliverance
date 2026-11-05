@@ -45,8 +45,8 @@
       "email": "admin@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "admin",
-      "lastName": "acme.test",
+      "firstName": "Ada",
+      "lastName": "Admin",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -69,8 +69,8 @@
       "email": "bunker_buyer@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "bunker_buyer",
-      "lastName": "acme.test",
+      "firstName": "Bea",
+      "lastName": "Buyer",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -93,8 +93,8 @@
       "email": "operator@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "operator",
-      "lastName": "acme.test",
+      "firstName": "Olle",
+      "lastName": "Operator",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -117,8 +117,8 @@
       "email": "viewer@acme.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "viewer",
-      "lastName": "acme.test",
+      "firstName": "Vera",
+      "lastName": "Viewer",
       "attributes": {
         "org_id": [
           "11111111-1111-4111-8111-111111111111"
@@ -141,8 +141,8 @@
       "email": "admin@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "admin",
-      "lastName": "borealis.test",
+      "firstName": "Alma",
+      "lastName": "Admin",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"
@@ -165,8 +165,8 @@
       "email": "bunker_buyer@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "bunker_buyer",
-      "lastName": "borealis.test",
+      "firstName": "Bo",
+      "lastName": "Buyer",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"
@@ -189,8 +189,8 @@
       "email": "operator@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "operator",
-      "lastName": "borealis.test",
+      "firstName": "Otto",
+      "lastName": "Operator",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"
@@ -213,8 +213,8 @@
       "email": "viewer@borealis.test",
       "emailVerified": true,
       "enabled": true,
-      "firstName": "viewer",
-      "lastName": "borealis.test",
+      "firstName": "Vide",
+      "lastName": "Viewer",
       "attributes": {
         "org_id": [
           "22222222-2222-4222-8222-222222222222"

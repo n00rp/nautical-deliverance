@@ -103,6 +103,8 @@ After any change to the GitHub repository settings, run `bash tools/check_branch
 
 Realm `nautical-deliverance` in `infra/keycloak/realm-dev.json`. Test-only credentials: the password is the username.
 
+The realm user ids are pinned (they match the seeded `app_user` rows), so a dev realm imported before that needs `docker compose -f infra/docker-compose.yml down -v` once.
+
 | Username / password | Organisation | Role |
 |---|---|---|
 | `admin@acme.test` | Acme | admin |

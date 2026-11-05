@@ -41,12 +41,16 @@ DEV_ORGS = {
 # Must match `id`, `org_id`, names, e-mails and roles of infra/keycloak/realm-dev.json (the id is
 # the Keycloak `sub`, so a user's first login upserts onto the seeded row).
 DEV_USERS = tuple(
-    (uuid.UUID(f"{c * 8}-0000-4000-8000-{n:012d}"), org, f"{role} {dom}", f"{role}@{dom}", role)
-    for c, org, dom in (
-        ("a", uuid.UUID("11111111-1111-4111-8111-111111111111"), "acme.test"),
-        ("b", uuid.UUID("22222222-2222-4222-8222-222222222222"), "borealis.test"),
+    (uuid.UUID(f"{c * 8}-0000-4000-8000-{n:012d}"), org, name, f"{role}@{dom}", role)
+    for c, org, dom, people in (
+        ("a", uuid.UUID("11111111-1111-4111-8111-111111111111"), "acme.test",
+         ("Ada Admin", "Bea Buyer", "Olle Operator", "Vera Viewer")),
+        ("b", uuid.UUID("22222222-2222-4222-8222-222222222222"), "borealis.test",
+         ("Alma Admin", "Bo Buyer", "Otto Operator", "Vide Viewer")),
     )
-    for n, role in enumerate(("admin", "bunker_buyer", "operator", "viewer"), 1)
+    for n, (role, name) in enumerate(
+        zip(("admin", "bunker_buyer", "operator", "viewer"), people, strict=True), 1
+    )
 )  # fmt: skip
 
 PRODUCTS = (  # name, default unit (spec §3.1, per the brief)
@@ -409,13 +413,16 @@ def _scope(conn: Connection, org: uuid.UUID) -> _Org:
 
 
 def seed_demo_users(engine: Engine, now: datetime | None = None) -> None:
-    """Insert the realm users (name = "firstName lastName"); safe to re-run."""
+    """Insert the realm users, refreshing name, e-mail and roles; safe to re-run."""
     now = now or datetime.now(UTC)
     with engine.begin() as conn:
         for uid, org, name, email, role in DEV_USERS:
             _scope(conn, org).put(
                 "INSERT INTO app_user (id, organization_id, last_seen_at, name, email, roles)"
-                " VALUES (:i, :o, :t, :n, :e, :r) ON CONFLICT (id) DO NOTHING",
+                " VALUES (:i, :o, :t, :n, :e, :r) ON CONFLICT (id) DO UPDATE"
+                " SET name = :n, email = :e, roles = :r"
+                " WHERE (app_user.name, app_user.email, app_user.roles)"
+                " IS DISTINCT FROM (:n, :e, :r)",
                 i=uid,
                 t=now,
                 n=name,
