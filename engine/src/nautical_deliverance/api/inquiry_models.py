@@ -231,4 +231,5 @@ class InquiryListItem(BaseModel):
     rfq_sent: int | None
     offer_total: int | None  # null for the Operator: how many offers came in is commercial
     winner_counterparty_name: str | None
+    nomination_sent: int | None  # sent nomination versions; null for the Operator (prices)
     eta_warning: bool

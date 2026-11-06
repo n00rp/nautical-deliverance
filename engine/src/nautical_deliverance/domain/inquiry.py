@@ -1,6 +1,6 @@
 """Inquiry status flow, reference format and field sets (B2-D5, B2-R05..R07)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 LineUnit = Unit  # same mt / m3 values as master data
+ETA_WARNING_WINDOW = timedelta(hours=48)
 
 
 class Status(StrEnum):
@@ -74,3 +75,11 @@ def format_reference(created_at: datetime, n: int) -> str:
         msg = "n must be >= 1"
         raise ValueError(msg)
     return f"INQ-{created_at.astimezone(UTC):%y%m}-{n:03d}"
+
+
+def eta_warning(state: str, eta: datetime | None, now: datetime) -> bool:
+    """Return the B2 ETA warning: an open inquiry whose ETA is inside the window (or passed)."""
+    if eta is None:
+        return False
+    open_ = state not in (Status.NOMINATED, Status.CANCELLED)
+    return open_ and eta < now + ETA_WARNING_WINDOW

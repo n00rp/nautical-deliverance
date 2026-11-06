@@ -14,13 +14,13 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     import uuid
 
-from nautical_deliverance.api.common import eta_warning
+from nautical_deliverance.domain.inquiry import eta_warning
 from nautical_deliverance.domain.nomination import render_nomination
 from nautical_deliverance.domain.offer import evaluate_offer, lowest
 from nautical_deliverance.domain.rfq import render_rfq
 from nautical_deliverance.persistence import dashboard_repo, nomination_repo, offer_repo, seed
 from nautical_deliverance.persistence.models import Nomination, Offer, Rfq
-from nautical_deliverance.persistence.rfq_repo import build_context
+from nautical_deliverance.persistence.rfq_repo import build_context, changed_since_sent
 
 REALM = Path(__file__).parents[3] / "infra/keycloak/realm-dev.json"
 REF = re.compile(r"INQ-(\d{4})-(\d{3})")
@@ -149,11 +149,12 @@ def test_demo_rfqs(seeded: Engine, org: uuid.UUID) -> None:
     assert any(r["status"] == "declined" for r in rows)
     active = [(r["inquiry_id"], r["counterparty_id"]) for r in rows if r["status"] != "withdrawn"]
     assert len(active) == len(set(active))
-    for r in rows:
-        if r["status"] in ("sent", "declined") and r["istatus"] != "nominated":
-            assert r["inquiry_version_at_send"] == r["iversion"]
+    sent = [r for r in rows if r["status"] in ("sent", "declined")]
     # the nominated demo inquiry's ETA was amended after its RFQ went out: its text is stale
-    sent = [r for r in rows if r["status"] in ("sent", "declined") and r["istatus"] != "nominated"]
+    stale = [r for r in sent if r["istatus"] == "nominated"]
+    assert stale
+    for r in sent:
+        assert (r in stale) == (r["inquiry_version_at_send"] < r["iversion"])
     with seeded.begin() as conn:
         conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
         s = Session(conn)
@@ -161,7 +162,8 @@ def test_demo_rfqs(seeded: Engine, org: uuid.UUID) -> None:
             rfq = s.get(Rfq, r["id"])
             assert rfq is not None
             ctx = build_context(s, rfq)
-            assert (rfq.sent_subject, rfq.sent_body) == render_rfq(ctx)
+            assert ((rfq.sent_subject, rfq.sent_body) != render_rfq(ctx)) == (r in stale)
+            assert changed_since_sent(s, rfq) == (r in stale)
             assert rfq.sent_to_email == ctx.recipient_email
     assert all(r["sent_to_email"].endswith(".example") for r in sent)
     emails = q(seeded, org, "SELECT email FROM contact")

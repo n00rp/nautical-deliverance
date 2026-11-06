@@ -23,3 +23,11 @@ class Principal:
     roles: frozenset[Role]
     name: str = ""
     email: str = ""
+
+
+RFQ_READERS = frozenset({Role.BUNKER_BUYER, Role.ADMIN, Role.VIEWER})
+
+
+def sees_rfqs(principal: Principal) -> bool:
+    """Only RFQ readers may learn who or how many suppliers were contacted (R6)."""
+    return bool(RFQ_READERS & principal.roles)

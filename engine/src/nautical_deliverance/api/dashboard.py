@@ -12,8 +12,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from nautical_deliverance.api.access import Eng, Now  # noqa: TC001
-from nautical_deliverance.api.common import eta_warning, scope, sees_rfqs
+from nautical_deliverance.api.common import scope
 from nautical_deliverance.api.inquiries import Reader  # noqa: TC001
+from nautical_deliverance.domain.identity import sees_rfqs
+from nautical_deliverance.domain.inquiry import eta_warning
 from nautical_deliverance.persistence import dashboard_repo
 
 router = APIRouter()

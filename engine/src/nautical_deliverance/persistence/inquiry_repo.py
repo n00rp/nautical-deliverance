@@ -18,6 +18,7 @@ from nautical_deliverance.persistence.models import (
     InquiryReferenceCounter,
     IsoSpecVersion,
     LegalEntity,
+    Nomination,
     Offer,
     Port,
     Product,
@@ -73,6 +74,15 @@ def _offer_count() -> Any:  # noqa: ANN401
     return select(func.count()).where(Offer.inquiry_id == Inquiry.id).scalar_subquery()
 
 
+def _nomination_count() -> Any:  # noqa: ANN401
+    """Correlated number of sent nomination versions of the inquiry."""
+    return (
+        select(func.count())
+        .where(Nomination.inquiry_id == Inquiry.id, Nomination.status == "sent")
+        .scalar_subquery()
+    )
+
+
 def _winner_name() -> Any:  # noqa: ANN401
     """Correlated name of the selected offer's counterparty (kept even once it is inactive)."""
     return (
@@ -103,6 +113,7 @@ def list_rows(
             _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
             _offer_count().label("offer_total"),
             _winner_name().label("winner_counterparty_name"),
+            _nomination_count().label("nomination_sent"),
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)
         .join(Port, Port.id == Inquiry.port_id)

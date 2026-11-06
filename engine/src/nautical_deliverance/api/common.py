@@ -1,7 +1,6 @@
 """Helpers shared by the API routers: scoped transactions, error shapes, validators."""
 
 from contextlib import contextmanager
-from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 import psycopg.errors
@@ -13,8 +12,6 @@ from sqlalchemy import Engine  # noqa: TC002
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session  # noqa: TC002
 
-from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import Status
 from nautical_deliverance.domain.rfq import single_address
 from nautical_deliverance.persistence.db import org_session
 
@@ -23,23 +20,10 @@ if TYPE_CHECKING:
 
     from fastapi.exceptions import RequestValidationError
 
+    from nautical_deliverance.domain.identity import Principal
+
 DB_DOWN = "Database unavailable"
 STALE = "Record was changed by someone else"
-ETA_WARNING_WINDOW = timedelta(hours=48)
-RFQ_READERS = frozenset({Role.BUNKER_BUYER, Role.ADMIN, Role.VIEWER})
-
-
-def eta_warning(state: str, eta: datetime | None, now: datetime) -> bool:
-    """Return the B2 ETA warning: an open inquiry whose ETA is inside the window (or passed)."""
-    if eta is None:
-        return False
-    open_ = state not in (Status.NOMINATED, Status.CANCELLED)
-    return open_ and eta < now + ETA_WARNING_WINDOW
-
-
-def sees_rfqs(principal: Principal) -> bool:
-    """Only RFQ readers may learn who or how many suppliers were contacted (R6)."""
-    return bool(RFQ_READERS & principal.roles)
 
 
 def _field(loc: tuple[int | str, ...]) -> str:

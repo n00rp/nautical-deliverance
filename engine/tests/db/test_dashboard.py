@@ -330,6 +330,9 @@ def test_other_organisation_changes_nothing(
     other.make(other.create()["id"], ALPHA)
     mine = other.api("/dashboard")
     assert mine["month"]["nominated_mt"] == before["month"]["nominated_mt"] != "0.000"
+    assert mine["attention"]  # not vacuous: org B has items of its own
+    assert mine["status_counts"] != before["status_counts"]  # B's extra draft, not A's data
+    assert sum(mine["status_counts"].values()) == sum(before["status_counts"].values()) + 1
     assert {i["inquiry_id"] for i in mine["attention"]}.isdisjoint(
         i["inquiry_id"] for i in before["attention"]
     )

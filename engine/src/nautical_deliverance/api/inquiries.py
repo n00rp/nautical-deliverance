@@ -16,9 +16,7 @@ from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
 from nautical_deliverance.api.common import (
     conflict,
-    eta_warning,
     scope,
-    sees_rfqs,
     unprocessable,
 )
 from nautical_deliverance.api.inquiry_models import (
@@ -32,8 +30,13 @@ from nautical_deliverance.api.inquiry_models import (
     VersionIn,
 )
 from nautical_deliverance.api.users import current_user, get_users_engine
-from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status, can_transition
+from nautical_deliverance.domain.identity import Principal, Role, sees_rfqs
+from nautical_deliverance.domain.inquiry import (
+    LOCKED_AFTER_DRAFT,
+    Status,
+    can_transition,
+    eta_warning,
+)
 from nautical_deliverance.persistence.audit import history, record_change
 from nautical_deliverance.persistence.inquiry_repo import (
     DECISION_COLUMNS,
@@ -300,7 +303,11 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
         rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
-        hide = {} if sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "offer_total"))
+        hide = (
+            {}
+            if sees_rfqs(principal)
+            else dict.fromkeys((*RFQ_FIELDS, "offer_total", "nomination_sent"))
+        )
         return [
             InquiryListItem(
                 **{**r._asdict(), **hide}, eta_warning=eta_warning(r.status, r.eta, now)
