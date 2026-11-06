@@ -316,6 +316,26 @@ jobs:
         if: failure()
         run: docker compose -p nd-prod-smoke logs --no-color
 
+  # req: B6-R05
+  # tools/pilot_user.py against a real Keycloak (pilot realm) started by the test itself.
+  pilot-user:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - run: uv sync --locked --project engine
+      - name: Pilot user script against Keycloak
+        env:
+          ND_KC_TESTS: "1"
+        run: uv run --locked --project engine pytest tools/test_pilot_user.py -v
+
   # req: S0-R16
   readme:
     runs-on: ubuntu-latest
