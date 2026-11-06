@@ -154,8 +154,9 @@ def test_no_real_company_names(seeded: Engine) -> None:
             assert not [d for d in DENY if d in blob], t
 
 
-@pytest.mark.req("B1-R10")
+@pytest.mark.req("B6-R04")
 def test_seed_gate_defaults_to_off() -> None:
-    """The entrypoint seeds only when ND_SEED_DEV_DATA is exactly "true"; unset means off."""
+    """The entrypoint seeds only when ND_SEED is set (dev|pilot); unset means off."""
     script = (Path(__file__).parents[2] / "docker-entrypoint.sh").read_text(encoding="utf-8")
-    assert 'if [ "${ND_SEED_DEV_DATA:-false}" = "true" ]; then' in script
+    assert 'if [ -n "${ND_SEED:-}" ]; then' in script
+    assert "ND_SEED_DEV_DATA" not in script

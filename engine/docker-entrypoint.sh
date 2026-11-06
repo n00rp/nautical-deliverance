@@ -9,7 +9,7 @@ until python -c "import os,psycopg; psycopg.connect(os.environ['ND_MIGRATION_DAT
   sleep 1
 done
 alembic upgrade head
-if [ "${ND_SEED_DEV_DATA:-false}" = "true" ]; then
+if [ -n "${ND_SEED:-}" ]; then  # dev | pilot (anything else seeds nothing)
   python -m nautical_deliverance.persistence.seed
 fi
 unset ND_MIGRATION_DATABASE_URL  # the server only ever needs the nd_app URL
