@@ -4,7 +4,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE=(docker compose -f "$ROOT/infra/docker-compose.yml")
+COMPOSE=(docker compose -f "$ROOT/infra/docker-compose.yml"${ND_COMPOSE_OVERRIDE:+ -f "$ND_COMPOSE_OVERRIDE"})
 TAG="${ND_IMAGE_TAG:-dev}"  # same default as docker-compose.yml
 ISSUER="http://localhost:8081/realms/nautical-deliverance"
 failures=()

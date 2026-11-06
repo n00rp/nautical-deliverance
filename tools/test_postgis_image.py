@@ -52,7 +52,7 @@ def test_multiarch_job_trigger_paths_and_platforms() -> None:
     job = ci.split("\n  multiarch:\n", 1)[1].split("\n  # req: S0-R16", 1)[0]
     assert '"$EVENT" = push' in job
     assert "(^|/)Dockerfile|^infra/" in job
-    assert "context: [infra/postgis, engine, web]" in job
+    assert "context: [infra/postgis, infra/backup, engine, web]" in job
     assert "--platform linux/amd64,linux/arm64" in job
     assert "--push" not in job.split("docker buildx build", 1)[1]
     assert "multiarch" in ci.split("  ci-duration:", 1)[1]

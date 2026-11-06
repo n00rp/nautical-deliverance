@@ -1,0 +1,29 @@
+# CI/test only (tools/test_backup_restore.sh, B6-R06): the dev stack with Keycloak on the Postgres
+# `keycloak` database (as in production) plus MinIO as the S3 stand-in. Test credentials only.
+# MinIO: upstream no longer publishes images (R8 in docs/versions.md); this frozen legacy build is
+# pinned by digest and runs only on the throwaway test network. Never use it for real data.
+services:
+  db:
+    environment:
+      ND_DB_KEYCLOAK_PASSWORD: ci-keycloak-password
+
+  keycloak:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ci-keycloak-password
+
+  minio:
+    image: bitnamilegacy/minio@sha256:8935e75fa5d11295c17171e4aa49efe390a1193cd7f12e4d21b92af9ffef09d7
+    environment:
+      MINIO_ROOT_USER: ci-minio-user
+      MINIO_ROOT_PASSWORD: ci-minio-password
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20

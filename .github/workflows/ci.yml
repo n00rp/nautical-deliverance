@@ -250,7 +250,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        context: [infra/postgis, engine, web]
+        context: [infra/postgis, infra/backup, engine, web]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -337,6 +337,36 @@ jobs:
           ND_KC_REQUIRED: "1"
         run: uv run --locked --project engine pytest tools/test_pilot_user.py -v -rs
 
+  # req: B6-R06
+  # Backup -> wipe -> restore against MinIO (tools/test_backup_restore.sh). The backup image is
+  # scanned like our own; the MinIO images are test-only and pinned by digest (ruling R8).
+  backup-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ND_IMAGE_TAG: ${{ github.sha }}
+      ND_GIT_SHA: ${{ github.sha }}
+      # Trivy 0.76.1
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the images the test uses
+        run: |
+          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
+          docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
+          docker build -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
+          docker build -t "nautical-deliverance/backup:$ND_IMAGE_TAG" infra/backup
+      - name: Scan the backup image (Trivy, fixable HIGH and CRITICAL fail)
+        run: |
+          docker save "nautical-deliverance/backup:$ND_IMAGE_TAG" -o "$RUNNER_TEMP/backup.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image             --input /scan/backup.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+      - name: Backup, wipe, restore, smoke
+        env:
+          NO_BUILD: "1"
+        run: bash tools/test_backup_restore.sh
+
   # req: S0-R16
   readme:
     runs-on: ubuntu-latest
@@ -357,7 +387,7 @@ jobs:
   # multiarch is in needs: otherwise the gate could run before the slow QEMU build and report a
   # wall time that leaves it out. A skipped multiarch run is a fast green job.
   ci-duration:
-    needs: [engine, web, visual, traceability, security, smoke, multiarch, prod-overlay, readme]
+    needs: [engine, web, visual, traceability, security, smoke, multiarch, prod-overlay, backup-restore, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

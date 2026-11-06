@@ -16,6 +16,7 @@ INFRA = ROOT / "infra"
 CADDYFILE = INFRA / "caddy" / "Caddyfile"
 REALM = INFRA / "keycloak" / "realm-pilot.json"
 ENV_EXAMPLE = INFRA / ".env.prod.example"
+BACKUP = INFRA / "backup"
 # Dummy values only: `config` needs every `:?` variable to be set.
 DUMMY_ENV = {
     "ND_PUBLIC_HOST": "pilot.example.test",
@@ -24,6 +25,11 @@ DUMMY_ENV = {
     "ND_DB_APP_PASSWORD": "x",
     "ND_DB_KEYCLOAK_PASSWORD": "x",
     "ND_KEYCLOAK_ADMIN_PASSWORD": "x",
+    "ND_BACKUP_BUCKET": "x",
+    "ND_BACKUP_S3_ENDPOINT": "https://x.example.test",
+    "ND_BACKUP_S3_REGION": "x",
+    "ND_BACKUP_S3_ACCESS_KEY": "x",
+    "ND_BACKUP_S3_SECRET_KEY": "x",
 }
 
 
@@ -85,10 +91,36 @@ def test_keycloak_runs_production_mode_behind_the_proxy() -> None:
 @pytest.mark.req("B6-R01")
 def test_every_service_restarts_and_every_image_is_pinned_or_built() -> None:
     services = _config()["services"]
-    assert set(services) == {"caddy", "db", "keycloak", "engine", "web"}
+    assert set(services) == {"caddy", "db", "keycloak", "engine", "web", "backup"}
     for name, service in services.items():
         assert service.get("restart") == "unless-stopped", name
     assert re.search(r"@sha256:[0-9a-f]{64}$", services["caddy"]["image"])
+
+
+@needs_docker
+@pytest.mark.req("B6-R06")
+def test_backup_service_runs_nightly_and_survives_a_reboot() -> None:
+    backup = _config()["services"]["backup"]
+    assert backup["restart"] == "unless-stopped"  # comes back after a reboot (Review Focus #2)
+    jobs = [
+        line.split()
+        for line in (BACKUP / "crontab").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert jobs == [["15", "2", "*", "*", "*", "/usr/local/bin/backup.sh"]]
+    assert not backup.get("ports")
+    env = backup["environment"]
+    assert env["PGHOST"] == "db"
+    assert env["ND_BACKUP_S3_ENDPOINT"] == "https://x.example.test"
+    assert env["ND_BACKUP_BUCKET"] == "x"
+
+
+@pytest.mark.req("B6-R06")
+def test_recipients_file_is_the_marked_ci_placeholder_until_the_owner_replaces_it() -> None:
+    text = (BACKUP / "age-recipients.txt").read_text(encoding="utf-8")
+    assert "NOT-FOR-PRODUCTION-PLACEHOLDER" in text
+    assert re.search(r"^age1[0-9a-z]{58}$", text, re.MULTILINE)
+    assert "AGE-SECRET-KEY" not in text
 
 
 @needs_docker
