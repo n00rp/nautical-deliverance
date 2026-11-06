@@ -39,7 +39,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-      # Same digest-pinned image and role script as local dev (compose mounts infra/db/init).
+      # Same own PostGIS image (infra/postgis, built by compose on first `up`) and role script as
+      # local dev (compose mounts infra/db/init). A `services:` container cannot build an image.
       - name: Start database
         run: docker compose -f infra/docker-compose.yml up --detach --wait --wait-timeout 180 db
       - name: Install
@@ -212,11 +213,12 @@ jobs:
           persist-credentials: false
       - name: Build images tagged with the commit
         run: |
+          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
           docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
           docker build -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
       - name: Scan images (Trivy, fixable HIGH and CRITICAL fail; D-046)
         run: |
-          for name in engine web; do
+          for name in postgis engine web; do
             docker save "nautical-deliverance/$name:$ND_IMAGE_TAG" -o "$RUNNER_TEMP/$name.tar"
             docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image \
               --input "/scan/$name.tar" --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
@@ -236,6 +238,41 @@ jobs:
         if: always()
         run: docker compose -f infra/docker-compose.yml down --volumes
 
+  # req: B6-R02
+  # Ruling R1: arm64 builds run under QEMU and are slow, so this job runs on pushes to main and on
+  # PRs that touch a Dockerfile or infra/. On other PRs the steps are skipped and the job is green.
+  multiarch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Dockerfiles or infra/ changed?
+        id: changed
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$EVENT" = push ] || git diff --name-only "$BASE_SHA" HEAD | grep -Eq '(^|/)Dockerfile|^infra/'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile or infra/ change: arm64 build skipped (R1)."
+          fi
+      - if: steps.changed.outputs.run == 'true'
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - if: steps.changed.outputs.run == 'true'
+        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+      # No --push and no --load: the build proves both architectures compile; nothing is published.
+      - name: Build postgis, engine and web for amd64 and arm64
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          for ctx in infra/postgis engine web; do
+            docker buildx build --platform linux/amd64,linux/arm64 "$ctx"
+          done
+
   # req: S0-R16
   readme:
     runs-on: ubuntu-latest
@@ -253,8 +290,10 @@ jobs:
         run: docker compose -f infra/docker-compose.yml config --quiet
 
   # req: S0-R14
+  # multiarch is in needs: otherwise the gate could run before the slow QEMU build and report a
+  # wall time that leaves it out. A skipped multiarch run is a fast green job.
   ci-duration:
-    needs: [engine, web, visual, traceability, security, smoke, readme]
+    needs: [engine, web, visual, traceability, security, smoke, multiarch, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

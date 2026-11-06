@@ -30,7 +30,7 @@ Dates are the Docker Hub / quay.io `last_updated` of the tag (registry tags are 
 
 | Item | Pinned tag | Published | Notes |
 |---|---|---|---|
-| PostGIS | `postgis/postgis:17-3.5` | 2026-08-31 | PostgreSQL 17 + PostGIS 3.5. `18-3.6` exists but was pushed 2026-10-26 (< 14 days); revisit later. |
+| PostGIS | own image `infra/postgis` on `postgres:17.11-trixie` (index digest `748a18a5...`), `postgresql-17-postgis-3` + `-scripts` 3.5.2+dfsg-1 | 2026-11-05 (base), 2026-02 (PostGIS) | Multi-arch (amd64 + arm64), B6-R02. Base is < 14 days old by R14 (17.10 has 17 fixable PostgreSQL CVEs). PGDG only has 3.6+ for trixie; 3.5.2 comes from Debian main. gosu (Go 1.24.6 stdlib CVEs) is replaced by a setpriv wrapper. Trivy clean. |
 | Keycloak | `quay.io/keycloak/keycloak:26.8.0` | 2026-10-10 | 26.8.1 tags pushed 2026-10-13 / 2026-10-31 (too recent). |
 | Node (LTS "Krypton", v24) | `node:24.22.0-alpine` | 2026-10-14 | Node 24.22.0 released 2026-10-14. Node 26 became LTS 2026-10-28 (too recent). |
 | nginx | `nginxinc/nginx-unprivileged:1.30.6-alpine` | 2026-10-19 | Stable 1.30 branch. |
