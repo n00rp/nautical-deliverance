@@ -191,6 +191,12 @@ class Inquiry(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     rfq_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    winner_offer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("offer.id"))
+    decision_reason: Mapped[str | None] = mapped_column(Text)
+    decision_note: Mapped[str | None] = mapped_column(Text)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
+    decided_total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
 
 
 class InquiryLine(Base):
@@ -244,3 +250,48 @@ class Rfq(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Offer(Base):
+    """A supplier's offer for one sent RFQ (one per RFQ)."""
+
+    __tablename__ = "offer"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"))
+    rfq_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("rfq.id"), unique=True)
+    inquiry_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inquiry.id"))
+    currency: Mapped[str] = mapped_column(Text, server_default=text("'USD'"))
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payment_terms: Mapped[str | None] = mapped_column(Text)
+    delivery_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivery_method: Mapped[str | None] = mapped_column(Text)
+    physical_supplier: Mapped[str | None] = mapped_column(Text)
+    supplier_comment: Mapped[str | None] = mapped_column(Text)
+    barging_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default=text("0"))
+    port_call_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default=text("0"))
+    agent_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default=text("0"))
+    surveyor_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default=text("0"))
+    other_cost: Mapped[Decimal] = mapped_column(Numeric(12, 2), server_default=text("0"))
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    version: Mapped[int] = mapped_column(server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OfferLine(Base):
+    """Price (and density for an m3 line without one) offered for one inquiry line."""
+
+    __tablename__ = "offer_line"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"))
+    offer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("offer.id", ondelete="CASCADE"))
+    inquiry_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inquiry.id"))
+    inquiry_line_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inquiry_line.id"))
+    price_per_mt: Mapped[Decimal] = mapped_column(Numeric(12, 3))
+    density: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
