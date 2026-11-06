@@ -1,6 +1,6 @@
 # B6 Deployment — Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-06 (including proposed decisions B6-D7–B6-D14)
 - **Date:** 2026-11-06
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md), build step B6 (D-076); D-066 (demo data only), D-068 (free cloud environment, owner-controlled, HTTPS, our Keycloak), D-022 (portable), E9; pilot 1 readiness P1–P5 (§6).
 - **Goal:** Pilot 1 runs in an owner-controlled free cloud environment over HTTPS, is redeployed automatically on every green merge, is backed up nightly with a tested restore, has its pilot users created safely, and is covered by an end-to-end test and a short user guide — completing P1–P5.
