@@ -167,6 +167,7 @@ class DecisionOut(BaseModel):
     decided_at: datetime
     decided_by_name: str
     decided_total: str
+    currency: str
 
 
 class InquiryOut(BaseModel):

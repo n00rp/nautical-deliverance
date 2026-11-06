@@ -160,6 +160,10 @@ def line_text(  # noqa: PLR0913, PLR0917
     return " | ".join(parts)
 
 
+# The decision columns the Operator never sees; also the audited decision fields.
+DECISION_COLUMNS = ("winner_offer_id", "decision_reason", "decision_note", "decided_total")
+
+
 def decision(session: Session, inq: Inquiry) -> dict[str, Any] | None:
     """Return the recorded winner decision (commercial: never show it to an Operator)."""
     if inq.winner_offer_id is None or inq.decided_total is None:
@@ -173,6 +177,7 @@ def decision(session: Session, inq: Inquiry) -> dict[str, Any] | None:
         "decided_at": inq.decided_at,
         "decided_by_name": by.name or by.email,
         "decided_total": format(inq.decided_total, "f"),
+        "currency": "USD",  # D-071: the system is USD-only
     }
 
 

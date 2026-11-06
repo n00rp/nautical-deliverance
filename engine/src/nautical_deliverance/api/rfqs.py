@@ -40,6 +40,7 @@ from nautical_deliverance.persistence.models import (
     Contact,
     Counterparty,
     Inquiry,
+    Offer,
     Rfq,
 )
 
@@ -356,7 +357,11 @@ def withdraw(
 def decline(rfq_id: uuid.UUID, body: VersionIn, principal: Writer, engine: Eng, now: Now) -> object:
     """Record that the supplier declined a sent RFQ."""
     with scope(principal, engine) as s:
-        _, rfq = _lock(s, rfq_id, body.version)
+        inq, rfq = _lock(s, rfq_id, body.version)
+        if s.scalar(
+            select(Offer.id).where(Offer.id == inq.winner_offer_id, Offer.rfq_id == rfq.id)
+        ):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Offer is the selected winner")  # R8
         _move(rfq, RfqStatus.DECLINED)
         return _finish(s, principal, now, rfq, "decline", {"status": RfqStatus.DECLINED.value})
 

@@ -30,6 +30,7 @@ from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status, can_transition
 from nautical_deliverance.persistence.audit import record_change
 from nautical_deliverance.persistence.inquiry_repo import (
+    DECISION_COLUMNS,
     dec,
     detail,
     line_rows,
@@ -64,7 +65,6 @@ OPERATOR_ROLES = frozenset({Role.OPERATOR, Role.ADMIN})
 BUYER_ROLES = frozenset({Role.BUNKER_BUYER, Role.ADMIN})
 RFQ_READERS = BUYER_ROLES | {Role.VIEWER}
 RFQ_FIELDS = ("rfq_deadline", "rfq_total", "rfq_sent")  # null for everyone else (R6)
-DECISION_FIELDS = ("winner_offer_id", "decision_reason", "decision_note", "decided_total")
 USER_ROLES = {"operator_id": OPERATOR_ROLES, "buyer_id": BUYER_ROLES}  # requester: any user
 MASTER: dict[str, tuple[Any, str]] = {
     "vessel_id": (Vessel, "vessel"),
@@ -530,6 +530,6 @@ def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> ob
         if _sees_rfqs(principal):
             return out
         for e in out:  # RFQ deadline and decision details are commercial (R6, B4-R09)
-            for k in ("rfq_deadline", *DECISION_FIELDS):
+            for k in ("rfq_deadline", *DECISION_COLUMNS):
                 e.changes.pop(k, None)
         return [e for e in out if e.changes]

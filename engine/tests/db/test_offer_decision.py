@@ -116,6 +116,7 @@ def test_rationale_rules_and_history(admin: Oc) -> None:
     assert out["decision"]["reason"] == "timing"
     assert out["decision"]["note"] == "Berth is free on the 12th"
     assert out["decision"]["decided_total"] == "675000.00"
+    assert out["decision"]["currency"] == "USD"  # D-071
     assert out["winner_counterparty_name"] == "Beta Marine"
     hist = admin.api(f"/inquiries/{inq['id']}/history")[0]
     assert hist["action"] == "select_winner"
@@ -221,6 +222,17 @@ def test_offer_of_another_inquiry_is_422(admin: Oc) -> None:
     for ident in (foreign["id"], str(uuid.uuid4())):
         r = pick(admin, inq, ident)
         assert errors(r) == {"offer_id": "Not an offer of this inquiry"}
+
+
+@pytest.mark.req("B4-R08")
+def test_winner_rfq_cannot_be_declined(admin: Oc) -> None:
+    """Declining the RFQ of the selected offer is 409 (R8); other RFQs can still be declined."""
+    inq, low, high = two(admin)
+    assert pick(admin, inq, low["id"]).status_code == OK
+    r = admin.http.post(f"/api/v1/rfqs/{low['rfq_id']}/decline", json={"version": 2})
+    assert (r.status_code, r.json()["detail"]) == (CONFLICT, "Offer is the selected winner")
+    r = admin.http.post(f"/api/v1/rfqs/{high['rfq_id']}/decline", json={"version": 2})
+    assert r.status_code == OK, r.text
 
 
 @pytest.mark.req("B4-R08")
@@ -350,7 +362,8 @@ def test_expired_cheapest_offer_is_not_lowest(admin: Oc) -> None:
     dear = admin.offer(rfqs[2]["id"], lines=prices(inq, "700", "700"))
     low, deltas = lowest_ids(admin, inq)
     assert low == {next_["id"]}
-    assert deltas == {cheap["id"]: "-25000.00", next_["id"]: "0.00", dear["id"]: "25000.00"}
+    # Only selectable rows compare to the lowest, so a delta is never negative (R7).
+    assert deltas == {cheap["id"]: None, next_["id"]: "0.00", dear["id"]: "25000.00"}
     assert pick(admin, inq, cheap["id"]).status_code == UNPROCESSABLE
     assert pick(admin, inq, next_["id"]).status_code == OK
     assert pick(admin, inq, dear["id"]).status_code == UNPROCESSABLE  # needs a reason
@@ -364,8 +377,9 @@ def test_declined_cheapest_offer_is_not_lowest(admin: Oc) -> None:
     next_ = admin.offer(rfqs[1]["id"], lines=prices(inq, "650", "700"))
     r = admin.http.post(f"/api/v1/rfqs/{rfqs[0]['id']}/decline", json={"version": 2})
     assert r.status_code == OK, r.text
-    low, _ = lowest_ids(admin, inq)
+    low, deltas = lowest_ids(admin, inq)
     assert low == {next_["id"]}
+    assert deltas == {cheap["id"]: None, next_["id"]: "0.00"}  # R7
     assert pick(admin, inq, cheap["id"], reason="timing").status_code == UNPROCESSABLE
     assert pick(admin, inq, next_["id"]).status_code == OK
 

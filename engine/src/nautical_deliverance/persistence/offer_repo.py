@@ -14,7 +14,7 @@ from nautical_deliverance.domain.offer import (
     format_qty_mt,
     lowest,
 )
-from nautical_deliverance.persistence.inquiry_repo import decision
+from nautical_deliverance.persistence.inquiry_repo import DECISION_COLUMNS, decision
 from nautical_deliverance.persistence.models import (
     Counterparty,
     Inquiry,
@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 CENT = Decimal("0.01")
-DECISION_COLUMNS = ("winner_offer_id", "decision_reason", "decision_note", "decided_total")
 COSTS = ("barging_cost", "port_call_cost", "agent_cost", "surveyor_cost", "other_cost")
 
 
@@ -139,8 +138,11 @@ def comparison(session: Session, inq: Inquiry, now: datetime) -> dict[str, Any]:
     for r in rows:
         r["offer_id"] = r["id"]
         r["lowest"] = str(r["id"]) in low
+        # R7: only rows that can be selected now compare to the lowest, so never negative.
         r["delta_to_lowest"] = (
-            _text(totals[r["id"]] - floor) if r["complete"] and floor is not None else None
+            _text(totals[r["id"]] - floor)
+            if r in open_ and r["complete"] and floor is not None
+            else None
         )
         r["expired"] = r["valid_until"] < now
         r["expiring_soon"] = now <= r["valid_until"] < now + SOON
