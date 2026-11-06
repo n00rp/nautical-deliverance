@@ -70,13 +70,13 @@ done
 
 # Keycloak pages keep Keycloak's own CSP (not the app's), so the login page's inline scripts run.
 # (-L: the auth endpoint redirects to the login form; judge the final response.)
-code="$("${CURL[@]}" -L -c "$WORK/jar" -b "$WORK/jar" -D "$WORK/login.h" -o /dev/null -w '%{http_code}'   "$URL/realms/nautical-deliverance/protocol/openid-connect/auth?client_id=nd-web&redirect_uri=$URL/&response_type=code&scope=openid&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256" || true)"
-login="$(tr -d '' < "$WORK/login.h")"
-login="${login##*$'
-
-'}"
+code="$("${CURL[@]}" -L -c "$WORK/jar" -b "$WORK/jar" -D "$WORK/login.h" -o /dev/null -w '%{http_code}' \
+  "$URL/realms/nautical-deliverance/protocol/openid-connect/auth?client_id=nd-web&redirect_uri=$URL/&response_type=code&scope=openid&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256" || true)"
+login="$(tr -d '\r' < "$WORK/login.h")"
+login="${login##*$'\n\n'}"
 [[ "$code" == 200 ]] && ok "login page = 200" || fail "login page status: $code"
-[[ "${login,,}" == *"content-security-policy:"* && "${login,,}" != *"connect-src 'self'; form-action"* ]]   && ok "login page carries Keycloak's CSP" || fail "login page CSP is missing or the app's"
+[[ "${login,,}" == *"content-security-policy:"* && "${login,,}" != *"connect-src 'self'; form-action"* ]] \
+  && ok "login page carries Keycloak's CSP" || fail "login page CSP is missing or the app's"
 
 # The token issuer is the discovery issuer: it must be the public URL even though Keycloak is
 # reached over plain HTTP inside the network.

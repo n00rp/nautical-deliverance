@@ -11,7 +11,7 @@
 - The E2E test lives in `e2e/` and uses Playwright in the already pinned Playwright container.
 - The deploy workflow is `.github/workflows/deploy.yml`.
 
-**Tech Stack:** as B5, plus Caddy, age, rclone (S3), MinIO (CI only).
+**Tech Stack:** as B5, plus Caddy, age, rclone (S3), SeaweedFS and aws-cli (CI only).
 
 **Spec:** [docs/superpowers/specs/2026-11-06-b6-deployment-design.md](../specs/2026-11-06-b6-deployment-design.md) covers all of B6-D1–D14 and B6-R01–R11.
 
@@ -19,7 +19,7 @@
 
 - **Repo path:** exactly `C:\Programing\nautical deliverence` ("deliverence" with an e; the path contains a space). Never use the sibling folder `nautical deliverance`. The repo is **private**.
 - **Gates:** all S0–B5 gates stay green. New workflow and compose changes must pass actionlint and `docker compose config`.
-- **Pinning:** every new base image (Caddy, postgres, MinIO, age/rclone helpers) is pinned by digest, and every tool version is pinned exactly (version at least two weeks old).
+- **Pinning:** every new base image (Caddy, postgres, SeaweedFS, age/rclone helpers) is pinned by digest, and every tool version is pinned exactly (version at least two weeks old).
 - **Licence check:** the licence allow-list check applies to every new dependency.
 - **Secrets:** no secret value ever appears in git. Secrets come from `infra/.env.prod` (gitignored, documented in `infra/.env.prod.example` with placeholders) or from GitHub secrets. gitleaks must stay green.
 - **Requirement tags:** use `req("B6-Rnn")` / `[B6-Rnn]`, or a `# req: B6-Rnn` comment where a CI job is the test, as for S0-R12. At the end, `python tools/trace.py --check` exits 0 and `docs/traceability.md` is regenerated.
@@ -135,7 +135,7 @@
 - Create `infra/backup/Dockerfile`, a small image with `pg_dump`/`pg_restore` matching PostgreSQL 17, `age` and `rclone`, all pinned.
 - Create `infra/backup/backup.sh`, `infra/backup/restore.sh` and `infra/backup/age-recipients.txt`. The recipients file holds the owner's public key. Until the owner supplies one, use a clearly marked CI test key, together with a runbook step to replace it.
 - Add a `backup` service to the prod overlay. It runs nightly from a container cron loop, for example `supercronic`, pinned, at 02:15 UTC.
-- Add `tools/test_backup_restore.sh` and a CI job using MinIO.
+- Add `tools/test_backup_restore.sh` and a CI job using SeaweedFS (S3 stand-in).
 
 **Rules:**
 - `backup.sh` does the following:
@@ -148,10 +148,10 @@
   
   It exits non-zero on any failure.
 - `restore.sh <key>` downloads the backup, decrypts it with the identity file given by `--identity` (the owner's private key), restores into an **empty** stack with `pg_restore --clean --if-exists`, and imports the realm.
-- Retention: the runbook documents a 14-day lifecycle rule. In CI, a MinIO lifecycle policy of 14 days is set and asserted with `mc ilm`.
+- Retention: the runbook documents a 14-day lifecycle rule. In CI, a SeaweedFS lifecycle rule of 14 days is set and asserted with aws-cli (`s3api get-bucket-lifecycle-configuration`).
 
 - [ ] **Step 1: Write the failing CI test** `tools/test_backup_restore.sh`, tagged `# req: B6-R06`. It must:
-  1. start the stack and MinIO;
+  1. start the stack and SeaweedFS;
   2. seed;
   3. create one inquiry through the API;
   4. run the backup;
@@ -160,7 +160,7 @@
   7. run the restore with the CI test identity;
   8. assert that the inquiry exists, the demo data is present and smoke passes;
   9. assert that the `.ok` marker exists and the lifecycle rule exists;
-  10. simulate a failed upload by stopping MinIO before upload, and assert a non-zero exit and no `.ok` marker.
+  10. simulate a failed upload by stopping SeaweedFS before upload, and assert a non-zero exit and no `.ok` marker.
 - [ ] **Step 2: Implement.** **Step 3:** Run the test locally and in CI, then run the gates.
 - [ ] **Step 4: Commit** as `feat(infra): add encrypted backup and restore`.
 
@@ -241,7 +241,7 @@
   - visual tests, with the second run clean;
   - cold smoke;
   - the prod-overlay local HTTPS check;
-  - backup and restore with MinIO;
+  - backup and restore with SeaweedFS;
   - E2E against the local stack;
   - the licence check;
   - Trivy;
