@@ -311,3 +311,26 @@ def test_dashboard_per_role(
         *("kind", "due_at", "detail"),
     }
     assert dash["status_counts"]["offers_received"] == 1
+
+
+@pytest.mark.req("B5-R03")
+def test_other_organisation_changes_nothing(
+    settings: Settings, app_engine: Engine, admin: Nc
+) -> None:
+    """Org B's inquiries, offers and nominations never reach org A's counts, figures or items."""
+    month_dataset(admin)
+    inq = won(admin)
+    setf(admin, Inquiry, inq["id"], eta=NOW + SEC)
+    before = admin.api("/dashboard")
+    assert {i["kind"] for i in before["attention"]} >= {ETA}
+    other = Nc(settings, app_engine, rfq_world(app_engine, "b"), Role.ADMIN)
+    month_dataset(other)
+    b_inq = won(other)
+    setf(other, Inquiry, b_inq["id"], eta=NOW + SEC)
+    other.make(other.create()["id"], ALPHA)
+    mine = other.api("/dashboard")
+    assert mine["month"]["nominated_mt"] == before["month"]["nominated_mt"] != "0.000"
+    assert {i["inquiry_id"] for i in mine["attention"]}.isdisjoint(
+        i["inquiry_id"] for i in before["attention"]
+    )
+    assert admin.api("/dashboard") == before

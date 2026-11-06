@@ -12,8 +12,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from nautical_deliverance.api.access import Eng, Now  # noqa: TC001
-from nautical_deliverance.api.common import scope
-from nautical_deliverance.api.inquiries import Reader, _eta_warning, _sees_rfqs
+from nautical_deliverance.api.common import eta_warning, scope, sees_rfqs
+from nautical_deliverance.api.inquiries import Reader  # noqa: TC001
 from nautical_deliverance.persistence import dashboard_repo
 
 router = APIRouter()
@@ -56,9 +56,9 @@ class DashboardOut(BaseModel):
 def get_dashboard(principal: Reader, engine: Eng, now: Now) -> object:
     """Attention list (earliest due first), status counts and month figures, by role."""
     with scope(principal, engine) as s:
-        items = dashboard_repo.eta_items(s, now, _eta_warning)
+        items = dashboard_repo.eta_items(s, now, eta_warning)
         month = None
-        if _sees_rfqs(principal):
+        if sees_rfqs(principal):
             items += dashboard_repo.rfq_items(s, now) + dashboard_repo.validity_items(s, now)
             month = dashboard_repo.month_figures(s, now)
         items.sort(

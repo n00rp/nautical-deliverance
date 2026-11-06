@@ -6,7 +6,7 @@ EDITABLE_AFTER_DRAFT fields may change. Every change is audited in the same tran
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Any, Literal, NoReturn, cast
 
@@ -14,7 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
-from nautical_deliverance.api.common import conflict, scope, unprocessable
+from nautical_deliverance.api.common import (
+    conflict,
+    eta_warning,
+    scope,
+    sees_rfqs,
+    unprocessable,
+)
 from nautical_deliverance.api.inquiry_models import (
     CancelIn,
     HistoryOut,
@@ -58,11 +64,9 @@ if TYPE_CHECKING:
 
 router = APIRouter(prefix="/inquiries")
 
-ETA_WARNING_WINDOW = timedelta(hours=48)
 LOCKED_MESSAGE = "Locked after Draft"
 OPERATOR_ROLES = frozenset({Role.OPERATOR, Role.ADMIN})
 BUYER_ROLES = frozenset({Role.BUNKER_BUYER, Role.ADMIN})
-RFQ_READERS = BUYER_ROLES | {Role.VIEWER}
 RFQ_FIELDS = ("rfq_deadline", "rfq_total", "rfq_sent")  # null for everyone else (R6)
 USER_ROLES = {"operator_id": OPERATOR_ROLES, "buyer_id": BUYER_ROLES}  # requester: any user
 MASTER: dict[str, tuple[Any, str]] = {
@@ -274,21 +278,9 @@ def advance(s: Session, principal: Principal, now: datetime, inq: Inquiry, to: S
 # --- routes ------------------------------------------------------------------------------------
 
 
-def _eta_warning(state: str, eta: datetime | None, now: datetime) -> bool:
-    if eta is None:
-        return False
-    open_ = state not in (Status.NOMINATED, Status.CANCELLED)
-    return open_ and eta < now + ETA_WARNING_WINDOW
-
-
-def _sees_rfqs(principal: Principal) -> bool:
-    """Only RFQ readers may learn who or how many suppliers were contacted (R6)."""
-    return bool(RFQ_READERS & principal.roles)
-
-
 def _out(s: Session, inq: Inquiry, principal: Principal) -> InquiryOut:
     """Return the inquiry record; the RFQ deadline is hidden from the Operator."""
-    hide = {} if _sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "decision"))
+    hide = {} if sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "decision"))
     return InquiryOut(**{**detail(s, inq), **hide})
 
 
@@ -308,10 +300,10 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
         rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
-        hide = {} if _sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "offer_total"))
+        hide = {} if sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "offer_total"))
         return [
             InquiryListItem(
-                **{**r._asdict(), **hide}, eta_warning=_eta_warning(r.status, r.eta, now)
+                **{**r._asdict(), **hide}, eta_warning=eta_warning(r.status, r.eta, now)
             )
             for r in rows
         ]
@@ -521,7 +513,7 @@ def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> ob
     with scope(principal, engine) as s:
         _load(s, inquiry_id)
         out = [HistoryOut.model_validate(e) for e in history(s, "inquiry", inquiry_id)]
-        if _sees_rfqs(principal):
+        if sees_rfqs(principal):
             return out
         for e in out:  # RFQ deadline and decision details are commercial (R6, B4-R09)
             for k in ("rfq_deadline", *DECISION_COLUMNS):

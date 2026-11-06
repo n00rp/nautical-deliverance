@@ -116,6 +116,22 @@ check_comparison() { # check_comparison <org suffix>: seeded offers are comparab
 check_comparison acme.test
 check_comparison borealis.test
 
+check_dashboard() { # check_dashboard <org suffix>: the buyer sees month figures and attention, the operator no month
+  local tok url=http://localhost:8080/api/v1/dashboard n m
+  if ! tok="$(token "bunker_buyer@$1")" || [[ -z "$tok" ]]; then fail "token for bunker_buyer@$1"; return; fi
+  m="$(curl -sf -H "Authorization: Bearer $tok" "$url" | json "d['month'] is not None" 2>/dev/null || true)"
+  n="$(curl -sf -H "Authorization: Bearer $tok" "$url" | json "len(d['attention'])" 2>/dev/null || true)"
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  [[ "$m" == True ]] && ((n >= 1)) \
+    && ok "GET /dashboard for buyer@$1: month set, $n attention item(s)" \
+    || fail "dashboard for buyer@$1: month set '$m', attention '$n'"
+  tok="$(token "operator@$1" || true)"
+  m="$(curl -sf -H "Authorization: Bearer $tok" "$url" | json "d['month'] is None" 2>/dev/null || true)"
+  [[ "$m" == True ]] && ok "GET /dashboard for operator@$1: month null" || fail "operator dashboard for $1: month null '$m'"
+}
+check_dashboard acme.test
+check_dashboard borealis.test
+
 for svc in engine web; do
   img="nautical-deliverance/$svc:$TAG"
   user="$(docker inspect --format '{{.Config.User}}' "$img")"

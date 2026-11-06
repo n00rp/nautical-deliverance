@@ -28,14 +28,15 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, cast
 
-from sqlalchemy import Connection, Engine, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, select, text
 from sqlalchemy.orm import Session
 
+from nautical_deliverance.domain.nomination import render_nomination
 from nautical_deliverance.domain.offer import evaluate_offer
 from nautical_deliverance.domain.rfq import render_rfq
-from nautical_deliverance.persistence import offer_repo
+from nautical_deliverance.persistence import nomination_repo, offer_repo
 from nautical_deliverance.persistence.inquiry_repo import next_reference
-from nautical_deliverance.persistence.models import Offer, OfferLine, Rfq
+from nautical_deliverance.persistence.models import Inquiry, Nomination, Offer, OfferLine, Rfq
 from nautical_deliverance.persistence.rfq_repo import build_context
 
 # Must match the `org_id` attributes of the users in infra/keycloak/realm-dev.json.
@@ -448,7 +449,7 @@ _INQUIRIES = (
      ((_DMA, "120.5", "m3", "850.0"), (_VL, "800", "mt", None)), None),
     ("draft", True, "bio_less", "GIGIB", "Working cargo", 150, 24,
      (("B24", "300", "mt", None),), None),
-    ("rfq_sent", True, 3, "AEFJR", "Bunkers only", 72, 36,
+    ("rfq_sent", True, 3, "AEFJR", "Bunkers only", 40, 36,
      (("HSFO 3.5%", "1200", "mt", None),), None),
     ("offers_received", True, 4, "GRPIR", "Debunkering", 96, 28, ((_VL, "650", "mt", None),), None),
     ("nominated", True, 5, "USHOU", "Bunkers only", 200, 40,
@@ -523,6 +524,7 @@ def seed_demo_inquiries(engine: Engine, now: datetime | None = None) -> None:
                 _seed_inquiry(db, s, now, n, spec, data["vessels"], users)
             _seed_rfqs(db, s, now, users)
             _seed_offers(db, s, now, users)
+            _seed_nominations(db, s, now, users)
 
 
 # Demo RFQs by inquiry voyage marker: the final status of each RFQ, one per recipient.
@@ -575,7 +577,7 @@ _OFFERS = {
     "DEMO-6": ((72, ("655", "840"), "4200"),),
     "DEMO-8": (
         (72, ("640", "810"), "4500"),  # complete, lowest among those still selectable
-        (72, ("665", "790"), "3000"),  # complete, dearer: the winner
+        (20, ("665", "790"), "3000"),  # complete, dearer: the winner, ends inside 24 h
         (48, ("655", None), "0"),  # partial
         (-6, ("630", "800"), "0"),  # complete and cheapest, but expired
     ),
@@ -647,6 +649,40 @@ def _seed_offers(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID
                 " decided_at = :t, decided_by = :b, decided_total = :d WHERE id = :i",
                 w=winner.id, r=reason, n=note, t=now, b=buyer, d=total, i=inq,
             )  # fmt: skip
+
+
+def _seed_nominations(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID]) -> None:
+    """DEMO-6: nomination 1, then an ETA change, then amended nomination 2 (texts via the domain).
+
+    Frozen exactly as mark-sent does: the first send bumps the inquiry (winner_selected ->
+    nominated), the ETA edit bumps it again, and the amendment is sent against that version.
+    """
+    inq = s.scalars(select(Inquiry).where(Inquiry.voyage == "DEMO-6")).one()
+    if s.scalar(select(Nomination.id).where(Nomination.inquiry_id == inq.id)):
+        return
+    offer_id = inq.winner_offer_id
+    assert offer_id is not None  # noqa: S101  (seeded with its decision)
+    contact = s.scalar(select(Rfq.contact_id).join(Offer).where(Offer.id == offer_id))
+    assert contact is not None  # noqa: S101  (FK)
+    for sequence in (1, 2):
+        inq.version += 1  # 1: the move to nominated; 2: the ETA edit
+        if sequence == 2:  # noqa: PLR2004
+            assert inq.eta is not None  # noqa: S101  (seeded)
+            inq.eta += timedelta(hours=24)
+            inq.updated_at = now
+        nom = Nomination(
+            id=uuid.uuid4(), organization_id=db.org, inquiry_id=inq.id, offer_id=offer_id,
+            contact_id=contact, status="sent", sequence=sequence, version=2, created_at=now,
+            created_by=users["bunker_buyer"], updated_at=now, sent_at=now,
+            inquiry_version_at_send=inq.version,
+        )  # fmt: skip
+        s.flush()
+        ctx = nomination_repo.build_nomination_context(s, nom)
+        assert ctx.total == inq.decided_total  # noqa: S101  (R6)
+        nom.sent_subject, nom.sent_body = render_nomination(ctx)
+        nom.sent_to_email = ctx.recipient_email
+        s.add(nom)
+        s.flush()
 
 
 def main() -> None:

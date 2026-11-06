@@ -14,10 +14,12 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     import uuid
 
+from nautical_deliverance.api.common import eta_warning
+from nautical_deliverance.domain.nomination import render_nomination
 from nautical_deliverance.domain.offer import evaluate_offer, lowest
 from nautical_deliverance.domain.rfq import render_rfq
-from nautical_deliverance.persistence import offer_repo, seed
-from nautical_deliverance.persistence.models import Offer, Rfq
+from nautical_deliverance.persistence import dashboard_repo, nomination_repo, offer_repo, seed
+from nautical_deliverance.persistence.models import Nomination, Offer, Rfq
 from nautical_deliverance.persistence.rfq_repo import build_context
 
 REALM = Path(__file__).parents[3] / "infra/keycloak/realm-dev.json"
@@ -110,6 +112,7 @@ def test_idempotent_and_unaudited(seeded: Engine) -> None:
         "rfq",
         "offer",
         "offer_line",
+        "nomination",
     )
 
     def dump() -> str:
@@ -147,9 +150,10 @@ def test_demo_rfqs(seeded: Engine, org: uuid.UUID) -> None:
     active = [(r["inquiry_id"], r["counterparty_id"]) for r in rows if r["status"] != "withdrawn"]
     assert len(active) == len(set(active))
     for r in rows:
-        if r["status"] in ("sent", "declined"):
+        if r["status"] in ("sent", "declined") and r["istatus"] != "nominated":
             assert r["inquiry_version_at_send"] == r["iversion"]
-    sent = [r for r in rows if r["status"] in ("sent", "declined")]
+    # the nominated demo inquiry's ETA was amended after its RFQ went out: its text is stale
+    sent = [r for r in rows if r["status"] in ("sent", "declined") and r["istatus"] != "nominated"]
     with seeded.begin() as conn:
         conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
         s = Session(conn)
@@ -228,3 +232,55 @@ def test_demo_offers_idempotent(seeded: Engine) -> None:
     assert before > 0
     seed.seed_demo_inquiries(seeded, NOW + timedelta(days=40))
     assert count() == before
+
+
+@pytest.mark.req("B5-R12")
+@pytest.mark.parametrize("org", list(seed.DEV_ORGS))
+def test_demo_nominations(seeded: Engine, org: uuid.UUID) -> None:
+    """DEMO-6 has sent nominations 1 and 2; 2 follows an ETA change; texts equal the render."""
+    rows = q(
+        seeded,
+        org,
+        "SELECT n.id, n.sequence, n.status, n.sent_at, n.inquiry_version_at_send, n.sent_body,"
+        " i.version AS iversion, i.decided_total, i.voyage FROM nomination n"
+        " JOIN inquiry i ON i.id = n.inquiry_id ORDER BY n.sequence",
+    )
+    assert [(r["voyage"], r["sequence"], r["status"]) for r in rows] == [
+        ("DEMO-6", 1, "sent"),
+        ("DEMO-6", 2, "sent"),
+    ]
+    one, two = rows
+    assert one["inquiry_version_at_send"] < two["inquiry_version_at_send"] == two["iversion"]
+    assert one["sent_at"]
+    assert two["sent_at"]
+    assert one["sent_body"] != two["sent_body"]
+    with seeded.begin() as conn:
+        conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
+        s = Session(conn)
+        for r in rows:
+            nom = s.get(Nomination, r["id"])
+            assert nom is not None
+            ctx = nomination_repo.build_nomination_context(s, nom)
+            assert ctx.total == r["decided_total"]
+            if r["sequence"] == 2:
+                assert (nom.sent_subject, nom.sent_body) == render_nomination(ctx)
+        assert nomination_repo.changed_since_sent(s, s.get(Nomination, one["id"]))  # type: ignore[arg-type]
+        assert not nomination_repo.changed_since_sent(s, s.get(Nomination, two["id"]))  # type: ignore[arg-type]
+
+
+@pytest.mark.req("B5-R12")
+@pytest.mark.parametrize("org", list(seed.DEV_ORGS))
+def test_demo_dashboard_has_every_attention_kind(seeded: Engine, org: uuid.UUID) -> None:
+    """On fresh demo data the dashboard shows at least one item of each kind."""
+    with seeded.begin() as conn:
+        conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
+        s = Session(conn)
+        found = {
+            i["kind"]
+            for i in (
+                *dashboard_repo.eta_items(s, NOW, eta_warning),
+                *dashboard_repo.rfq_items(s, NOW),
+                *dashboard_repo.validity_items(s, NOW),
+            )
+        }
+    assert found == {"eta_unnominated", "rfq_deadline", "offer_validity", "rfq_drafts_unsent"}
