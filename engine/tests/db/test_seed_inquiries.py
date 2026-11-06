@@ -14,9 +14,10 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     import uuid
 
+from nautical_deliverance.domain.offer import evaluate_offer, lowest
 from nautical_deliverance.domain.rfq import render_rfq
-from nautical_deliverance.persistence import seed
-from nautical_deliverance.persistence.models import Rfq
+from nautical_deliverance.persistence import offer_repo, seed
+from nautical_deliverance.persistence.models import Offer, Rfq
 from nautical_deliverance.persistence.rfq_repo import build_context
 
 REALM = Path(__file__).parents[3] / "infra/keycloak/realm-dev.json"
@@ -101,7 +102,15 @@ def test_references_and_counters(seeded: Engine, org: uuid.UUID) -> None:
 @pytest.mark.req("B2-R14")
 def test_idempotent_and_unaudited(seeded: Engine) -> None:
     """A second run changes no row and writes no audit entry."""
-    tables = ("app_user", "inquiry", "inquiry_line", "inquiry_reference_counter", "rfq")
+    tables = (
+        "app_user",
+        "inquiry",
+        "inquiry_line",
+        "inquiry_reference_counter",
+        "rfq",
+        "offer",
+        "offer_line",
+    )
 
     def dump() -> str:
         return json.dumps(
@@ -153,3 +162,62 @@ def test_demo_rfqs(seeded: Engine, org: uuid.UUID) -> None:
     assert all(r["sent_to_email"].endswith(".example") for r in sent)
     emails = q(seeded, org, "SELECT email FROM contact")
     assert all(e["email"].endswith(".example") for e in emails)
+
+
+@pytest.mark.req("B4-R13")
+@pytest.mark.parametrize("org", list(seed.DEV_ORGS))
+def test_demo_offers(seeded: Engine, org: uuid.UUID) -> None:
+    """Offers on sent RFQs; complete, partial, expired; one decided non-lowest winner (B4-R13)."""
+    offers = q(
+        seeded,
+        org,
+        "SELECT o.*, r.status AS rstatus, i.status AS istatus FROM offer o"
+        " JOIN rfq r ON r.id = o.rfq_id JOIN inquiry i ON i.id = o.inquiry_id",
+    )
+    assert {o["istatus"] for o in offers} >= {"offers_received", "winner_selected", "nominated"}
+    assert all(o["rstatus"] == "sent" for o in offers)
+    results: dict[Any, Any] = {}
+    with seeded.begin() as conn:
+        conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
+        s = Session(conn)
+        for o in offers:
+            offer = s.get(Offer, o["id"])
+            assert offer is not None
+            results[o["id"]] = evaluate_offer(offer_repo.inputs_for(s, offer))
+    assert any(r.complete for r in results.values())
+    assert any(not r.complete for r in results.values())
+    assert any(o["valid_until"] < NOW for o in offers)
+    for o in offers:  # invented but plausible prices, USD per mt
+        prices = q(seeded, org, f"SELECT price_per_mt FROM offer_line WHERE offer_id = '{o['id']}'")
+        assert all(500 <= p["price_per_mt"] <= 1200 for p in prices)
+
+    decided = q(seeded, org, "SELECT * FROM inquiry WHERE winner_offer_id IS NOT NULL")
+    assert len(decided) == 1
+    inq = decided[0]
+    assert inq["status"] == "winner_selected"
+    assert inq["decision_reason"]
+    assert inq["decision_note"]
+    assert inq["decided_at"]
+    assert inq["decided_by"]
+    winner = next(o for o in offers if o["id"] == inq["winner_offer_id"])
+    assert winner["inquiry_id"] == inq["id"]
+    assert inq["decided_total"] == results[winner["id"]].total
+    selectable = [  # R5: complete offers selectable now
+        o["id"]
+        for o in offers
+        if o["inquiry_id"] == inq["id"] and o["valid_until"] >= NOW and results[o["id"]].complete
+    ]
+    assert str(winner["id"]) not in lowest(results[i] for i in selectable)
+
+
+@pytest.mark.req("B4-R13")
+def test_demo_offers_idempotent(seeded: Engine) -> None:
+    """A second run adds no offer."""
+
+    def count() -> int:
+        return sum(q(seeded, o, "SELECT count(*) AS n FROM offer")[0]["n"] for o in seed.DEV_ORGS)
+
+    before = count()
+    assert before > 0
+    seed.seed_demo_inquiries(seeded, NOW + timedelta(days=40))
+    assert count() == before

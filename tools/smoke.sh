@@ -100,6 +100,21 @@ check_rfqs() { # check_rfqs <org suffix>: the seeded RFQ log is readable by the 
 check_rfqs acme.test
 check_rfqs borealis.test
 
+check_comparison() { # check_comparison <org suffix>: seeded offers are comparable by the buyer, not the operator
+  local tok id n code url
+  if ! tok="$(token "bunker_buyer@$1")" || [[ -z "$tok" ]]; then fail "token for bunker_buyer@$1"; return; fi
+  id="$(curl -sf -H "Authorization: Bearer $tok" http://localhost:8080/api/v1/inquiries | json "[i['id'] for i in d if i['status']=='winner_selected'][0]" 2>/dev/null || true)"
+  url="http://localhost:8080/api/v1/inquiries/$id/comparison"
+  n="$(curl -sf -H "Authorization: Bearer $tok" "$url" | json "len(d['rows'])" 2>/dev/null || true)"
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  ((n >= 1)) && ok "GET /inquiries/{id}/comparison for buyer@$1 >= 1 ($n)" || fail "comparison for buyer@$1: got '$n'"
+  tok="$(token "operator@$1" || true)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $tok" "$url" || true)"
+  [[ "$code" == 403 ]] && ok "GET /inquiries/{id}/comparison for operator@$1 = 403" || fail "operator comparison for $1 returned '$code'"
+}
+check_comparison acme.test
+check_comparison borealis.test
+
 for svc in engine web; do
   img="nautical-deliverance/$svc:$TAG"
   user="$(docker inspect --format '{{.Config.User}}' "$img")"
