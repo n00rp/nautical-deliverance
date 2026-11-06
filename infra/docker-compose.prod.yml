@@ -39,6 +39,10 @@ services:
     environment:
       ND_PUBLIC_HOST: ${ND_PUBLIC_HOST:?set ND_PUBLIC_HOST in infra/.env.prod}
       KC_HOSTNAME: https://${ND_PUBLIC_HOST:?set ND_PUBLIC_HOST in infra/.env.prod}
+      # Admin console and master realm are built on the loopback/tunnel URL, not the public host
+      # (Caddy returns 404 for /admin and /realms/master). The base file's loopback-only port
+      # 127.0.0.1:8081:8080 is kept as the tunnel target (ssh -L 8081:127.0.0.1:8081 <server>).
+      KC_HOSTNAME_ADMIN: http://localhost:8081
       KC_PROXY_HEADERS: xforwarded
       # Plain HTTP only on the internal compose network; Caddy terminates TLS.
       KC_HTTP_ENABLED: "true"
@@ -49,7 +53,6 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${ND_KEYCLOAK_ADMIN_PASSWORD:?set in infra/.env.prod}
     volumes: !override
       - ./keycloak/realm-pilot.json:/opt/keycloak/data/import/realm-pilot.json:ro
-    ports: !reset []
 
   engine:
     restart: unless-stopped

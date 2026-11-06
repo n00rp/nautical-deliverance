@@ -56,7 +56,11 @@ needs_docker = pytest.mark.skipif(shutil.which("docker") is None, reason="needs 
 def test_only_caddy_publishes_ports() -> None:
     services = _config()["services"]
     published = {n for n, s in services.items() if s.get("ports")}
-    assert published == {"caddy"}
+    assert published == {"caddy", "keycloak"}
+    # Keycloak: loopback only, the SSH tunnel target for the admin console (never public).
+    kc_ports = [(p["host_ip"], p["published"], p["target"]) for p in services["keycloak"]["ports"]]
+    assert kc_ports == [("127.0.0.1", "8081", 8080)]
+    assert services["keycloak"]["environment"]["KC_HOSTNAME_ADMIN"] == "http://localhost:8081"
     ports = {(p["target"], p["published"]) for p in services["caddy"]["ports"]}
     assert ports == {(80, "80"), (443, "443")}
 
@@ -113,23 +117,22 @@ def test_missing_secret_is_refused_instead_of_defaulting_to_dev(missing: str) ->
 def test_caddyfile_headers_admin_block_and_routes() -> None:
     text = CADDYFILE.read_text(encoding="utf-8")
     assert "{$ND_PUBLIC_HOST}" in text
-    for fragment in (
-        "Strict-Transport-Security",
-        "max-age=31536000",
-        "Content-Security-Policy",
-        "X-Content-Type-Options",
-        "nosniff",
-        "Referrer-Policy",
-        "strict-origin-when-cross-origin",
-        "X-Frame-Options",
-        "DENY",
-        "respond 404",
-        "/admin",
-        "reverse_proxy engine:8000",
-        "reverse_proxy keycloak:8080",
-        "reverse_proxy web:8080",
+    for name, value in (
+        ("Strict-Transport-Security", "max-age=31536000"),
+        ("X-Content-Type-Options", "nosniff"),
+        ("Referrer-Policy", "strict-origin-when-cross-origin"),
+        ("X-Frame-Options", "DENY"),
+        ("Content-Security-Policy", "default-src 'self'"),
     ):
-        assert fragment in text, fragment
+        assert re.search(rf'>{name} "{re.escape(value)}', text), name
+    for path in ("/admin*", "/realms/master*"):
+        assert re.search(rf"handle {re.escape(path)} \{{\s*respond 404\s*\}}", text), path
+    # CSP and framing are scoped to the app handles; Keycloak keeps its own.
+    assert text.count("import app_headers") == 2  # noqa: PLR2004
+    assert re.search(r"handle /api/\* \{\s*import app_headers\s*reverse_proxy engine:8000", text)
+    assert re.search(r"handle \{\s*import app_headers\s*reverse_proxy web:8080", text)
+    assert re.search(r"handle /realms/\* \{\s*reverse_proxy keycloak:8080", text)
+    assert re.search(r"servers \{\s*protocols h1\s*\}", text)  # until a fixed Caddy ships
 
 
 @pytest.mark.req("B6-R03")
@@ -174,5 +177,5 @@ def test_env_prod_is_gitignored_and_example_holds_placeholders_only() -> None:
     assert not _git_ignored("infra/.env.prod.example")
     for line in ENV_EXAMPLE.read_text(encoding="utf-8").splitlines():
         if line and not line.startswith("#"):
-            key, _, value = line.partition("=")
-            assert value == "CHANGE_ME" or key == "ND_PUBLIC_HOST", line
+            _, _, value = line.partition("=")
+            assert value in ("CHANGE_ME", "pilot.example.org"), line
