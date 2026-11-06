@@ -59,7 +59,7 @@
 | B4-R09 | engine/tests/db/test_operator_never_sees_prices.py |
 | B4-R10 | engine/tests/db/test_offer_api.py |
 | B4-R11 | engine/tests/db/test_offer_api.py, engine/tests/db/test_offer_decision.py |
-| B4-R12 | web/src/App.test.tsx, web/src/admin/routes.test.ts, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiries/WorkList.test.tsx, web/src/money.test.ts, web/src/offerApi.test.ts, web/src/offers/Comparison.test.tsx, web/src/offers/OfferEntry.test.tsx, web/src/offers/comparisonBudget.test.tsx, web/src/offers/offerBudget.test.tsx, web/src/rfqs/RfqLog.test.tsx, web/src/ui/NumberField/NumberField.test.tsx, web/src/ui/Select/Select.test.tsx, web/src/ui/Table/Table.test.tsx, web/src/ui/TextField/TextField.test.tsx |
+| B4-R12 | web/src/App.test.tsx, web/src/ErrorBoundary.test.tsx, web/src/admin/routes.test.ts, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiries/WorkList.test.tsx, web/src/money.test.ts, web/src/offerApi.test.ts, web/src/offers/Comparison.test.tsx, web/src/offers/OfferEntry.test.tsx, web/src/offers/comparisonBudget.test.tsx, web/src/offers/offerBudget.test.tsx, web/src/rfqs/RfqLog.test.tsx, web/src/ui/NumberField/NumberField.test.tsx, web/src/ui/Select/Select.test.tsx, web/src/ui/Table/Table.test.tsx, web/src/ui/TextField/TextField.test.tsx |
 | B4-R13 | engine/tests/db/test_seed_inquiries.py |
 | B4-R14 | .github/workflows/ci.yml |
 | S0-R01 | .github/workflows/ci.yml |
