@@ -242,6 +242,15 @@ def test_month_figures_on_a_fixed_data_set(admin: Nc) -> None:
 
 
 @pytest.mark.req("B5-R08")
+def test_unpriced_m3_line_is_not_counted_as_excluded(admin: Nc) -> None:
+    """Only lines the winner priced can lack a density; an unpriced m3 line is simply not bought."""
+    w = admin.w
+    m3 = line(w, product_id=str(w.mgo), quantity="50", unit="m3")
+    nominate(admin, decide(admin, [line(w), m3], [(ALPHA, ("600",))]))
+    assert admin.api("/dashboard")["month"]["mt_excluded_lines"] == 0
+
+
+@pytest.mark.req("B5-R08")
 def test_empty_month(admin: Nc) -> None:
     """No decided inquiry: zero figures and a null average, never an error."""
     assert admin.api("/dashboard")["month"] == {
@@ -310,7 +319,7 @@ def test_dashboard_per_role(
         *("inquiry_id", "reference", "vessel_name", "port_name", "port_time_zone"),
         *("kind", "due_at", "detail"),
     }
-    assert item["port_time_zone"]
+    assert item["port_time_zone"] == "Europe/Amsterdam"
     assert dash["status_counts"]["offers_received"] == 1
 
 

@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
-from nautical_deliverance.api.access import Eng, Now, Reader, Writer  # noqa: TC001
+from nautical_deliverance.api.access import Eng, Now, RfqReader, Writer  # noqa: TC001
 from nautical_deliverance.api.common import conflict, scope, unprocessable
 from nautical_deliverance.api.inquiries import (
     _lock_open,
@@ -226,7 +226,7 @@ def create_offer(
 
 
 @router.get("/offers/{offer_id}", response_model=OfferOut)
-def get_offer(offer_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def get_offer(offer_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Return the offer with computed lines and total; readable whatever its RFQ became."""
     with scope(principal, engine) as s:
         offer = s.get(Offer, offer_id)
@@ -280,7 +280,7 @@ def update_offer(
 
 
 @router.get("/offers/{offer_id}/history", response_model=list[HistoryOut])
-def offer_history(offer_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def offer_history(offer_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Audit entries of the offer, newest first."""
     with scope(principal, engine) as s:
         if s.get(Offer, offer_id) is None:
@@ -292,7 +292,7 @@ def offer_history(offer_id: uuid.UUID, principal: Reader, engine: Eng) -> object
 
 
 @router.get("/inquiries/{inquiry_id}/comparison", response_model=ComparisonOut)
-def comparison(inquiry_id: uuid.UUID, principal: Reader, engine: Eng, now: Now) -> object:
+def comparison(inquiry_id: uuid.UUID, principal: RfqReader, engine: Eng, now: Now) -> object:
     """Every offer with its flags (complete first, cheapest first) and the decision."""
     with scope(principal, engine) as s:
         inq = s.get(Inquiry, inquiry_id)

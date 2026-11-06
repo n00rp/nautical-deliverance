@@ -165,9 +165,10 @@ def month_figures(session: Session, now: datetime) -> dict[str, Any]:
     for inq in nominated:
         offer = session.get(Offer, inq.winner_offer_id)
         assert offer is not None  # noqa: S101  (a nominated inquiry has its winner)
-        for res in evaluate_offer(offer_repo.inputs_for(session, offer)).lines:
+        inputs = offer_repo.inputs_for(session, offer)
+        for line, res in zip(inputs.lines, evaluate_offer(inputs).lines, strict=True):
             mt += res.qty_mt if res.in_total and res.qty_mt is not None else 0
-            excluded += res.qty_mt is None
+            excluded += res.qty_mt is None and line.price_per_mt is not None  # priced, no density
     decided = (
         Inquiry.decided_at >= start,
         Inquiry.decided_at < end,

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 from nautical_deliverance.api.access import (
     Eng,
     Now,
-    Reader,
+    RfqReader,
     Writer,
     contact_problem,
     finish,
@@ -140,14 +140,14 @@ def _audit(  # noqa: PLR0913, PLR0917
 
 
 @router.get("/inquiries/{inquiry_id}/suggestions", response_model=Suggestions)
-def get_suggestions(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def get_suggestions(inquiry_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Active counterparties by coverage, with their usable contacts."""
     with scope(principal, engine) as s:
         return rfq_repo.suggestions(s, _inquiry(s, inquiry_id))
 
 
 @router.get("/inquiries/{inquiry_id}/rfqs", response_model=list[RfqItem])
-def get_log(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def get_log(inquiry_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Return the RFQ log of an inquiry."""
     with scope(principal, engine) as s:
         _inquiry(s, inquiry_id)
@@ -208,7 +208,7 @@ def create_rfqs(
 
 
 @router.get("/rfqs/{rfq_id}/preview", response_model=PreviewOut)
-def get_preview(rfq_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def get_preview(rfq_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Return the exact text and mail link: live for a draft, frozen once sent."""
     with scope(principal, engine) as s:
         try:
@@ -333,7 +333,7 @@ def decline(rfq_id: uuid.UUID, body: VersionIn, principal: Writer, engine: Eng, 
 
 
 @router.get("/rfqs/{rfq_id}/history", response_model=list[HistoryOut])
-def rfq_history(rfq_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def rfq_history(rfq_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Audit entries of the RFQ, newest first."""
     with scope(principal, engine) as s:
         _rfq(s, rfq_id)

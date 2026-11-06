@@ -1,7 +1,7 @@
 """Nomination API: create, list, preview, patch, send, withdraw, history (B5-R01..R04, R06, R10)."""
 
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from urllib.parse import unquote
@@ -17,6 +17,7 @@ from nautical_deliverance.persistence.models import (
     Inquiry,
     LegalEntity,
     Nomination,
+    Offer,
 )
 from tests.db.test_inquiry_api import CONFLICT, CREATED, FORBIDDEN, NOT_FOUND, OK, errors
 from tests.db.test_offer_api import Oc, set_status
@@ -538,6 +539,40 @@ def test_first_send_nominates_and_an_amendment_keeps_it(admin: Nc) -> None:
     rows = admin.items(inq["id"])
     assert [(i["sequence"], i["status"]) for i in rows] == [(2, "sent"), (1, "sent")]
     assert admin.preview(first["id"]) == v1
+
+
+EXPIRED = "Offer validity has expired — record the extended validity first"
+
+
+def set_valid_until(admin: Nc, inq: Json, when: datetime) -> None:
+    """Set the winning offer's validity directly (the offer API has its own rules)."""
+    with org_session(admin.w.org, admin.engine) as s:
+        s.execute(
+            update(Offer)
+            .where(Offer.id == uuid.UUID(inq["decision"]["winner_offer_id"]))
+            .values(valid_until=when)
+        )
+
+
+@pytest.mark.req("B5-R06")
+def test_first_send_needs_an_unexpired_offer(admin: Nc) -> None:
+    """Ruling R8: an expired winner blocks send 1 until the validity is extended."""
+    inq = won(admin)
+    nom = admin.nominate(inq["id"])
+    admin.tick(days=8)  # past 2026-11-12 08:00
+    assert errors(admin.act(nom, "mark-sent")) == {"offer_id": EXPIRED}
+    assert admin.fresh(inq)["status"] == "winner_selected"
+    set_valid_until(admin, inq, admin.now + timedelta(days=1))
+    assert admin.send(nom)["sequence"] == 1
+
+
+@pytest.mark.req("B5-R06")
+def test_an_amendment_is_not_gated_on_validity(admin: Nc) -> None:
+    """Ruling R8: once Nominated, an expired offer does not stop an amendment."""
+    inq = won(admin)
+    admin.send(admin.nominate(inq["id"]))
+    admin.tick(days=8)
+    assert admin.send(admin.nominate(inq["id"]))["sequence"] == AMENDMENT
 
 
 @pytest.mark.req("B5-R06")

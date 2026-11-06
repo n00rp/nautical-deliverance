@@ -23,7 +23,7 @@ from nautical_deliverance.persistence.models import Contact, Inquiry
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-Reader = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER, Role.VIEWER))]
+RfqReader = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER, Role.VIEWER))]
 Writer = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER))]
 Eng = Annotated[Engine, Depends(get_users_engine)]
 Now = Annotated[datetime, Depends(get_now)]

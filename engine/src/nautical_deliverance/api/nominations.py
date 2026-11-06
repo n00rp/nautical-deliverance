@@ -14,7 +14,7 @@ from sqlalchemy import select
 from nautical_deliverance.api.access import (
     Eng,
     Now,
-    Reader,
+    RfqReader,
     Writer,
     contact_problem,
     finish,
@@ -39,7 +39,7 @@ from nautical_deliverance.domain.nomination import (
 )
 from nautical_deliverance.persistence import nomination_repo
 from nautical_deliverance.persistence.audit import Action, history, record_change
-from nautical_deliverance.persistence.models import Contact, Inquiry, Nomination
+from nautical_deliverance.persistence.models import Contact, Inquiry, Nomination, Offer
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -93,7 +93,7 @@ def _done(  # noqa: PLR0913, PLR0917
 
 
 @router.get("/inquiries/{inquiry_id}/nominations", response_model=list[NominationItem])
-def list_nominations(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def list_nominations(inquiry_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """All versions of the inquiry's nomination, newest first."""
     with scope(principal, engine) as s:
         _get(s, Inquiry, inquiry_id)
@@ -147,7 +147,7 @@ def create_nomination(
 
 
 @router.get("/nominations/{nomination_id}/preview", response_model=PreviewOut)
-def get_preview(nomination_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def get_preview(nomination_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Return the exact text and mail link: live for a draft, frozen once sent."""
     with scope(principal, engine) as s:
         try:
@@ -187,6 +187,14 @@ def mark_sent(
         if nom.offer_id != inq.winner_offer_id:
             detail = "Winning offer changed; withdraw this draft"
             raise HTTPException(status.HTTP_409_CONFLICT, detail)
+        if (
+            Status(inq.status) is Status.WINNER_SELECTED
+            and _get(s, Offer, nom.offer_id).valid_until < now
+        ):
+            field = "offer_id"  # R8: only the first send needs a live offer; amendments do not
+            raise unprocessable(
+                field, "Offer validity has expired — record the extended validity first"
+            )
         _contact_or_422(s, nom.contact_id, nom.offer_id)
         ctx = nomination_repo.build_nomination_context(s, nom)
         subject, text_ = render_nomination(ctx)
@@ -220,7 +228,7 @@ def withdraw(
 
 
 @router.get("/nominations/{nomination_id}/history", response_model=list[HistoryOut])
-def nomination_history(nomination_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def nomination_history(nomination_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Audit entries of the nomination, newest first."""
     with scope(principal, engine) as s:
         _get(s, Nomination, nomination_id)
