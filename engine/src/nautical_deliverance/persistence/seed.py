@@ -580,7 +580,10 @@ _OFFERS = {
         (-6, ("630", "800"), "0"),  # complete and cheapest, but expired
     ),
 }
-_WINNER = ("DEMO-8", 1, "operational_fit", "Closer barge slot to the vessel's ETA.")
+_WINNERS = {  # voyage -> (offer index, reason, note); a lowest offer needs no rationale
+    "DEMO-6": (0, None, None),
+    "DEMO-8": (1, "operational_fit", "Closer barge slot to the vessel's ETA."),
+}
 
 
 def _seed_offers(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID]) -> None:
@@ -616,8 +619,8 @@ def _seed_offers(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID
             offer = Offer(
                 id=uuid.uuid4(), organization_id=db.org, rfq_id=rfq_id, inquiry_id=inq,
                 valid_until=now + timedelta(hours=hours), barging_cost=Decimal(barging),
-                payment_terms="30 days net", received_at=now, created_at=now, created_by=buyer,
-                updated_at=now,
+                payment_terms="30 days net", created_at=now, created_by=buyer, updated_at=now,
+                received_at=now + timedelta(hours=min(0, hours - 24)),  # before valid_until
             )  # fmt: skip
             s.add(offer)
             s.flush()
@@ -635,13 +638,14 @@ def _seed_offers(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID
             )
             s.flush()
             offers.append(offer)
-        if voyage == _WINNER[0]:
-            winner = offers[_WINNER[1]]
+        if voyage in _WINNERS:
+            idx, reason, note = _WINNERS[voyage]
+            winner = offers[idx]
             total = evaluate_offer(offer_repo.inputs_for(s, winner)).total
             db.put(
                 "UPDATE inquiry SET winner_offer_id = :w, decision_reason = :r, decision_note = :n,"
                 " decided_at = :t, decided_by = :b, decided_total = :d WHERE id = :i",
-                w=winner.id, r=_WINNER[2], n=_WINNER[3], t=now, b=buyer, d=total, i=inq,
+                w=winner.id, r=reason, n=note, t=now, b=buyer, d=total, i=inq,
             )  # fmt: skip
 
 

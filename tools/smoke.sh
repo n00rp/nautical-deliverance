@@ -104,6 +104,7 @@ check_comparison() { # check_comparison <org suffix>: seeded offers are comparab
   local tok id n code url
   if ! tok="$(token "bunker_buyer@$1")" || [[ -z "$tok" ]]; then fail "token for bunker_buyer@$1"; return; fi
   id="$(curl -sf -H "Authorization: Bearer $tok" http://localhost:8080/api/v1/inquiries | json "[i['id'] for i in d if i['status']=='winner_selected'][0]" 2>/dev/null || true)"
+  [[ -n "$id" ]] || { fail "no winner_selected inquiry for buyer@$1"; return; }
   url="http://localhost:8080/api/v1/inquiries/$id/comparison"
   n="$(curl -sf -H "Authorization: Bearer $tok" "$url" | json "len(d['rows'])" 2>/dev/null || true)"
   [[ "$n" =~ ^[0-9]+$ ]] || n=0

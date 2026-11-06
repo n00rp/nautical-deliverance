@@ -191,23 +191,30 @@ def test_demo_offers(seeded: Engine, org: uuid.UUID) -> None:
         prices = q(seeded, org, f"SELECT price_per_mt FROM offer_line WHERE offer_id = '{o['id']}'")
         assert all(500 <= p["price_per_mt"] <= 1200 for p in prices)
 
-    decided = q(seeded, org, "SELECT * FROM inquiry WHERE winner_offer_id IS NOT NULL")
-    assert len(decided) == 1
-    inq = decided[0]
-    assert inq["status"] == "winner_selected"
-    assert inq["decision_reason"]
-    assert inq["decision_note"]
-    assert inq["decided_at"]
-    assert inq["decided_by"]
-    winner = next(o for o in offers if o["id"] == inq["winner_offer_id"])
-    assert winner["inquiry_id"] == inq["id"]
-    assert inq["decided_total"] == results[winner["id"]].total
-    selectable = [  # R5: complete offers selectable now
-        o["id"]
-        for o in offers
-        if o["inquiry_id"] == inq["id"] and o["valid_until"] >= NOW and results[o["id"]].complete
-    ]
-    assert str(winner["id"]) not in lowest(results[i] for i in selectable)
+    inquiries = q(seeded, org, "SELECT * FROM inquiry")
+    for inq in inquiries:  # a selected or nominated inquiry always has its decision
+        assert (inq["status"] in ("winner_selected", "nominated")) <= bool(inq["winner_offer_id"])
+    non_lowest = 0
+    for inq in (i for i in inquiries if i["winner_offer_id"]):
+        assert inq["decided_at"]
+        assert inq["decided_by"]
+        winner = next(o for o in offers if o["id"] == inq["winner_offer_id"])
+        assert winner["inquiry_id"] == inq["id"]
+        assert inq["decided_total"] == results[winner["id"]].total
+        selectable = [  # R5: complete offers selectable now
+            o["id"]
+            for o in offers
+            if o["inquiry_id"] == inq["id"]
+            and o["valid_until"] >= NOW
+            and results[o["id"]].complete
+        ]
+        assert selectable
+        if str(winner["id"]) not in lowest(results[i] for i in selectable):
+            non_lowest += 1
+            assert inq["status"] == "winner_selected"
+            assert inq["decision_reason"]
+            assert inq["decision_note"]
+    assert non_lowest == 1
 
 
 @pytest.mark.req("B4-R13")

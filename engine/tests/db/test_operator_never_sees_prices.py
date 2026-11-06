@@ -207,8 +207,9 @@ def test_operator_never_sees_commercial_data(
     note = text()
     r = pick(admin, inq, offers[winner]["id"], reason=reason.value, note=note)
     assert r.status_code == OK, r.text
-    first = comparison_markers(admin.http.get(f"{PREFIX}/inquiries/{inq['id']}/comparison").json())
-    markers |= {note, *first, *(o["id"] for o in offers)}
+    shown1 = admin.http.get(f"{PREFIX}/inquiries/{inq['id']}/comparison").json()
+    first_total = shown1["decision"]["decided_total"]
+    markers |= {note, *comparison_markers(shown1), *(o["id"] for o in offers)}
     # Re-select another winner: the history entry now carries the first decision in `before`.
     second = pick(
         admin, inq, offers[(winner + 1) % 3]["id"], reason=reason.value, note=(note2 := text())
@@ -219,7 +220,7 @@ def test_operator_never_sees_commercial_data(
     markers |= {note2, *comparison_markers(shown.json())}
     markers = {m for m in markers if m and len(m) >= 6}  # noqa: PLR2004  ("0.00" is not a marker)
     assert len(markers) >= 30  # noqa: PLR2004
-    assert all(m in shown.text for m in markers - {note, *first})  # scanner sees them
+    assert all(m in shown.text for m in markers - {note, first_total})  # scanner sees them
     scanned = {v for m in markers for v in variants(m) if len(v) >= 6}  # noqa: PLR2004
 
     ids = {"inquiry_id": inq["id"], "rfq_id": rfqs[0]["id"], "offer_id": chosen["id"]}
