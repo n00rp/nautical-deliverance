@@ -91,8 +91,12 @@ def format_qty_mt(q: Decimal) -> str:
 
 
 def format_usd(d: Decimal) -> str:
-    """``USD 1,234,567.89`` (``USD -25,000.00``), as the web ``formatUsd``; display only."""
-    return f"USD {d.quantize(_CENT, ROUND_HALF_UP):,.2f}"
+    """``USD 1,234,567.89`` (``USD -25,000.00``); raises over 2 decimals."""
+    q = d.quantize(_CENT)
+    if q != d:
+        msg = "more than 2 decimals"
+        raise ValueError(msg)
+    return f"USD {q.copy_abs() if q == 0 else q:,.2f}"
 
 
 def line_cost(qty_mt: Decimal, price: Decimal) -> Decimal:

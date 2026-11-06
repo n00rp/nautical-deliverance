@@ -47,31 +47,25 @@ def _ctx(**kw: object) -> NominationContext:
             ),
             NominationLine(
                 "MGO",
-                Decimal(1000),
+                Decimal("1000.001"),
                 "m3",
-                Decimal("850.5008505"),
+                Decimal("850.5"),
                 Decimal("850.5008505"),
                 Decimal(700),
                 Decimal("595350.60"),
                 in_total=True,
             ),
             NominationLine(
-                "LSMGO",
-                Decimal(50),
-                "mt",
-                None,
-                Decimal(50),
-                Decimal(800),
-                Decimal("40000.00"),
-                in_total=False,
+                "HSFO", Decimal(20), "m3", None, None, Decimal(450), None, in_total=False
             ),
+            NominationLine("LSMGO", Decimal(50), "mt", None, None, None, None, in_total=False),
         ),
         "barging_cost": Decimal(1500),
         "port_call_cost": Decimal(0),
         "agent_cost": Decimal("250.5"),
         "surveyor_cost": Decimal(300),
         "other_cost": Decimal(0),
-        "total": Decimal("1332706.35"),
+        "total": Decimal("1332707.35"),
         "currency": "USD",
         "delivery_from": datetime(2026, 3, 29, 0, 30, tzinfo=UTC),
         "delivery_to": datetime(2026, 3, 29, 1, 30, tzinfo=UTC),
@@ -92,17 +86,18 @@ _COMMON = (
     "ETA / ETD: 29 Mar 00:30 UTC · 01:30 local / 29 Mar 01:30 UTC · 03:30 local\n"
     "Agent: Agent Co\n"
     "Products:\n"
-    "  - VLSFO: 1200.500 mt -> 1200.500 mt x USD 612.500/mt = USD 735,306.25\n"
-    "  - MGO: 1000 m3, density 850.5008505 kg/m3 -> 850.5008505 mt x USD 700.000/mt"
+    "  - VLSFO: 1200.500 mt x USD 612.500/mt = USD 735,306.25\n"
+    "  - MGO: 1000.001 m3, density 850.5 kg/m3 -> 850.5008505 mt x USD 700.000/mt"
     " = USD 595,350.60\n"
-    "  - LSMGO: 50 mt -> 50.000 mt x USD 800.000/mt = USD 40,000.00 (not included in total)\n"
+    "  - HSFO: 20 m3 x USD 450.000/mt, quantity in mt to be confirmed — not included in total\n"
+    "  - LSMGO: not included in this nomination\n"
     "Additional costs:\n"
     "  - Barging: USD 1,500.00\n"
     "  - Port call: USD 0.00\n"
     "  - Agent: USD 250.50\n"
     "  - Surveyor: USD 300.00\n"
     "  - Other: USD 0.00\n"
-    "Total: USD 1,332,706.35\n\n"
+    "Total: USD 1,332,707.35\n\n"
     "Delivery window: 29 Mar 00:30 UTC · 01:30 local to 29 Mar 01:30 UTC · 03:30 local\n"
     "Delivery method: barge\n"
     "Physical supplier: Real Fuels BV\n"
@@ -125,7 +120,7 @@ def test_golden_version_2_amended() -> None:
     subject, body = render_nomination(_ctx(sequence=2))
     assert subject == "Amended nomination (2) INQ-2611-001 – Stena Example – Rotterdam"  # noqa: RUF001
     assert body == (
-        "Dear Anna Seller,\n\nWe confirm the following amended nomination (amendment 2), "
+        "Dear Anna Seller,\n\nWe confirm the following amended nomination (version 2), "
         "which replaces any earlier nomination for this call:\n\n" + _COMMON
     )
 
@@ -133,7 +128,6 @@ def test_golden_version_2_amended() -> None:
 @pytest.mark.req("B5-R05")
 def test_missing_fields_and_signature() -> None:
     """Absent fields print as to be advised; no buyer name signs with the desk only."""
-    line = NominationLine("MGO", Decimal(5), "m3", None, None, Decimal(1), None, in_total=False)
     _, body = render_nomination(
         _ctx(
             eta=None,
@@ -145,16 +139,16 @@ def test_missing_fields_and_signature() -> None:
             physical_supplier=None,
             payment_terms=None,
             buyer_name="",
-            lines=(line,),
+            lines=(),
+            total=Decimal("2050.50"),
         )
     )
     assert "ETA / ETD: to be advised / to be advised\n" in body
     assert "Agent: to be advised\n" in body
-    assert "Delivery window: to be advised to to be advised\n" in body
+    assert "Delivery window: to be advised\n" in body
     assert "Delivery method: to be advised\n" in body
     assert "Physical supplier: to be advised\n" in body
     assert "Payment terms: to be advised\n" in body
-    assert "  - MGO: 5 m3 -> quantity in mt to be advised (not included in total)\n" in body
     assert body.endswith("Kind regards,\nBunker desk")
 
 
@@ -167,11 +161,42 @@ def test_missing_fields_and_signature() -> None:
         ("999", "USD 999.00"),
         ("-25000.00", "USD -25,000.00"),
         ("-0.05", "USD -0.05"),
+        ("-0.00", "USD 0.00"),
+        ("0", "USD 0.00"),
     ],
 )
 def test_format_usd_matches_web(value: str, text: str) -> None:
     """Same cases as web/src/money.test.ts."""
     assert format_usd(Decimal(value)) == text
+
+
+@pytest.mark.req("B5-R05")
+@pytest.mark.parametrize("value", ["1.999", "0.005", "-0.001", "1.001"])
+def test_format_usd_rejects_more_than_two_decimals(value: str) -> None:
+    """The web formatUsd throws on more than 2 decimals; so does this."""
+    with pytest.raises(ValueError, match="decimals"):
+        format_usd(Decimal(value))
+
+
+@pytest.mark.req("B5-R05")
+def test_total_guard_and_currency() -> None:
+    """A text cannot state a total that differs from its lines plus fixed costs, or non-USD."""
+    with pytest.raises(ValueError, match="total"):
+        render_nomination(_ctx(total=Decimal("1332706.35")))
+    with pytest.raises(ValueError, match="USD"):
+        render_nomination(_ctx(currency="EUR"))
+
+
+@pytest.mark.req("B5-R05")
+def test_line_states_are_consistent() -> None:
+    """in_total with no cost, a cost outside the total, or an unpriced line in total: impossible."""
+    cost = Decimal(5)
+    with pytest.raises(ValueError, match="in_total"):
+        NominationLine("X", cost, "mt", None, cost, cost, cost, in_total=False)
+    with pytest.raises(ValueError, match="in_total"):
+        NominationLine("X", cost, "mt", None, cost, cost, None, in_total=True)
+    with pytest.raises(ValueError, match="unpriced"):
+        NominationLine("X", cost, "mt", None, cost, None, cost, in_total=True)
 
 
 ALLOWED_CTX = {
@@ -185,9 +210,12 @@ ALLOWED_LINE = {
     *("product", "quantity", "unit", "density", "qty_mt", "price_per_mt", "line_cost", "in_total"),
 }
 FORBIDDEN = {
-    *("decision_reason", "decision_note", "internal_comments", "cancel_reason"),
+    *("decision_reason", "decision_note", "internal_comments", "internal_note", "cancel_reason"),
     *("operator_name", "requester_name", "legal_entity_name", "other_offers"),
-    *("offer_count", "delta_to_lowest", "lowest"),
+    *("offer_count", "rfq_count", "delta_to_lowest", "lowest", "offers", "prices"),
+    *("operator_email", "requester_email", "buyer_email", "agent_email", "cc", "bcc"),
+    *("operator", "requester", "legal_entity", "counterparty_name", "other_counterparties"),
+    *("other_price", "other_prices", "other_supplier", "supplier_name", "comments"),
 }
 
 
@@ -206,6 +234,8 @@ def test_positive_control_marker_reaches_body() -> None:
     """A marker in an allowed field is found, so the absence checks are meaningful."""
     _, body = render_nomination(_ctx(physical_supplier="MARKER-ZX81"))
     assert "MARKER-ZX81" in body
+    _, clean = render_nomination(_ctx())
+    assert "MARKER-ZX81" not in clean
 
 
 @pytest.mark.req("B5-R04")
