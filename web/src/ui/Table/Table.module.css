@@ -88,3 +88,7 @@ th[aria-sort="descending"] .sort::after {
   color: var(--color-muted);
   text-align: center;
 }
+
+.table tr[data-highlight] {
+  background-color: var(--color-ok-soft);
+}

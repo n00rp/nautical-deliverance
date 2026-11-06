@@ -350,12 +350,12 @@ def test_create_log_and_preview_shape(admin: Rc, inq: Json, world: SimpleNamespa
     items = admin.make(inq["id"], ("Beta", "b1"), ("Alpha", "a2"))
     keys = {
         "id", "counterparty_name", "contact_name", "email", "generated_at", "sent_at", "status",
-        "response_deadline", "offer_received", "changed_since_sent", "version",
+        "response_deadline", "offer_received", "offer_id", "changed_since_sent", "version",
     }  # fmt: skip
     for x in items:
         assert set(x) == keys
         assert (x["status"], x["sent_at"], x["version"]) == ("draft", None, 1)
-        assert (x["offer_received"], x["changed_since_sent"]) == (False, False)
+        assert (x["offer_received"], x["offer_id"], x["changed_since_sent"]) == (False, None, False)
         assert x["generated_at"].startswith("2026-11-05T12:00:00")
         assert x["response_deadline"].startswith("2026-11-10T08:00:00")
     assert admin.api(f"/inquiries/{inq['id']}/rfqs") == sorted(

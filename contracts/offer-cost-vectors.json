@@ -1,0 +1,673 @@
+{
+  "format": "Strings only; null allowed. fixed = barging, port call, agent, surveyor, other. qty_mt is never rounded: the shortest exact decimal with at least 3 decimals (102.000, 9.125, 850.5008505). line_cost and total have exactly 2 decimals. line_cost, qty_mt and in_total are null/false where a line is not in the total (qty_mt is null only when an m3 line has no density). Rounding: half-up per line; inputs are non-negative, so half-up on a scaled integer v is (v + 5) // 10. total = sum of rounded lines + fixed. An offer with no lines is incomplete. expected {\"error\": \"total too large\"} means the total exceeds 999999999999.99 and must be rejected.",
+  "cases": [
+    {
+      "name": "spec worked example",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "500.000",
+            "inquiry_density": null,
+            "price_per_mt": "612.345",
+            "offer_density": null
+          },
+          {
+            "line_id": "B",
+            "unit": "m3",
+            "quantity": "120.000",
+            "inquiry_density": "850.0",
+            "price_per_mt": "845.5",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "1200.00",
+          "0.00",
+          "350.00",
+          "450.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "500.000",
+            "line_cost": "306172.50",
+            "in_total": true
+          },
+          {
+            "line_id": "B",
+            "qty_mt": "102.000",
+            "line_cost": "86241.00",
+            "in_total": true
+          }
+        ],
+        "total": "394413.50",
+        "complete": true
+      }
+    },
+    {
+      "name": "half-up 0.005 rounds to 0.01",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "1.000",
+            "inquiry_density": null,
+            "price_per_mt": "0.005",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "1.000",
+            "line_cost": "0.01",
+            "in_total": true
+          }
+        ],
+        "total": "0.01",
+        "complete": true
+      }
+    },
+    {
+      "name": "0.004999 rounds to 0.00",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "0.001",
+            "inquiry_density": null,
+            "price_per_mt": "4.999",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "0.001",
+            "line_cost": "0.00",
+            "in_total": true
+          }
+        ],
+        "total": "0.00",
+        "complete": true
+      }
+    },
+    {
+      "name": "0.004995 rounds to 0.00",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "0.999",
+            "inquiry_density": null,
+            "price_per_mt": "0.005",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "0.999",
+            "line_cost": "0.00",
+            "in_total": true
+          }
+        ],
+        "total": "0.00",
+        "complete": true
+      }
+    },
+    {
+      "name": "third decimal exactly 5 rounds up (1.005)",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "1.000",
+            "inquiry_density": null,
+            "price_per_mt": "1.005",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "1.000",
+            "line_cost": "1.01",
+            "in_total": true
+          }
+        ],
+        "total": "1.01",
+        "complete": true
+      }
+    },
+    {
+      "name": "third decimal exactly 5 rounds up (2.505)",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "3.000",
+            "inquiry_density": null,
+            "price_per_mt": "0.835",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "3.000",
+            "line_cost": "2.51",
+            "in_total": true
+          }
+        ],
+        "total": "2.51",
+        "complete": true
+      }
+    },
+    {
+      "name": "m3 with inquiry density",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "m3",
+            "quantity": "10.000",
+            "inquiry_density": "912.5",
+            "price_per_mt": "700.000",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "9.125",
+            "line_cost": "6387.50",
+            "in_total": true
+          }
+        ],
+        "total": "6387.50",
+        "complete": true
+      }
+    },
+    {
+      "name": "m3 inquiry density wins over offer density",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "m3",
+            "quantity": "10.000",
+            "inquiry_density": "912.5",
+            "price_per_mt": "700.000",
+            "offer_density": "800.0"
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "9.125",
+            "line_cost": "6387.50",
+            "in_total": true
+          }
+        ],
+        "total": "6387.50",
+        "complete": true
+      }
+    },
+    {
+      "name": "m3 with offer density only",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "m3",
+            "quantity": "10.000",
+            "inquiry_density": null,
+            "price_per_mt": "700.000",
+            "offer_density": "912.5"
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "9.125",
+            "line_cost": "6387.50",
+            "in_total": true
+          }
+        ],
+        "total": "6387.50",
+        "complete": true
+      }
+    },
+    {
+      "name": "m3 exact qty_mt beyond 3 decimals",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "m3",
+            "quantity": "1000.001",
+            "inquiry_density": "850.5",
+            "price_per_mt": "845.500",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "850.5008505",
+            "line_cost": "719098.47",
+            "in_total": true
+          }
+        ],
+        "total": "719098.47",
+        "complete": true
+      }
+    },
+    {
+      "name": "m3 exact qty_mt tie at 4th decimal",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "m3",
+            "quantity": "1.000",
+            "inquiry_density": "600.5",
+            "price_per_mt": "1000.000",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "0.6005",
+            "line_cost": "600.50",
+            "in_total": true
+          }
+        ],
+        "total": "600.50",
+        "complete": true
+      }
+    },
+    {
+      "name": "m3 without density is not in total",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "100.000",
+            "inquiry_density": null,
+            "price_per_mt": "500.000",
+            "offer_density": null
+          },
+          {
+            "line_id": "B",
+            "unit": "m3",
+            "quantity": "50.000",
+            "inquiry_density": null,
+            "price_per_mt": "600.000",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "10.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "100.000",
+            "line_cost": "50000.00",
+            "in_total": true
+          },
+          {
+            "line_id": "B",
+            "qty_mt": null,
+            "line_cost": null,
+            "in_total": false
+          }
+        ],
+        "total": "50010.00",
+        "complete": false
+      }
+    },
+    {
+      "name": "missing price is incomplete",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "100.000",
+            "inquiry_density": null,
+            "price_per_mt": "500.000",
+            "offer_density": null
+          },
+          {
+            "line_id": "B",
+            "unit": "mt",
+            "quantity": "20.000",
+            "inquiry_density": null,
+            "price_per_mt": null,
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "100.000",
+            "line_cost": "50000.00",
+            "in_total": true
+          },
+          {
+            "line_id": "B",
+            "qty_mt": "20.000",
+            "line_cost": null,
+            "in_total": false
+          }
+        ],
+        "total": "50000.00",
+        "complete": false
+      }
+    },
+    {
+      "name": "zero lines is incomplete",
+      "offer": {
+        "lines": [],
+        "fixed": [
+          "10.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [],
+        "total": "10.00",
+        "complete": false
+      }
+    },
+    {
+      "name": "zero fixed costs",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "250.500",
+            "inquiry_density": null,
+            "price_per_mt": "400.000",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "250.500",
+            "line_cost": "100200.00",
+            "in_total": true
+          }
+        ],
+        "total": "100200.00",
+        "complete": true
+      }
+    },
+    {
+      "name": "three-decimal prices",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "333.333",
+            "inquiry_density": null,
+            "price_per_mt": "601.999",
+            "offer_density": null
+          },
+          {
+            "line_id": "B",
+            "unit": "mt",
+            "quantity": "0.500",
+            "inquiry_density": null,
+            "price_per_mt": "99999.999",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.01",
+          "0.02",
+          "0.03",
+          "0.04",
+          "0.05"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "333.333",
+            "line_cost": "200666.13",
+            "in_total": true
+          },
+          {
+            "line_id": "B",
+            "qty_mt": "0.500",
+            "line_cost": "50000.00",
+            "in_total": true
+          }
+        ],
+        "total": "250666.28",
+        "complete": true
+      }
+    },
+    {
+      "name": "large total just under MAX_TOTAL",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "9999999.000",
+            "inquiry_density": null,
+            "price_per_mt": "99999.999",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "109999.99",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "9999999.000",
+            "line_cost": "999999890000.00",
+            "in_total": true
+          }
+        ],
+        "total": "999999999999.99",
+        "complete": true
+      }
+    },
+    {
+      "name": "over limit by 0.01 is rejected",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "9999999.000",
+            "inquiry_density": null,
+            "price_per_mt": "99999.999",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "110000.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "error": "total too large"
+      }
+    },
+    {
+      "name": "over limit huge product is rejected",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "999999999.999",
+            "inquiry_density": null,
+            "price_per_mt": "99999.999",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "error": "total too large"
+      }
+    }
+  ]
+}

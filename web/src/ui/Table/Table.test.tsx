@@ -60,6 +60,12 @@ describe("Table", () => {
     expect(sortOf("Name")).toBe("ascending");
   });
 
+  it("[B4-R12] table highlight marks the chosen rows", () => {
+    setup({ highlight: (r) => r.id === "b" });
+    const marked = screen.getAllByRole("row").filter((r) => r.hasAttribute("data-highlight"));
+    expect(marked.map((r) => r.textContent)).toEqual(["Alpha100"]);
+  });
+
   it("[B1-R13] table selection: click, Enter and Space select; selected row is aria-selected", async () => {
     const onRowSelect = vi.fn();
     setup({ onRowSelect, selectedKey: "b" });

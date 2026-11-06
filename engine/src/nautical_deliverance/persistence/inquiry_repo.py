@@ -12,11 +12,13 @@ from nautical_deliverance.domain.rfq import RfqStatus
 from nautical_deliverance.persistence.models import (
     AppUser,
     BunkeringReason,
+    Counterparty,
     Inquiry,
     InquiryLine,
     InquiryReferenceCounter,
     IsoSpecVersion,
     LegalEntity,
+    Offer,
     Port,
     Product,
     Rfq,
@@ -66,6 +68,22 @@ def _rfq_count(*where: ColumnElement[bool]) -> Any:  # noqa: ANN401
     return select(func.count()).where(Rfq.inquiry_id == Inquiry.id, *where).scalar_subquery()
 
 
+def _offer_count() -> Any:  # noqa: ANN401
+    """Correlated number of offers entered for the inquiry."""
+    return select(func.count()).where(Offer.inquiry_id == Inquiry.id).scalar_subquery()
+
+
+def _winner_name() -> Any:  # noqa: ANN401
+    """Correlated name of the selected offer's counterparty (kept even once it is inactive)."""
+    return (
+        select(Counterparty.name)
+        .join(Rfq, Rfq.counterparty_id == Counterparty.id)
+        .join(Offer, Offer.rfq_id == Rfq.id)
+        .where(Offer.id == Inquiry.winner_offer_id)
+        .scalar_subquery()
+    )
+
+
 def list_rows(
     session: Session, *, status: str | None, q: str | None, buyer: uuid.UUID | None, sort: str
 ) -> Sequence[Row[Any]]:
@@ -83,6 +101,8 @@ def list_rows(
             # Active RFQs; "sent" is the active ones that left Draft (a declined one was sent).
             _rfq_count(is_active_rfq()).label("rfq_total"),
             _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
+            _offer_count().label("offer_total"),
+            _winner_name().label("winner_counterparty_name"),
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)
         .join(Port, Port.id == Inquiry.port_id)
@@ -140,6 +160,27 @@ def line_text(  # noqa: PLR0913, PLR0917
     return " | ".join(parts)
 
 
+# The decision columns the Operator never sees; also the audited decision fields.
+DECISION_COLUMNS = ("winner_offer_id", "decision_reason", "decision_note", "decided_total")
+
+
+def decision(session: Session, inq: Inquiry) -> dict[str, Any] | None:
+    """Return the recorded winner decision (commercial: never show it to an Operator)."""
+    if inq.winner_offer_id is None or inq.decided_total is None:
+        return None
+    by = session.get(AppUser, inq.decided_by)
+    assert by is not None  # noqa: S101  (FK)
+    return {
+        "winner_offer_id": inq.winner_offer_id,
+        "reason": inq.decision_reason,
+        "note": inq.decision_note,
+        "decided_at": inq.decided_at,
+        "decided_by_name": by.name or by.email,
+        "decided_total": format(inq.decided_total, "f"),
+        "currency": "USD",  # D-071: the system is USD-only
+    }
+
+
 def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
     """Return the full inquiry record: columns, names, inactive flags, lines, warnings."""
     operator, buyer, requester = (aliased(AppUser) for _ in range(3))
@@ -161,6 +202,7 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
                 _shown(requester).label("requester_name"),
                 _rfq_count(is_active_rfq()).label("rfq_total"),
                 _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
+                _winner_name().label("winner_counterparty_name"),
             )
             .select_from(Inquiry)
             .join(Vessel, Vessel.id == Inquiry.vessel_id)
@@ -213,4 +255,6 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
                 }
             )
     columns = {c.key: getattr(inq, c.key) for c in Inquiry.__table__.columns}
-    return {**columns, **names, "lines": lines, "warnings": warnings}
+    return {
+        **columns, **names, "lines": lines, "warnings": warnings, "decision": decision(session, inq)
+    }  # fmt: skip

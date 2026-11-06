@@ -79,6 +79,9 @@ CONSTRAINTS = {
     "coverage_product_fk": ("items.product_id", "Unknown product"),
     "vessel_approved_fuel_org_vessel_product_key": ("items", "Duplicate approved fuel"),
     "vessel_approved_fuel_product_fk": ("items.product_id", "Unknown product"),
+    "offer_rfq_id_key": ("rfq_id", "Offer already entered"),
+    "offer_delivery_order": ("delivery_to", "Must not be before delivery_from"),
+    "offer_line_one_per_line_key": ("lines", "Duplicate inquiry line"),
 }
 
 

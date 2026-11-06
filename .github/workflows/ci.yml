@@ -17,7 +17,7 @@ env:
   UV_LOCKED: "1"
 
 jobs:
-  # req: S0-R06 S0-R07 S0-R08 S0-R15 B1-R16 B2-R15 B3-R15
+  # req: S0-R06 S0-R07 S0-R08 S0-R15 B1-R16 B2-R15 B3-R15 B4-R14
   engine:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -74,7 +74,7 @@ jobs:
       - name: Duplication (jscpd, threshold 0)
         run: pnpm --dir web run duplication
 
-  # req: S0-R06 S0-R07 S0-R15 B1-R12 B1-R16 B2-R15 B3-R15
+  # req: S0-R06 S0-R07 S0-R15 B1-R12 B1-R16 B2-R15 B3-R15 B4-R14
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 15

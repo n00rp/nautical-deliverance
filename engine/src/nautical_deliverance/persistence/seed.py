@@ -25,14 +25,17 @@ Sources, retrieved 2026-11-05:
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, cast
 
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.orm import Session
 
+from nautical_deliverance.domain.offer import evaluate_offer
 from nautical_deliverance.domain.rfq import render_rfq
+from nautical_deliverance.persistence import offer_repo
 from nautical_deliverance.persistence.inquiry_repo import next_reference
-from nautical_deliverance.persistence.models import Rfq
+from nautical_deliverance.persistence.models import Offer, OfferLine, Rfq
 from nautical_deliverance.persistence.rfq_repo import build_context
 
 # Must match the `org_id` attributes of the users in infra/keycloak/realm-dev.json.
@@ -452,6 +455,8 @@ _INQUIRIES = (
      ((_VL, "900", "mt", None), (_DMA, "100", "mt", None)), None),
     ("cancelled", True, 0, "BEANR", "Working cargo", 60, 24,
      ((_DMA, "250", "mt", None),), "Voyage cancelled by charterer"),
+    ("winner_selected", True, 2, "NLRTM", "Bunkers only", 100, 30,
+     ((_VL, "700", "mt", None), (_DMA, "150", "mt", None)), None),
 )  # fmt: skip
 
 
@@ -517,6 +522,7 @@ def seed_demo_inquiries(engine: Engine, now: datetime | None = None) -> None:
             for n, spec in enumerate(_INQUIRIES, 1):
                 _seed_inquiry(db, s, now, n, spec, data["vessels"], users)
             _seed_rfqs(db, s, now, users)
+            _seed_offers(db, s, now, users)
 
 
 # Demo RFQs by inquiry voyage marker: the final status of each RFQ, one per recipient.
@@ -525,6 +531,7 @@ _RFQS = {
     "DEMO-4": ("sent", "sent"),
     "DEMO-5": ("sent", "declined"),
     "DEMO-6": ("sent",),
+    "DEMO-8": ("sent", "sent", "sent", "sent"),
 }
 
 
@@ -559,6 +566,87 @@ def _seed_rfqs(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID])
                 rfq.inquiry_version_at_send = row.version
             s.add(rfq)
         s.flush()
+
+
+# Demo offers by inquiry voyage marker, one per sent RFQ in counterparty-name order:
+# (hours until valid_until, USD/mt per inquiry line or None for a missing line, barging cost).
+_OFFERS = {
+    "DEMO-5": ((48, ("640",), "3500"),),
+    "DEMO-6": ((72, ("655", "840"), "4200"),),
+    "DEMO-8": (
+        (72, ("640", "810"), "4500"),  # complete, lowest among those still selectable
+        (72, ("665", "790"), "3000"),  # complete, dearer: the winner
+        (48, ("655", None), "0"),  # partial
+        (-6, ("630", "800"), "0"),  # complete and cheapest, but expired
+    ),
+}
+_WINNERS = {  # voyage -> (offer index, reason, note); a lowest offer needs no rationale
+    "DEMO-6": (0, None, None),
+    "DEMO-8": (1, "operational_fit", "Closer barge slot to the vessel's ETA."),
+}
+
+
+def _seed_offers(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID]) -> None:
+    """Attach offers to the sent demo RFQs and record the one decision (totals via the domain)."""
+    buyer = users["bunker_buyer"]
+    for voyage, specs in _OFFERS.items():
+        inq = db.conn.execute(
+            text("SELECT id FROM inquiry WHERE voyage = :v"), {"v": voyage}
+        ).scalar_one()
+        if db.conn.execute(text("SELECT 1 FROM offer WHERE inquiry_id = :i"), {"i": inq}).first():
+            continue
+        rfq_ids = (
+            db.conn.execute(
+                text(
+                    "SELECT r.id FROM rfq r JOIN counterparty c ON c.id = r.counterparty_id"
+                    " WHERE r.inquiry_id = :i AND r.status = 'sent' ORDER BY c.name"
+                ),
+                {"i": inq},
+            )
+            .scalars()
+            .all()
+        )
+        line_ids = (
+            db.conn.execute(
+                text("SELECT id FROM inquiry_line WHERE inquiry_id = :i ORDER BY position"),
+                {"i": inq},
+            )
+            .scalars()
+            .all()
+        )
+        offers: list[Offer] = []
+        for rfq_id, (hours, prices, barging) in zip(rfq_ids, specs, strict=True):
+            offer = Offer(
+                id=uuid.uuid4(), organization_id=db.org, rfq_id=rfq_id, inquiry_id=inq,
+                valid_until=now + timedelta(hours=hours), barging_cost=Decimal(barging),
+                payment_terms="30 days net", created_at=now, created_by=buyer, updated_at=now,
+                received_at=now + timedelta(hours=min(0, hours - 24)),  # before valid_until
+            )  # fmt: skip
+            s.add(offer)
+            s.flush()
+            s.add_all(
+                OfferLine(
+                    id=uuid.uuid4(),
+                    organization_id=db.org,
+                    offer_id=offer.id,
+                    inquiry_id=inq,
+                    inquiry_line_id=lid,
+                    price_per_mt=Decimal(price),
+                )
+                for lid, price in zip(line_ids, prices, strict=True)
+                if price is not None
+            )
+            s.flush()
+            offers.append(offer)
+        if voyage in _WINNERS:
+            idx, reason, note = _WINNERS[voyage]
+            winner = offers[idx]
+            total = evaluate_offer(offer_repo.inputs_for(s, winner)).total
+            db.put(
+                "UPDATE inquiry SET winner_offer_id = :w, decision_reason = :r, decision_note = :n,"
+                " decided_at = :t, decided_by = :b, decided_total = :d WHERE id = :i",
+                w=winner.id, r=reason, n=note, t=now, b=buyer, d=total, i=inq,
+            )  # fmt: skip
 
 
 def main() -> None:

@@ -14,7 +14,8 @@ RUN pnpm build
 FROM nginxinc/nginx-unprivileged:1.31.7-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
 # Static serving needs none of the image-filter/curl stack; removing it drops its vulnerable libs.
 USER root
-RUN apk del --no-cache curl libcurl freetype fontconfig brotli-libs libexpat
+RUN apk del --no-cache curl libcurl freetype fontconfig brotli-libs libexpat \
+ && apk upgrade --no-cache zlib  # CVE-2026-85091 fixed in 1.3.2-r1; drop once the base image ships it
 USER 101
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html

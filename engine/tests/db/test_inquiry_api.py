@@ -827,6 +827,8 @@ def test_list_item_fields(admin: Client) -> None:
         "buyer_name": "User admin",
         "rfq_total": 0,
         "rfq_sent": 0,
+        "offer_total": 0,
+        "winner_counterparty_name": None,
         "eta_warning": False,
     }
 

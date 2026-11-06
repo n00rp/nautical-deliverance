@@ -344,6 +344,37 @@ describe("InquiryPage actions", () => {
     expect(link()).toBeNull();
   });
 
+  it("[B4-R12] Compare offers opens the comparison once there are offers, for every reader", async () => {
+    const link = () => screen.queryByRole("link", { name: "Compare offers" });
+    for (const status of ["offers_received", "winner_selected", "nominated"] as const) {
+      for (const role of ["bunker_buyer", "admin", "viewer"] as const) {
+        setup(inquiry({ status, rfq_total: 2, rfq_sent: 2 }), [role]);
+        await form();
+        expect(link()?.getAttribute("href")).toBe("#/inquiries/i1/offers");
+        cleanup();
+      }
+    }
+    setup(inquiry({ status: "rfq_sent", rfq_total: 2, rfq_sent: 2 }), ["bunker_buyer"]);
+    await form();
+    expect(link()).toBeNull();
+    cleanup();
+    setup(inquiry({ status: "offers_received", rfq_total: null, rfq_sent: null }), ["operator"]);
+    await form();
+    expect(link()).toBeNull();
+  });
+
+  it("[B4-R12] the selected supplier is named, and an Operator sees nothing else of the decision", async () => {
+    const rec = inquiry({ status: "winner_selected", winner_counterparty_name: "Beta Marine" });
+    setup({ ...rec, rfq_total: null, rfq_sent: null, decision: null }, ["operator"]);
+    await form();
+    expect(screen.getByText("Selected supplier: Beta Marine")).toBeTruthy();
+    expect(screen.queryByText(/USD/)).toBeNull();
+    cleanup();
+    setup(inquiry({ status: "offers_received" }), ["bunker_buyer"]);
+    await form();
+    expect(screen.queryByText(/Selected supplier/)).toBeNull();
+  });
+
   it("[B3-R13] the fields that go into the RFQ text say so; internal comments stay internal", async () => {
     setup(twoLines());
     await form();

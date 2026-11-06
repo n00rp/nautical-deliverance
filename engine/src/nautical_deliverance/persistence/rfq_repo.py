@@ -15,6 +15,7 @@ from nautical_deliverance.persistence.models import (
     Coverage,
     Inquiry,
     InquiryLine,
+    Offer,
     Port,
     Product,
     Rfq,
@@ -96,9 +97,16 @@ def log(
 ) -> list[dict[str, Any]]:
     """Log items of an inquiry (or just `only`), oldest first."""
     stmt = (
-        select(Rfq, Counterparty.name, Contact.name, Contact.email)
+        select(
+            Rfq,
+            Counterparty.name,
+            Contact.name,
+            Contact.email,
+            Offer.id,
+        )
         .join(Counterparty, Counterparty.id == Rfq.counterparty_id)
         .join(Contact, Contact.id == Rfq.contact_id)
+        .outerjoin(Offer, Offer.rfq_id == Rfq.id)
         .where(Rfq.inquiry_id == inquiry_id)
         .order_by(Rfq.generated_at, Counterparty.name, Rfq.id)
     )
@@ -114,11 +122,12 @@ def log(
             "sent_at": rfq.sent_at,
             "status": rfq.status,
             "response_deadline": rfq.response_deadline,
-            "offer_received": False,  # ponytail: B4 sets this when an offer is entered
+            "offer_received": offer_id is not None,
+            "offer_id": offer_id,
             "changed_since_sent": changed_since_sent(session, rfq),
             "version": rfq.version,
         }
-        for rfq, cp_name, contact_name, email in session.execute(stmt)
+        for rfq, cp_name, contact_name, email, offer_id in session.execute(stmt)
     ]
 
 

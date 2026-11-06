@@ -30,6 +30,7 @@ from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status, can_transition
 from nautical_deliverance.persistence.audit import record_change
 from nautical_deliverance.persistence.inquiry_repo import (
+    DECISION_COLUMNS,
     dec,
     detail,
     line_rows,
@@ -239,6 +240,38 @@ def _transition(inq: Inquiry, to: Status) -> dict[str, Any]:
     return {"status": to.value}
 
 
+def bump_and_audit(  # noqa: PLR0913, PLR0917
+    s: Session,
+    principal: Principal,
+    now: datetime,
+    inq: Inquiry,
+    action: Literal["update", "take", "cancel", "select_winner"],
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> None:
+    """Bump the inquiry version after its fields were set and write one audit entry."""
+    inq.version += 1
+    inq.updated_at = now
+    s.flush()
+    record_change(
+        s,
+        actor=principal.user_id,
+        entity_type="inquiry",
+        entity_id=inq.id,
+        action=action,
+        before=before,
+        after=after,
+    )
+
+
+def advance(s: Session, principal: Principal, now: datetime, inq: Inquiry, to: Status) -> None:
+    """Move the inquiry to `to` (409 when not allowed) with a version bump and audit entry."""
+    moved = _transition(inq, to)
+    before = {k: getattr(inq, k) for k in moved}
+    inq.status = moved["status"]
+    bump_and_audit(s, principal, now, inq, "update", before, moved)
+
+
 # --- routes ------------------------------------------------------------------------------------
 
 
@@ -256,7 +289,7 @@ def _sees_rfqs(principal: Principal) -> bool:
 
 def _out(s: Session, inq: Inquiry, principal: Principal) -> InquiryOut:
     """Return the inquiry record; the RFQ deadline is hidden from the Operator."""
-    hide = {} if _sees_rfqs(principal) else dict.fromkeys(RFQ_FIELDS)
+    hide = {} if _sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "decision"))
     return InquiryOut(**{**detail(s, inq), **hide})
 
 
@@ -276,7 +309,7 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
         rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
-        hide = {} if _sees_rfqs(principal) else dict.fromkeys(RFQ_FIELDS)
+        hide = {} if _sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "offer_total"))
         return [
             InquiryListItem(
                 **{**r._asdict(), **hide}, eta_warning=_eta_warning(r.status, r.eta, now)
@@ -431,18 +464,7 @@ def _change(  # noqa: PLR0913, PLR0917
     before = {k: getattr(inq, k) for k in values}
     for k, v in values.items():
         setattr(inq, k, v)
-    inq.version += 1
-    inq.updated_at = now
-    s.flush()
-    record_change(
-        s,
-        actor=principal.user_id,
-        entity_type="inquiry",
-        entity_id=inq.id,
-        action=action,
-        before=before,
-        after=values,
-    )
+    bump_and_audit(s, principal, now, inq, action, before, values)
     return _out(s, inq, principal)
 
 
@@ -507,6 +529,7 @@ def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> ob
         out = [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
         if _sees_rfqs(principal):
             return out
-        for e in out:  # the RFQ deadline reveals that suppliers were contacted
-            e.changes.pop("rfq_deadline", None)
+        for e in out:  # RFQ deadline and decision details are commercial (R6, B4-R09)
+            for k in ("rfq_deadline", *DECISION_COLUMNS):
+                e.changes.pop(k, None)
         return [e for e in out if e.changes]

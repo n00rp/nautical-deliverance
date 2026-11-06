@@ -63,6 +63,11 @@ const showLog = (rec: Inquiry, roles: Role[]) =>
   roles.some((r) => WRITERS.includes(r)) ||
   (roles.some((r) => READERS.includes(r)) && (rec.rfq_total ?? 0) > 0);
 
+/** The comparison opens once offers can exist, for everyone who may read them. */
+const showOffers = (rec: Inquiry, roles: Role[]) =>
+  roles.some((r) => READERS.includes(r)) &&
+  ["offers_received", "winner_selected", "nominated"].includes(rec.status);
+
 /** Create, edit and act on one inquiry (B2-R13). */
 export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
   const isNew = id === "new";
@@ -154,7 +159,15 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
             RFQs
           </a>
         )}
+        {rec && showOffers(rec, roles) && (
+          <a className={css.link} href={`#/inquiries/${rec.id}/offers`}>
+            Compare offers
+          </a>
+        )}
       </div>
+      {rec?.winner_counterparty_name && (
+        <p className={css.info}>{`Selected supplier: ${rec.winner_counterparty_name}`}</p>
+      )}
       {rec?.cancel_reason && <p className={css.info}>{`Cancelled: ${rec.cancel_reason}`}</p>}
       <InquiryForm
         key={`${id}:${String(epoch)}`}

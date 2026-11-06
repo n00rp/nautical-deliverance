@@ -5,15 +5,16 @@ created atomically, one per recipient. Every change is audited in the same trans
 """
 
 import uuid
-from datetime import datetime
-from typing import TYPE_CHECKING, Annotated, Any
+from datetime import datetime  # noqa: TC003  (FastAPI runtime)
+from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import Engine, select
+from fastapi import APIRouter, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
+from nautical_deliverance.api.access import Eng, Now, Reader, Writer  # noqa: TC001
 from nautical_deliverance.api.common import conflict, scope, unprocessable
-from nautical_deliverance.api.inquiries import _allow, _transition, get_now
+from nautical_deliverance.api.inquiries import advance, bump_and_audit
 from nautical_deliverance.api.inquiry_models import HistoryOut, VersionIn
 from nautical_deliverance.api.rfq_models import (
     PreviewOut,
@@ -23,8 +24,7 @@ from nautical_deliverance.api.rfq_models import (
     RfqPatch,
     Suggestions,
 )
-from nautical_deliverance.api.users import get_users_engine
-from nautical_deliverance.domain.identity import Principal, Role
+from nautical_deliverance.domain.identity import Principal  # noqa: TC001
 from nautical_deliverance.domain.inquiry import Status, ready_to_leave_draft
 from nautical_deliverance.domain.rfq import (
     RfqStatus,
@@ -40,6 +40,7 @@ from nautical_deliverance.persistence.models import (
     Contact,
     Counterparty,
     Inquiry,
+    Offer,
     Rfq,
 )
 
@@ -49,12 +50,6 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 CREATABLE = frozenset({Status.DRAFT, Status.RFQ_SENT, Status.OFFERS_RECEIVED})
-
-
-Reader = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER, Role.VIEWER))]
-Writer = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER))]
-Eng = Annotated[Engine, Depends(get_users_engine)]
-Now = Annotated[datetime, Depends(get_now)]
 
 
 def _inquiry(s: Session, inquiry_id: uuid.UUID, *, lock: bool = False) -> Inquiry:
@@ -214,12 +209,8 @@ def create_rfqs(
         if inq.rfq_deadline != body.deadline:
             before = {"rfq_deadline": inq.rfq_deadline}
             inq.rfq_deadline = body.deadline
-            inq.version += 1
-            inq.updated_at = now
-            s.flush()
-            record_change(
-                s, actor=principal.user_id, entity_type="inquiry", entity_id=inq.id,
-                action="update", before=before, after={"rfq_deadline": body.deadline},
+            bump_and_audit(
+                s, principal, now, inq, "update", before, {"rfq_deadline": body.deadline},
             )  # fmt: skip
         return rfq_repo.log(s, inq.id, {r.id for r in created})
 
@@ -339,16 +330,7 @@ def mark_sent(
         ctx = rfq_repo.build_context(s, rfq)
         subject, text_ = render_rfq(ctx)
         if Status(inq.status) is Status.DRAFT:
-            moved = _transition(inq, Status.RFQ_SENT)
-            before = {k: getattr(inq, k) for k in moved}
-            inq.status = moved["status"]
-            inq.version += 1
-            inq.updated_at = now
-            s.flush()
-            record_change(
-                s, actor=principal.user_id, entity_type="inquiry", entity_id=inq.id,
-                action="update", before=before, after=moved,
-            )  # fmt: skip
+            advance(s, principal, now, inq, Status.RFQ_SENT)
         values = {  # after the bump: a version the inquiry had while this RFQ was sent
             "status": RfqStatus.SENT.value,
             "sent_at": now,
@@ -375,7 +357,11 @@ def withdraw(
 def decline(rfq_id: uuid.UUID, body: VersionIn, principal: Writer, engine: Eng, now: Now) -> object:
     """Record that the supplier declined a sent RFQ."""
     with scope(principal, engine) as s:
-        _, rfq = _lock(s, rfq_id, body.version)
+        inq, rfq = _lock(s, rfq_id, body.version)
+        if s.scalar(
+            select(Offer.id).where(Offer.id == inq.winner_offer_id, Offer.rfq_id == rfq.id)
+        ):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Offer is the selected winner")  # R8
         _move(rfq, RfqStatus.DECLINED)
         return _finish(s, principal, now, rfq, "decline", {"status": RfqStatus.DECLINED.value})
 

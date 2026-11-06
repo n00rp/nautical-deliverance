@@ -92,6 +92,32 @@ describe("RfqLog", () => {
     expect(screen.queryByRole("link", { name: "Select suppliers" })).toBeNull();
   });
 
+  it("[B4-R12] writers get Enter offer or Edit offer on a sent RFQ only", async () => {
+    const received = {
+      ...sentRfq,
+      id: "r5",
+      counterparty_name: "Eps Marine",
+      offer_received: true,
+    };
+    setup(["bunker_buyer"], [draftRfq, sentRfq, received]);
+    await openRow("Beta Marine");
+    expect(screen.getByRole("link", { name: "Enter offer" }).getAttribute("href")).toBe(
+      "#/inquiries/i1/rfqs/r1/offer",
+    );
+    await openRow("Eps Marine");
+    expect(screen.getByRole("link", { name: "Edit offer" }).getAttribute("href")).toBe(
+      "#/inquiries/i1/rfqs/r5/offer",
+    );
+    await openRow("Alpha Marine");
+    expect(screen.queryByRole("link", { name: /offer$/ })).toBeNull();
+  });
+
+  it("[B4-R12] a viewer gets no offer link", async () => {
+    setup(["viewer"]);
+    await openRow("Beta Marine");
+    expect(screen.queryByRole("link", { name: /offer$/ })).toBeNull();
+  });
+
   it("[B3-R13] an operator gets a locked note and no requests", () => {
     const api = logApi();
     const spy = vi.spyOn(api, "listRfqs");
