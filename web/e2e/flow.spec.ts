@@ -111,11 +111,12 @@ test.describe("[B6-R08] pilot 1 purchase flow", () => {
     // The first offer entered is the cheaper one, so the second is the non-lowest.
     const suppliers: string[] = [];
     await test.step("enter 2 offers", async () => {
-      for (const prices of [
+      for (const [i, prices] of [
         ["600", "700"],
         ["650", "750"],
-      ]) {
-        await rfqRows(page, "Sent").filter({ hasNotText: "Yes" }).first().click();
+      ].entries()) {
+        // The two sent rows keep their order; no dependence on the "Offer received" wording.
+        await rfqRows(page, "Sent").nth(i).click();
         await page.getByRole("link", { name: "Enter offer" }).click();
         const heading = page.getByRole("heading", { name: /Enter offer from / });
         await expect(heading).toBeVisible();
@@ -158,7 +159,12 @@ test.describe("[B6-R08] pilot 1 purchase flow", () => {
       await page.goto(inquiryUrl);
       await expect(page.getByText("Nominated", { exact: true })).toBeVisible();
       await expect(page.getByText(`Nominated: ${chosen}`)).toBeVisible();
-      expect(await dashboardCount(page, "Nominated")).toBe(nominatedBefore + 1);
+      // The tile counts the whole organisation, so other users may move it: only a lower bound is
+      // race-free. Locally nobody else runs, so the run's own nomination must have raised it; on a
+      // remote run the inquiry above is Nominated, so the count is at least 1.
+      const local = /^(localhost|127\.0\.0\.1)$/.test(new URL(page.url()).hostname);
+      const floor = local ? nominatedBefore + 1 : 1;
+      await expect.poll(() => dashboardCount(page, "Nominated")).toBeGreaterThanOrEqual(floor);
     });
 
     await test.step("the operator sees the supplier and no USD", async () => {
@@ -198,9 +204,16 @@ async function cancelLeftovers(browser: Browser, baseURL: string) {
     const headers = { Authorization: `Bearer ${token ?? ""}` };
     const api = context.request;
     const get = async <T>(path: string) => (await (await api.get(path, { headers })).json()) as T;
-    // The list (all but cancelled) has no voyage, so every row's detail is read.
+    // The list (all but cancelled) has no voyage and its `q` does not search it, so the details are
+    // read, ten at a time. ponytail: N detail reads; add a voyage filter to the list if it grows.
     const rows = await get<Listed[]>("/api/v1/inquiries");
-    const details = await Promise.all(rows.map((r) => get<Detail>(`/api/v1/inquiries/${r.id}`)));
+    const details: Detail[] = [];
+    for (let i = 0; i < rows.length; i += 10) {
+      const chunk = rows.slice(i, i + 10);
+      details.push(
+        ...(await Promise.all(chunk.map((r) => get<Detail>(`/api/v1/inquiries/${r.id}`)))),
+      );
+    }
     for (const d of details) {
       if (!d.voyage?.startsWith(PREFIX) || d.status === "cancelled") continue;
       const res = await api.post(`/api/v1/inquiries/${d.id}/cancel`, {
