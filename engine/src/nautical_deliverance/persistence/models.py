@@ -298,3 +298,22 @@ class OfferLine(Base):
     inquiry_line_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inquiry_line.id"))
     price_per_mt: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     density: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
+
+
+class Nomination(_Stamped, Base):
+    """A nomination e-mail draft to the winning supplier; sent_* and sequence freeze at send."""
+
+    __tablename__ = "nomination"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"))
+    inquiry_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inquiry.id"))
+    offer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("offer.id"))
+    contact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contact.id"))
+    status: Mapped[str] = mapped_column(Text, server_default=text("'draft'"))
+    sequence: Mapped[int | None]
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_to_email: Mapped[str | None] = mapped_column(Text)
+    sent_subject: Mapped[str | None] = mapped_column(Text)
+    sent_body: Mapped[str | None] = mapped_column(Text)
+    inquiry_version_at_send: Mapped[int | None]
