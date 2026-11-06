@@ -74,6 +74,7 @@ class RfqItem(BaseModel):
     status: str
     response_deadline: datetime
     offer_received: bool
+    offer_id: uuid.UUID | None
     changed_since_sent: bool
     version: int
 

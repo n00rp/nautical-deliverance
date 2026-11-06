@@ -514,12 +514,13 @@ def test_log_shows_offer_received(admin: Oc) -> None:
         False,
         False,
     ]
-    admin.offer(rfqs[0]["id"])
+    made = admin.offer(rfqs[0]["id"])
     log = admin.api(f"/inquiries/{inq['id']}/rfqs")
     assert {i["id"]: i["offer_received"] for i in log} == {
         rfqs[0]["id"]: True,
         rfqs[1]["id"]: False,
     }
+    assert {i["id"]: i["offer_id"] for i in log} == {rfqs[0]["id"]: made["id"], rfqs[1]["id"]: None}
 
 
 @pytest.mark.req("B4-R01")

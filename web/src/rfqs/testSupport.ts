@@ -39,6 +39,7 @@ export const sentRfq: RfqItem = {
   status: "sent",
   response_deadline: "2026-11-10T08:00:00Z",
   offer_received: false,
+  offer_id: null,
   changed_since_sent: false,
   version: 2,
 };

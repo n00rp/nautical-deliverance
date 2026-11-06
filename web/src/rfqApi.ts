@@ -32,6 +32,7 @@ export type RfqItem = {
   status: RfqStatus;
   response_deadline: string;
   offer_received: boolean;
+  offer_id: string | null;
   changed_since_sent: boolean;
   version: number;
 };

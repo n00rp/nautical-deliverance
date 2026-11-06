@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import type { OfferApi } from "../offerApi";
 import { declinedRfq } from "../rfqs/testSupport";
@@ -8,6 +8,14 @@ import type { Role } from "../ui/RoleGate/RoleGate";
 import { ToastHost, ToastProvider } from "../ui/Toast/Toast";
 import { OfferEntry, type OfferEntryProps } from "./OfferEntry";
 import { entryApi, m3Lines, mtLines, savedOffer } from "./testSupport";
+
+beforeAll(() => {
+  // jsdom lacks the pointer/scroll APIs Radix Select uses.
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => undefined;
+  Element.prototype.releasePointerCapture = () => undefined;
+  Element.prototype.scrollIntoView = () => undefined;
+});
 
 afterEach(() => {
   cleanup();
@@ -114,11 +122,11 @@ describe("OfferEntry", () => {
   it("[B4-R12] an Operator has no access and nothing is requested", () => {
     const api = entryApi(mtLines);
     const spy = vi.spyOn(api, "getInquiry");
-    const comparison = vi.spyOn(api, "getComparison");
+    const offer = vi.spyOn(api, "getOffer");
     setup(api, ["operator"]);
     expect(screen.getByText("Hidden for your role: offer entry")).toBeTruthy();
     expect(spy).not.toHaveBeenCalled();
-    expect(comparison).not.toHaveBeenCalled();
+    expect(offer).not.toHaveBeenCalled();
   });
 
   it("[B4-R12] a viewer cannot enter offers either", () => {
@@ -136,15 +144,20 @@ describe("OfferEntry", () => {
   });
 
   it("[B4-R12] a failed load shows an error state", async () => {
-    const api = { ...entryApi(mtLines), getComparison: () => Promise.reject(new ApiError(500)) };
+    const api = { ...entryApi(mtLines), listRfqs: () => Promise.reject(new ApiError(500)) };
     setup(api);
     expect(await screen.findByText("Could not load the offer")).toBeTruthy();
   });
 
   it("[B4-R12] editing prefills the saved offer and patches it with its version", async () => {
-    const api = { ...entryApi(mtLines, savedOffer), patchOffer: patch() };
+    const api = {
+      ...entryApi(mtLines, savedOffer),
+      patchOffer: patch(),
+      getOffer: vi.fn<OfferApi["getOffer"]>().mockResolvedValue(savedOffer),
+    };
     setup(api);
     expect(await screen.findByText(/Edit offer from Beta Marine/)).toBeTruthy();
+    expect(api.getOffer).toHaveBeenCalledWith("o1"); // by the offer id on the RFQ log item
     expect(screen.getByLabelText<HTMLInputElement>(VLSFO).value).toBe("612.345");
     expect(screen.getByLabelText<HTMLInputElement>("Barging").value).toBe("1200.00");
     expect(screen.getByText("USD 391,922.50")).toBeTruthy();
@@ -186,6 +199,37 @@ describe("OfferEntry", () => {
     await waitFor(() => {
       expect(window.location.hash).toBe("#/inquiries/i1/rfqs");
     });
+  });
+
+  it("[B4-R12] a negative or invalid input is a field error and the total stays visible", async () => {
+    setup(entryApi(mtLines));
+    const vlsfo = await field(VLSFO);
+    await userEvent.type(vlsfo, "600");
+    await userEvent.type(screen.getByLabelText(MGO), "-5");
+    expect(screen.getByLabelText(MGO).getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getAllByText("Must not be negative").length).toBeGreaterThan(0);
+    expect(screen.getByText("USD 300,000.00")).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Barging"), "abc");
+    expect(screen.getByLabelText("Barging").getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText("USD 300,000.00")).toBeTruthy();
+  });
+
+  it("[B4-R12] a price field says to use a dot as decimal point", async () => {
+    setup(entryApi(mtLines));
+    await field(VLSFO);
+    expect(screen.getAllByText(/Use '\.' as decimal point/).length).toBe(2);
+  });
+
+  it("[B4-R12] the delivery method can be cleared", async () => {
+    const api = { ...entryApi(mtLines, savedOffer), patchOffer: patch() };
+    setup(api);
+    await userEvent.click(await screen.findByRole("combobox", { name: "Delivery method" }));
+    await userEvent.click(await screen.findByRole("option", { name: "None" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save offer" }));
+    await waitFor(() => {
+      expect(api.patchOffer).toHaveBeenCalledTimes(1);
+    });
+    expect(api.patchOffer.mock.calls[0]![2].delivery_method).toBeNull();
   });
 
   it("[B4-R12] a density is sent only for the m3 line that asks for one", async () => {

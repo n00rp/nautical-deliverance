@@ -7,8 +7,8 @@ import type { Inquiry, InquiryApi } from "../inquiryApi";
 import { evaluateOffer, formatUsd } from "../money";
 import {
   COST_KEYS,
-  type ComparisonRow,
   type DeliveryMethod,
+  type Offer,
   type OfferApi,
   type OfferBody,
 } from "../offerApi";
@@ -33,10 +33,11 @@ export type OfferEntryProps = {
   rfqId: string;
   api: Pick<InquiryApi, "getInquiry"> &
     Pick<RfqApi, "listRfqs"> &
-    Pick<OfferApi, "getComparison" | "createOffer" | "patchOffer">;
+    Pick<OfferApi, "getOffer" | "createOffer" | "patchOffer">;
   roles: Role[];
 };
 
+const NEGATIVE = "Must not be negative";
 const WRITERS: Role[] = ["admin", "bunker_buyer"];
 
 const METHODS: { value: DeliveryMethod; label: string }[] = [
@@ -77,7 +78,7 @@ const SIMPLE: Record<string, string> = {
 const asksDensity = (l: Inquiry["lines"][number]) => l.unit === "m3" && l.density === null;
 
 /** The values of a form, keyed by field id, from the offer being edited (if any). */
-function initial(inquiry: Inquiry, offer: ComparisonRow | undefined): Record<string, string> {
+function initial(inquiry: Inquiry, offer: Offer | undefined): Record<string, string> {
   if (!offer) return {};
   const values: Record<string, string> = {
     [VALID]: offer.valid_until,
@@ -100,7 +101,7 @@ function initial(inquiry: Inquiry, offer: ComparisonRow | undefined): Record<str
 type FormProps = {
   inquiry: Inquiry;
   rfq: RfqItem;
-  offer: ComparisonRow | undefined;
+  offer: Offer | undefined;
   api: Pick<OfferApi, "createOffer" | "patchOffer">;
   onFail: (e: unknown) => void;
 };
@@ -115,11 +116,16 @@ function OfferForm({ inquiry, rfq, offer, api, onFail }: FormProps) {
 
   const target = (name: string) => {
     const m = /^lines\[(\d+)\]\.(price_per_mt|density)$/.exec(name);
-    const line = m?.[1] ? sent[parseInt(m[1], 10)] : undefined;
+    const line = sent.find((_, i) => String(i) === m?.[1]);
     if (m && line) return `${m[2] === "density" ? "density" : "price"}-${line}`;
     return SIMPLE[name] ?? "offer-form";
   };
-  const err = (id: string) => issues.find((i) => target(i.field) === id)?.message;
+  // A negative amount is a field error; it counts as blank so the total stays visible.
+  const negative = (id: string) => v[id]?.startsWith("-") === true;
+  const num = (id: string) => (negative(id) ? "" : v[id]);
+  const negatives = Object.keys(v).filter(negative);
+  const err = (id: string) =>
+    negative(id) ? NEGATIVE : issues.find((i) => target(i.field) === id)?.message;
   const field = (id: string) => ({
     id,
     value: v[id] ?? "",
@@ -138,10 +144,10 @@ function OfferForm({ inquiry, rfq, offer, api, onFail }: FormProps) {
           unit: l.unit === "m3" ? "m3" : "mt",
           quantity: l.quantity,
           inquiry_density: l.density,
-          price_per_mt: v[`price-${l.id}`] || null,
-          offer_density: asksDensity(l) ? v[`density-${l.id}`] || null : null,
+          price_per_mt: num(`price-${l.id}`) || null,
+          offer_density: asksDensity(l) ? num(`density-${l.id}`) || null : null,
         })),
-        fixed: COST_KEYS.map((k) => v[`cost-${k}`] || "0"),
+        fixed: COST_KEYS.map((k) => num(`cost-${k}`) || "0"),
       });
     } catch (e) {
       return e instanceof Error ? e.message : "Cannot compute the total";
@@ -149,7 +155,7 @@ function OfferForm({ inquiry, rfq, offer, api, onFail }: FormProps) {
   }, [inquiry.lines, v]);
 
   const save = submit(async () => {
-    if (inflight.current) return;
+    if (inflight.current || negatives.length > 0) return;
     inflight.current = true;
     const text = (id: string) => v[id]?.trim() || null;
     const priced = inquiry.lines.filter((l) => v[`price-${l.id}`]);
@@ -195,7 +201,12 @@ function OfferForm({ inquiry, rfq, offer, api, onFail }: FormProps) {
       className={page.form}
       onSubmit={(e) => void save(e)}
     >
-      <FormSummary errors={issues.map((i) => ({ fieldId: target(i.field), message: i.message }))} />
+      <FormSummary
+        errors={[
+          ...negatives.map((fieldId) => ({ fieldId, message: NEGATIVE })),
+          ...issues.map((i) => ({ fieldId: target(i.field), message: i.message })),
+        ]}
+      />
       <Panel title="Prices">
         {inquiry.lines.map((l) => (
           <div key={l.id} className={css.line}>
@@ -205,7 +216,7 @@ function OfferForm({ inquiry, rfq, offer, api, onFail }: FormProps) {
                 label={`${l.product_name} — ${l.quantity} ${l.unit}`}
                 decimals={3}
                 dotIsDecimal
-                hint="USD per mt. Leave blank for no offer"
+                hint="USD per mt. Leave blank for no offer. Use '.' as decimal point"
               />
               {asksDensity(l) && (
                 <NumberField
@@ -265,7 +276,7 @@ function OfferForm({ inquiry, rfq, offer, api, onFail }: FormProps) {
             label="Delivery to"
             timeZone={inquiry.port_time_zone}
           />
-          <Select {...field(METHOD)} label="Delivery method" options={METHODS} />
+          <Select {...field(METHOD)} label="Delivery method" options={METHODS} emptyLabel="None" />
           <TextField {...field(TERMS)} label="Payment terms" />
           <TextField {...field(SUPPLIER)} label="Physical supplier" />
           <TextField {...field(COMMENT)} label="Comment" />
@@ -291,7 +302,7 @@ export function OfferEntry({ inquiryId, rfqId, api, roles }: OfferEntryProps) {
   const [data, setData] = useState<{
     inquiry: Inquiry;
     rfqs: RfqItem[];
-    offer: ComparisonRow | undefined;
+    offer: Offer | undefined;
   } | null>(null);
   const { tick, fail } = useReload();
   const [failed, setFailed] = useState(false);
@@ -301,12 +312,12 @@ export function OfferEntry({ inquiryId, rfqId, api, roles }: OfferEntryProps) {
     let live = true;
     const load = async () => {
       try {
-        const [inquiry, rfqs, comparison] = await Promise.all([
+        const [inquiry, rfqs] = await Promise.all([
           api.getInquiry(inquiryId),
           api.listRfqs(inquiryId),
-          api.getComparison(inquiryId),
         ]);
-        const offer = comparison.rows.find((r) => r.rfq_id === rfqId);
+        const offerId = rfqs.find((r) => r.id === rfqId)?.offer_id;
+        const offer = offerId ? await api.getOffer(offerId) : undefined;
         if (live) setData({ inquiry, rfqs, offer });
       } catch (e) {
         if (live) {

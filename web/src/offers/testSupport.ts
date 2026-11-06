@@ -89,8 +89,9 @@ export function entryApi(lines: Line[], saved?: ComparisonRow): OfferEntryProps[
   const row = saved ?? savedOffer;
   return {
     getInquiry: () => Promise.resolve(offerInquiry(lines)),
-    listRfqs: () => Promise.resolve([sentRfq]),
-    getComparison: () => Promise.resolve({ rows: saved ? [saved] : [], decision: null }),
+    listRfqs: () =>
+      Promise.resolve([saved ? { ...sentRfq, offer_received: true, offer_id: saved.id } : sentRfq]),
+    getOffer: () => Promise.resolve(row),
     createOffer: () => Promise.resolve(row),
     patchOffer: () => Promise.resolve(row),
   };

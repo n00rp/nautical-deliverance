@@ -3,7 +3,7 @@
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import select
 
 from nautical_deliverance.domain.rfq import RfqContext, RfqLine, build_mailto, render_rfq
 from nautical_deliverance.persistence.inquiry_repo import is_active_rfq, line_rows
@@ -102,10 +102,11 @@ def log(
             Counterparty.name,
             Contact.name,
             Contact.email,
-            exists().where(Offer.rfq_id == Rfq.id).label("has_offer"),
+            Offer.id,
         )
         .join(Counterparty, Counterparty.id == Rfq.counterparty_id)
         .join(Contact, Contact.id == Rfq.contact_id)
+        .outerjoin(Offer, Offer.rfq_id == Rfq.id)
         .where(Rfq.inquiry_id == inquiry_id)
         .order_by(Rfq.generated_at, Counterparty.name, Rfq.id)
     )
@@ -121,11 +122,12 @@ def log(
             "sent_at": rfq.sent_at,
             "status": rfq.status,
             "response_deadline": rfq.response_deadline,
-            "offer_received": has_offer,
+            "offer_received": offer_id is not None,
+            "offer_id": offer_id,
             "changed_since_sent": changed_since_sent(session, rfq),
             "version": rfq.version,
         }
-        for rfq, cp_name, contact_name, email, has_offer in session.execute(stmt)
+        for rfq, cp_name, contact_name, email, offer_id in session.execute(stmt)
     ]
 
 

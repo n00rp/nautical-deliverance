@@ -48,4 +48,21 @@ describe("Select", () => {
     await userEvent.click(await screen.findByRole("option", { name: "Beta" }));
     expect(onChange).toHaveBeenCalledWith("b");
   });
+
+  it("[B4-R12] an empty option clears the value", async () => {
+    const onChange = vi.fn();
+    render(
+      <Select
+        id="s"
+        label="Fuel"
+        value="a"
+        options={[...options]}
+        onChange={onChange}
+        emptyLabel="None"
+      />,
+    );
+    await userEvent.click(screen.getByRole("combobox", { name: "Fuel" }));
+    await userEvent.click(await screen.findByRole("option", { name: "None" }));
+    expect(onChange).toHaveBeenCalledWith("");
+  });
 });
