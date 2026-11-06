@@ -76,11 +76,16 @@ class OfferResult:
     complete: bool
 
 
+def effective_density(line: LineInput) -> Decimal | None:
+    """Density used to convert an m3 line: the inquiry's first, else the offer's."""
+    return line.inquiry_density if line.inquiry_density is not None else line.offer_density
+
+
 def quantity_mt(line: LineInput) -> Decimal | None:
     """Exact quantity in mt; None for m3 without any density."""
     if line.unit == "mt":
         return line.quantity
-    density = line.inquiry_density if line.inquiry_density is not None else line.offer_density
+    density = effective_density(line)
     return None if density is None else line.quantity * density / _THOUSAND
 
 

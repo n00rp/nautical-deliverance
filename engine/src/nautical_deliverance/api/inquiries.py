@@ -28,7 +28,7 @@ from nautical_deliverance.api.inquiry_models import (
 from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.inquiry import LOCKED_AFTER_DRAFT, Status, can_transition
-from nautical_deliverance.persistence.audit import record_change
+from nautical_deliverance.persistence.audit import history, record_change
 from nautical_deliverance.persistence.inquiry_repo import (
     DECISION_COLUMNS,
     dec,
@@ -40,7 +40,6 @@ from nautical_deliverance.persistence.inquiry_repo import (
 )
 from nautical_deliverance.persistence.models import (
     AppUser,
-    AuditEntry,
     BunkeringReason,
     Inquiry,
     InquiryLine,
@@ -521,12 +520,7 @@ def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> ob
     """Audit entries of the inquiry, newest first."""
     with scope(principal, engine) as s:
         _load(s, inquiry_id)
-        stmt = (
-            select(AuditEntry)
-            .where(AuditEntry.entity_type == "inquiry", AuditEntry.entity_id == inquiry_id)
-            .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
-        )
-        out = [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+        out = [HistoryOut.model_validate(e) for e in history(s, "inquiry", inquiry_id)]
         if _sees_rfqs(principal):
             return out
         for e in out:  # RFQ deadline and decision details are commercial (R6, B4-R09)

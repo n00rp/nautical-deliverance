@@ -42,10 +42,9 @@ from nautical_deliverance.domain.inquiry import Status
 from nautical_deliverance.domain.offer import DecisionReason, evaluate_offer, rationale_required
 from nautical_deliverance.domain.rfq import RfqStatus
 from nautical_deliverance.persistence import offer_repo
-from nautical_deliverance.persistence.audit import Action, record_change
+from nautical_deliverance.persistence.audit import Action, history, record_change
 from nautical_deliverance.persistence.inquiry_repo import dec
 from nautical_deliverance.persistence.models import (
-    AuditEntry,
     Inquiry,
     InquiryLine,
     Offer,
@@ -286,12 +285,7 @@ def offer_history(offer_id: uuid.UUID, principal: Reader, engine: Eng) -> object
     with scope(principal, engine) as s:
         if s.get(Offer, offer_id) is None:
             raise _not_found()
-        stmt = (
-            select(AuditEntry)
-            .where(AuditEntry.entity_type == "offer", AuditEntry.entity_id == offer_id)
-            .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
-        )
-        return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+        return [HistoryOut.model_validate(e) for e in history(s, "offer", offer_id)]
 
 
 # --- comparison and decision --------------------------------------------------------------------

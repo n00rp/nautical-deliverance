@@ -12,7 +12,16 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
-from nautical_deliverance.api.access import Eng, Now, Reader, Writer  # noqa: TC001
+from nautical_deliverance.api.access import (
+    Eng,
+    Now,
+    Reader,
+    Writer,
+    contact_problem,
+    finish,
+    lock_pair,
+    move,
+)
 from nautical_deliverance.api.common import conflict, scope, unprocessable
 from nautical_deliverance.api.inquiries import advance, bump_and_audit
 from nautical_deliverance.api.inquiry_models import HistoryOut, VersionIn
@@ -30,13 +39,11 @@ from nautical_deliverance.domain.rfq import (
     RfqStatus,
     can_rfq_transition,
     render_rfq,
-    single_address,
 )
 from nautical_deliverance.persistence import rfq_repo
-from nautical_deliverance.persistence.audit import Action, record_change
+from nautical_deliverance.persistence.audit import Action, history, record_change
 from nautical_deliverance.persistence.inquiry_repo import is_active_rfq
 from nautical_deliverance.persistence.models import (
-    AuditEntry,
     Contact,
     Counterparty,
     Inquiry,
@@ -71,19 +78,6 @@ def _future(deadline: datetime, now: datetime, field: str) -> None:
         raise unprocessable(field, "Must be in the future")
 
 
-def _contact_problem(contact: Contact | None, counterparty_id: uuid.UUID | None) -> str | None:
-    """Why a contact cannot receive an RFQ for the counterparty, else None."""
-    if contact is None:
-        return "Unknown contact"
-    if counterparty_id is not None and contact.counterparty_id != counterparty_id:
-        return "Contact belongs to another counterparty"
-    if not contact.active:
-        return "Inactive contact"
-    if not contact.email:
-        return "Contact has no e-mail address"
-    return None if single_address(contact.email) else "Contact e-mail cannot be used in a mail link"
-
-
 def _check_recipients(s: Session, inquiry_id: uuid.UUID, recipients: Sequence[RecipientIn]) -> None:
     """422 on every recipient that is not an active counterparty with a usable active contact."""
     cps = {
@@ -115,10 +109,8 @@ def _check_recipients(s: Session, inquiry_id: uuid.UUID, recipients: Sequence[Re
         elif r.counterparty_id in active:
             cp_problem = "Already has an RFQ"
         batch.add(r.counterparty_id)
-        contact_problem = _contact_problem(
-            contacts.get(r.contact_id), None if cp is None else cp.id
-        )
-        for name, problem in (("counterparty_id", cp_problem), ("contact_id", contact_problem)):
+        contact_issue = contact_problem(contacts.get(r.contact_id), None if cp is None else cp.id)
+        for name, problem in (("counterparty_id", cp_problem), ("contact_id", contact_issue)):
             if problem:
                 problems.append({"field": f"recipients[{i}].{name}", "message": problem})
     if problems:
@@ -243,7 +235,7 @@ def update_rfq(
             if (v := getattr(body, k)) is not None and getattr(rfq, k) != v
         }
         if "contact_id" in new:
-            problem = _contact_problem(s.get(Contact, new["contact_id"]), rfq.counterparty_id)
+            problem = contact_problem(s.get(Contact, new["contact_id"]), rfq.counterparty_id)
             if problem:
                 field = "contact_id"
                 raise unprocessable(field, problem)
@@ -263,26 +255,7 @@ def update_rfq(
 # --- send, withdraw, decline, history ----------------------------------------------------------
 
 
-def _lock(s: Session, rfq_id: uuid.UUID, version: int) -> tuple[Inquiry, Rfq]:
-    """Lock the inquiry, then the RFQ (always this order); 409 when the version is stale."""
-    inquiry_id = s.scalar(select(Rfq.inquiry_id).where(Rfq.id == rfq_id))
-    if inquiry_id is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    inq = _inquiry(s, inquiry_id, lock=True)
-    rfq = _rfq(s, rfq_id, lock=True)
-    if rfq.version != version:
-        raise conflict()
-    return inq, rfq
-
-
-def _move(rfq: Rfq, to: RfqStatus) -> None:
-    if not can_rfq_transition(RfqStatus(rfq.status), to):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, f"Cannot move from {rfq.status} to {to.value}"
-        )
-
-
-def _finish(  # noqa: PLR0913, PLR0917
+def _done(  # noqa: PLR0913, PLR0917
     s: Session,
     principal: Principal,
     now: datetime,
@@ -290,14 +263,7 @@ def _finish(  # noqa: PLR0913, PLR0917
     action: Action,
     values: dict[str, Any],
 ) -> object:
-    """Apply the values, bump the version, write one audit entry, return the log item."""
-    before = {k: getattr(rfq, k) for k in values}
-    for k, v in values.items():
-        setattr(rfq, k, v)
-    rfq.version += 1
-    rfq.updated_at = now
-    s.flush()
-    _audit(s, principal, rfq, before, values, action)
+    finish(s, principal, now, rfq, action, values)
     return rfq_repo.log(s, rfq.inquiry_id, {rfq.id})[0]
 
 
@@ -307,11 +273,11 @@ def mark_sent(
 ) -> object:
     """Freeze the live text and address; the first send moves a Draft inquiry to RFQ sent."""
     with scope(principal, engine) as s:
-        inq, rfq = _lock(s, rfq_id, body.version)
-        _move(rfq, RfqStatus.SENT)
+        inq, rfq = lock_pair(s, Rfq, rfq_id, body.version)
+        move(rfq, RfqStatus.SENT, can_rfq_transition)
         if Status(inq.status) not in CREATABLE:
             raise HTTPException(status.HTTP_409_CONFLICT, f"Inquiry is {inq.status}")
-        problem = _contact_problem(s.get(Contact, rfq.contact_id), rfq.counterparty_id)
+        problem = contact_problem(s.get(Contact, rfq.contact_id), rfq.counterparty_id)
         if problem:
             field = "contact_id"
             raise unprocessable(field, problem)
@@ -339,7 +305,7 @@ def mark_sent(
             "sent_body": text_,
             "inquiry_version_at_send": inq.version,
         }
-        return _finish(s, principal, now, rfq, "send", values)
+        return _done(s, principal, now, rfq, "send", values)
 
 
 @router.post("/rfqs/{rfq_id}/withdraw", response_model=RfqItem)
@@ -348,22 +314,22 @@ def withdraw(
 ) -> object:
     """Withdraw a draft; its counterparty may then get a new RFQ."""
     with scope(principal, engine) as s:
-        _, rfq = _lock(s, rfq_id, body.version)
-        _move(rfq, RfqStatus.WITHDRAWN)
-        return _finish(s, principal, now, rfq, "withdraw", {"status": RfqStatus.WITHDRAWN.value})
+        _, rfq = lock_pair(s, Rfq, rfq_id, body.version)
+        move(rfq, RfqStatus.WITHDRAWN, can_rfq_transition)
+        return _done(s, principal, now, rfq, "withdraw", {"status": RfqStatus.WITHDRAWN.value})
 
 
 @router.post("/rfqs/{rfq_id}/decline", response_model=RfqItem)
 def decline(rfq_id: uuid.UUID, body: VersionIn, principal: Writer, engine: Eng, now: Now) -> object:
     """Record that the supplier declined a sent RFQ."""
     with scope(principal, engine) as s:
-        inq, rfq = _lock(s, rfq_id, body.version)
+        inq, rfq = lock_pair(s, Rfq, rfq_id, body.version)
         if s.scalar(
             select(Offer.id).where(Offer.id == inq.winner_offer_id, Offer.rfq_id == rfq.id)
         ):
             raise HTTPException(status.HTTP_409_CONFLICT, "Offer is the selected winner")  # R8
-        _move(rfq, RfqStatus.DECLINED)
-        return _finish(s, principal, now, rfq, "decline", {"status": RfqStatus.DECLINED.value})
+        move(rfq, RfqStatus.DECLINED, can_rfq_transition)
+        return _done(s, principal, now, rfq, "decline", {"status": RfqStatus.DECLINED.value})
 
 
 @router.get("/rfqs/{rfq_id}/history", response_model=list[HistoryOut])
@@ -371,9 +337,4 @@ def rfq_history(rfq_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
     """Audit entries of the RFQ, newest first."""
     with scope(principal, engine) as s:
         _rfq(s, rfq_id)
-        stmt = (
-            select(AuditEntry)
-            .where(AuditEntry.entity_type == "rfq", AuditEntry.entity_id == rfq_id)
-            .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
-        )
-        return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+        return [HistoryOut.model_validate(e) for e in history(s, "rfq", rfq_id)]

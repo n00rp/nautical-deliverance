@@ -9,7 +9,7 @@ from nautical_deliverance.domain.nomination import (
     NominationLine,
     render_nomination,
 )
-from nautical_deliverance.domain.offer import evaluate_offer
+from nautical_deliverance.domain.offer import effective_density, evaluate_offer
 from nautical_deliverance.domain.rfq import build_mailto
 from nautical_deliverance.persistence import offer_repo, rfq_repo
 from nautical_deliverance.persistence.models import (
@@ -24,6 +24,10 @@ if TYPE_CHECKING:
     import uuid
 
     from sqlalchemy.orm import Session
+
+
+class MailLinkError(ValueError):
+    """The recipient address cannot go into a mail link."""
 
 
 def next_sequence(session: Session, inquiry_id: uuid.UUID) -> int:
@@ -49,21 +53,21 @@ def build_nomination_context(session: Session, nom: Nomination) -> NominationCon
     assert inq is not None  # noqa: S101  (FK)
     assert offer is not None  # noqa: S101  (FK)
     assert contact is not None  # noqa: S101  (FK)
-    result = evaluate_offer(offer_repo.inputs_for(session, offer))
+    rows = offer_repo.line_rows(session, offer)  # fetched once: the three sequences share an order
+    given = offer_repo.inputs_for(session, offer, rows)
+    result = evaluate_offer(given)
     lines = tuple(
         NominationLine(
             product=r.product,
-            quantity=r.InquiryLine.quantity,
-            unit=r.InquiryLine.unit,
-            density=None
-            if r.InquiryLine.unit == "mt"
-            else (r.InquiryLine.density if r.InquiryLine.density is not None else r.density),
+            quantity=x.quantity,
+            unit=x.unit,
+            density=None if x.unit == "mt" else effective_density(x),
             qty_mt=res.qty_mt,
-            price_per_mt=r.price_per_mt,
+            price_per_mt=x.price_per_mt,
             line_cost=res.line_cost,
             in_total=res.in_total,
         )
-        for r, res in zip(offer_repo.line_rows(session, offer), result.lines, strict=True)
+        for r, x, res in zip(rows, given.lines, result.lines, strict=True)
     )
     return NominationContext(
         **rfq_repo.header(session, inq),
@@ -103,7 +107,10 @@ def preview(session: Session, nom: Nomination) -> dict[str, Any]:
         to = ctx.recipient_email
     else:
         to, subject, body = str(nom.sent_to_email), nom.sent_subject, str(nom.sent_body)
-    mailto, body_in_link = build_mailto(to, subject, body)
+    try:
+        mailto, body_in_link = build_mailto(to, subject, body)
+    except ValueError as exc:  # only this: render and total errors must surface as they are
+        raise MailLinkError from exc
     return {
         "to": to,
         "subject": subject,

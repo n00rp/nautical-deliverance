@@ -11,7 +11,16 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
-from nautical_deliverance.api.access import Eng, Now, Reader, Writer  # noqa: TC001
+from nautical_deliverance.api.access import (
+    Eng,
+    Now,
+    Reader,
+    Writer,
+    contact_problem,
+    finish,
+    lock_pair,
+    move,
+)
 from nautical_deliverance.api.common import conflict, scope, unprocessable
 from nautical_deliverance.api.inquiries import advance
 from nautical_deliverance.api.inquiry_models import HistoryOut, VersionIn
@@ -21,7 +30,6 @@ from nautical_deliverance.api.nomination_models import (
     NominationPatch,
 )
 from nautical_deliverance.api.rfq_models import PreviewOut
-from nautical_deliverance.api.rfqs import _contact_problem
 from nautical_deliverance.domain.identity import Principal  # noqa: TC001
 from nautical_deliverance.domain.inquiry import Status
 from nautical_deliverance.domain.nomination import (
@@ -50,29 +58,10 @@ def _get[T](s: Session, model: type[T], ident: uuid.UUID, *, lock: bool = False)
     return row
 
 
-def _lock(s: Session, nom_id: uuid.UUID, version: int) -> tuple[Inquiry, Nomination]:
-    """Lock the inquiry, then the nomination (always this order); 409 when the version is stale."""
-    inquiry_id = s.scalar(select(Nomination.inquiry_id).where(Nomination.id == nom_id))
-    if inquiry_id is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    inq = _get(s, Inquiry, inquiry_id, lock=True)
-    nom = _get(s, Nomination, nom_id, lock=True)
-    if nom.version != version:
-        raise conflict()
-    return inq, nom
-
-
-def _move(nom: Nomination, to: NominationStatus) -> None:
-    if not can_nomination_transition(NominationStatus(nom.status), to):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, f"Cannot move from {nom.status} to {to.value}"
-        )
-
-
 def _contact_or_422(s: Session, contact_id: uuid.UUID, offer_id: uuid.UUID) -> None:
     """422 on contact_id unless the contact is a usable one of the offer's counterparty."""
     cp = nomination_repo.offer_counterparty(s, offer_id)
-    problem = _contact_problem(s.get(Contact, contact_id), cp)
+    problem = contact_problem(s.get(Contact, contact_id), cp)
     if problem:
         field = "contact_id"
         raise unprocessable(field, problem)
@@ -82,27 +71,13 @@ def _default_contact(s: Session, offer_id: uuid.UUID) -> uuid.UUID:
     """Return the winning RFQ's contact if usable, else the counterparty's first usable one."""
     cp = nomination_repo.offer_counterparty(s, offer_id)
     for ident in nomination_repo.contact_candidates(s, offer_id, cp):
-        if _contact_problem(s.get(Contact, ident), cp) is None:
+        if contact_problem(s.get(Contact, ident), cp) is None:
             return ident
     field, message = "contact_id", "No active contact with e-mail"
     raise unprocessable(field, message)
 
 
-def _audit(  # noqa: PLR0913, PLR0917
-    s: Session,
-    principal: Principal,
-    nom: Nomination,
-    action: Action,
-    before: dict[str, Any] | None,
-    after: dict[str, Any],
-) -> None:
-    record_change(
-        s, actor=principal.user_id, entity_type="nomination", entity_id=nom.id,
-        action=action, before=before, after=after,
-    )  # fmt: skip
-
-
-def _finish(  # noqa: PLR0913, PLR0917
+def _done(  # noqa: PLR0913, PLR0917
     s: Session,
     principal: Principal,
     now: datetime,
@@ -110,14 +85,7 @@ def _finish(  # noqa: PLR0913, PLR0917
     action: Action,
     values: dict[str, Any],
 ) -> object:
-    """Apply the values, bump the version, write one audit entry, return the list item."""
-    before = {k: getattr(nom, k) for k in values}
-    for k, v in values.items():
-        setattr(nom, k, v)
-    nom.version += 1
-    nom.updated_at = now
-    s.flush()
-    _audit(s, principal, nom, action, before, values)
+    finish(s, principal, now, nom, action, values)
     return nomination_repo.items(s, nom.inquiry_id, nom.id)[0]
 
 
@@ -171,7 +139,10 @@ def create_nomination(
         s.add(nom)
         s.flush()
         after = {"offer_id": nom.offer_id, "contact_id": contact_id, "status": nom.status}
-        _audit(s, principal, nom, "create", None, after)
+        record_change(
+            s, actor=principal.user_id, entity_type="nomination", entity_id=nom.id,
+            action="create", before=None, after=after,
+        )  # fmt: skip
         return nomination_repo.items(s, inq.id, nom.id)[0]
 
 
@@ -181,7 +152,7 @@ def get_preview(nomination_id: uuid.UUID, principal: Reader, engine: Eng) -> obj
     with scope(principal, engine) as s:
         try:
             return nomination_repo.preview(s, _get(s, Nomination, nomination_id))
-        except ValueError as exc:  # a stored address that cannot go into a mail link
+        except nomination_repo.MailLinkError as exc:
             field = "contact_id"
             raise unprocessable(field, "Contact e-mail cannot be used in a mail link") from exc
 
@@ -199,7 +170,7 @@ def update_nomination(
             raise HTTPException(status.HTTP_409_CONFLICT, "Nomination is not a draft")
         if nom.contact_id != body.contact_id:
             _contact_or_422(s, body.contact_id, nom.offer_id)
-            _finish(s, principal, now, nom, "update", {"contact_id": body.contact_id})
+            finish(s, principal, now, nom, "update", {"contact_id": body.contact_id})
         return nomination_repo.items(s, nom.inquiry_id, nom.id)[0]
 
 
@@ -209,8 +180,8 @@ def mark_sent(
 ) -> object:
     """Freeze the live text; the first send moves the inquiry to Nominated."""
     with scope(principal, engine) as s:
-        inq, nom = _lock(s, nomination_id, body.version)
-        _move(nom, NominationStatus.SENT)
+        inq, nom = lock_pair(s, Nomination, nomination_id, body.version)
+        move(nom, NominationStatus.SENT, can_nomination_transition)
         if Status(inq.status) not in NOMINATABLE:
             raise HTTPException(status.HTTP_409_CONFLICT, f"Inquiry is {inq.status}")
         if nom.offer_id != inq.winner_offer_id:
@@ -219,6 +190,9 @@ def mark_sent(
         _contact_or_422(s, nom.contact_id, nom.offer_id)
         ctx = nomination_repo.build_nomination_context(s, nom)
         subject, text_ = render_nomination(ctx)
+        if ctx.total != inq.decided_total:  # R6: the text must state the decided total
+            detail = "Nomination total differs from the decision"
+            raise HTTPException(status.HTTP_409_CONFLICT, detail)
         if Status(inq.status) is Status.WINNER_SELECTED:
             advance(s, principal, now, inq, Status.NOMINATED)
         values = {  # after the bump: the inquiry version this nomination was sent against
@@ -230,7 +204,7 @@ def mark_sent(
             "sent_body": text_,
             "inquiry_version_at_send": inq.version,
         }
-        return _finish(s, principal, now, nom, "send", values)
+        return _done(s, principal, now, nom, "send", values)
 
 
 @router.post("/nominations/{nomination_id}/withdraw", response_model=NominationItem)
@@ -239,10 +213,10 @@ def withdraw(
 ) -> object:
     """Withdraw a draft; a new one may then be created."""
     with scope(principal, engine) as s:
-        _, nom = _lock(s, nomination_id, body.version)
-        _move(nom, NominationStatus.WITHDRAWN)
+        _, nom = lock_pair(s, Nomination, nomination_id, body.version)
+        move(nom, NominationStatus.WITHDRAWN, can_nomination_transition)
         values = {"status": NominationStatus.WITHDRAWN.value}
-        return _finish(s, principal, now, nom, "withdraw", values)
+        return _done(s, principal, now, nom, "withdraw", values)
 
 
 @router.get("/nominations/{nomination_id}/history", response_model=list[HistoryOut])

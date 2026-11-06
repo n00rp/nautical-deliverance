@@ -407,6 +407,11 @@ def test_no_marker_reaches_any_nomination_text(
               "payment_terms": "MK-OTHER-TERMS", "physical_supplier": "MK-OTHER-SUPPLIER"},
     )  # fmt: skip
     assert r.status_code == OK, r.text
+    own = admin.http.patch(  # the winner's own comment is not on the allow-list either
+        f"/api/v1/offers/{low['id']}",
+        json={"version": low["version"], "supplier_comment": "MK-WINNER-COMMENT"},
+    )
+    assert own.status_code == OK, own.text
     inq = admin.fresh(inq)
     r = pick(admin, inq, low["id"], reason="other", note="MK-NOTE")
     assert r.status_code == OK, r.text
@@ -416,7 +421,8 @@ def test_no_marker_reaches_any_nomination_text(
         "other_counterparty": "Beta Marine", "other_contact": "Name b1",
         "other_contact_email": "b1@beta.example", "winner_name": "Alpha Marine",
         "second_contact": "Name a2", "buyer_email": "admin@x.example",
-        "decision_reason": "decision_reason", "winner_offer": low["id"],
+        "decision_reason_label": "reason",  # stored value "other" is not unique: look for the label
+        "winner_comment": "MK-WINNER-COMMENT", "winner_offer": low["id"],
     }  # fmt: skip
     cmp_rows = admin.api(f"/inquiries/{inq['id']}/comparison")["rows"]
     other = next(row for row in cmp_rows if row["counterparty_name"] == "Beta Marine")
@@ -456,17 +462,45 @@ def test_no_marker_reaches_any_nomination_text(
     frozen = admin.preview(sent["id"])
     assert frozen["body"] == live["body"]
     assert leaks(sent, frozen, markers) == []
-    # Cancel afterwards: its reason cannot coexist with a live status, so check the frozen text.
+    # A draft survives a cancel and still renders live: scan it with the cancel reason in place.
+    admin.tick(minutes=1)
+    amend = admin.nominate(inq["id"])
     cancel = {"version": admin.fresh(inq)["version"], "reason": "MK-CANCEL-REASON"}
     assert admin.http.post(f"/api/v1/inquiries/{inq['id']}/cancel", json=cancel).status_code == OK
     markers["cancel_reason"] = "MK-CANCEL-REASON"
+    live_after = admin.preview(amend["id"])
+    assert "Name a1" in live_after["body"]
+    assert leaks(amend, live_after, markers) == []
+    assert admin.act(amend, "mark-sent").status_code == CONFLICT
     again = admin.preview(sent["id"])
     assert again == frozen
-    assert leaks(admin.items(inq["id"])[0], again, markers) == []
+    assert leaks(admin.items(inq["id"])[-1], again, markers) == []
     assert unquote(again["mailto"]).count("@") == 1  # exactly one recipient
 
 
 # --- B5-R06: flow and amendments ----------------------------------------------------------------
+
+
+@pytest.mark.req("B5-R06")
+def test_total_must_match_the_decision(
+    admin: Nc, world: SimpleNamespace, app_engine: Engine
+) -> None:
+    """Ruling R6: a text whose total differs from the decided total is never frozen."""
+    inq = won(admin)
+    draft = admin.nominate(inq["id"])
+    with org_session(world.org, app_engine) as s:
+        s.execute(
+            update(Inquiry)
+            .where(Inquiry.id == uuid.UUID(inq["id"]))
+            .values(decided_total=Decimal("1.00"))
+        )
+    r = admin.act(draft, "mark-sent")
+    assert (r.status_code, r.json()["detail"]) == (
+        CONFLICT,
+        "Nomination total differs from the decision",
+    )
+    assert admin.fresh(inq)["status"] == "winner_selected"
+    assert admin.items(inq["id"])[0]["status"] == "draft"
 
 
 @pytest.mark.req("B5-R06")
