@@ -1,0 +1,104 @@
+{
+  "realm": "nautical-deliverance",
+  "enabled": true,
+  "sslRequired": "external",
+  "displayName": "Nautical Deliverance",
+  "attributes": {
+    "description": "Pilot realm: no users; create them with tools/pilot_user.py."
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "admin role"
+      },
+      {
+        "name": "bunker_buyer",
+        "description": "bunker_buyer role"
+      },
+      {
+        "name": "operator",
+        "description": "operator role"
+      },
+      {
+        "name": "viewer",
+        "description": "viewer role"
+      }
+    ]
+  },
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}}}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {}}, {\"name\": \"firstName\", \"displayName\": \"${firstName}\", \"validations\": {}}, {\"name\": \"lastName\", \"displayName\": \"${lastName}\", \"validations\": {}}, {\"name\": \"org_id\", \"displayName\": \"Organization id\", \"permissions\": {\"view\": [\"admin\"], \"edit\": [\"admin\"]}, \"validations\": {}}]}"
+          ]
+        }
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "nd-web",
+      "name": "Nautical Deliverance web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "https://${ND_PUBLIC_HOST}/*"
+      ],
+      "webOrigins": [
+        "https://${ND_PUBLIC_HOST}"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://${ND_PUBLIC_HOST}/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-nd-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "nd-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "org_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "org_id",
+            "claim.name": "org_id",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "passwordPolicy": "length(12)"
+}

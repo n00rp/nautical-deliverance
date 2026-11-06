@@ -19,6 +19,7 @@ web/test-results/
 
 # Environment and secrets
 infra/.env
+infra/.env.prod
 
 # Coverage outputs
 .coverage

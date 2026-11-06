@@ -277,6 +277,42 @@ jobs:
         if: steps.changed.outputs.run == 'true'
         run: docker buildx build --platform linux/amd64,linux/arm64 "${{ matrix.context }}"
 
+  # req: B6-R01
+  # The production overlay on https://localhost: Caddy's internal CA, trusted by curl through its
+  # copied root certificate (tools/prod_smoke.sh). Trivy scans the Caddy image like our own.
+  prod-overlay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ND_IMAGE_TAG: ${{ github.sha }}
+      ND_GIT_SHA: ${{ github.sha }}
+      # Trivy 0.76.1
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan the Caddy image (Trivy, fixable HIGH and CRITICAL fail)
+        run: |
+          image="$(grep -o 'caddy:[^ ]*@sha256:[0-9a-f]*' infra/docker-compose.prod.yml)"
+          docker pull "$image"
+          docker save "$image" -o "$RUNNER_TEMP/caddy.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan:ro" -v "$PWD/infra/caddy/.trivyignore:/.trivyignore:ro" "$TRIVY_IMAGE" image             --ignorefile /.trivyignore --input /scan/caddy.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+      - name: Build the images the overlay uses
+        run: |
+          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
+          docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
+          # The overlay's build arg points the web app at https://localhost/realms/...
+          docker build --build-arg VITE_OIDC_AUTHORITY=https://localhost/realms/nautical-deliverance             -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
+      - name: Prod overlay over local HTTPS
+        env:
+          CLEANUP: "1"
+          NO_BUILD: "1"
+        run: bash tools/prod_smoke.sh
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -p nd-prod-smoke logs --no-color
+
   # req: S0-R16
   readme:
     runs-on: ubuntu-latest
@@ -297,7 +333,7 @@ jobs:
   # multiarch is in needs: otherwise the gate could run before the slow QEMU build and report a
   # wall time that leaves it out. A skipped multiarch run is a fast green job.
   ci-duration:
-    needs: [engine, web, visual, traceability, security, smoke, multiarch, readme]
+    needs: [engine, web, visual, traceability, security, smoke, multiarch, prod-overlay, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

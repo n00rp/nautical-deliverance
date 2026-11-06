@@ -1,0 +1,39 @@
+# Production edge (B6-D7): the only public service. For a real hostname Caddy gets a Let's Encrypt
+# certificate by itself; for `localhost` (local and CI checks) it uses its own internal CA.
+{$ND_PUBLIC_HOST} {
+	encode zstd gzip
+
+	# `>` defers the write so these replace what the upstreams (nginx) set.
+	header {
+		>Strict-Transport-Security "max-age=31536000"
+		>X-Content-Type-Options "nosniff"
+		>Referrer-Policy "strict-origin-when-cross-origin"
+		>X-Frame-Options "DENY"
+		# Keycloak is served from this same host, so 'self' covers the OIDC endpoints.
+		>Content-Security-Policy "default-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# The Keycloak admin console and the master realm are reachable by SSH tunnel only.
+	handle /admin* {
+		respond 404
+	}
+	handle /realms/master* {
+		respond 404
+	}
+
+	handle /api/* {
+		reverse_proxy engine:8000
+	}
+
+	handle /realms/* {
+		reverse_proxy keycloak:8080
+	}
+	handle /resources/* {
+		reverse_proxy keycloak:8080
+	}
+
+	handle {
+		reverse_proxy web:8080
+	}
+}
