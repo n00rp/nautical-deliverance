@@ -90,6 +90,11 @@ def format_qty_mt(q: Decimal) -> str:
     return f"{whole}.{frac.ljust(3, '0')}"
 
 
+def format_usd(d: Decimal) -> str:
+    """``USD 1,234,567.89`` (``USD -25,000.00``), as the web ``formatUsd``; display only."""
+    return f"USD {d.quantize(_CENT, ROUND_HALF_UP):,.2f}"
+
+
 def line_cost(qty_mt: Decimal, price: Decimal) -> Decimal:
     """Line cost rounded half-up to 2 decimals (B4-D1)."""
     return (qty_mt * price).quantize(_CENT, ROUND_HALF_UP)
