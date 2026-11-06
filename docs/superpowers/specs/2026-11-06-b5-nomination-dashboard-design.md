@@ -1,6 +1,6 @@
 # B5 Nomination and Dashboard — Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-06 (including proposed decisions B5-D7–B5-D12)
 - **Date:** 2026-11-06
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md), build step B5 (D-076); D-070 (mail handoff pattern), D-072 (roles), D-074 (exact money), E4; B0-D5, B0-D7, B0 screen S7; builds on [B2](2026-11-05-b2-inquiries-design.md), [B3](2026-11-05-b3-supplier-selection-rfq-design.md) and [B4](2026-11-06-b4-offers-decision-design.md).
 - **Goal:** The buyer nominates the selected supplier with an individual nomination e-mail draft (amendable while nominated), completing the pilot 1 purchase flow; a dashboard becomes the start page and shows what needs attention and the month's key figures.
