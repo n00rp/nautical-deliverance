@@ -72,6 +72,13 @@ describe("exact money", () => {
     expect(formatUsd("999")).toBe("USD 999.00");
   });
 
+  it("[B4-R12] formatUsd shows a negative value with a sign, for display only", () => {
+    expect(formatUsd("-25000.00")).toBe("USD -25,000.00");
+    expect(formatUsd("-0.05")).toBe("USD -0.05");
+    expect(parseDecimal("-1.00", 2, true)).toBe(-100n);
+    expect(() => parseDecimal("-1.00", 2)).toThrow(); // prices stay non-negative
+  });
+
   it("[B4-R04][B4-R12] money.ts and OfferEntry.tsx never use float conversions", () => {
     for (const file of ["money.ts", "offers/OfferEntry.tsx"]) {
       const text = readFileSync(resolve(process.cwd(), "src", file), "utf8");

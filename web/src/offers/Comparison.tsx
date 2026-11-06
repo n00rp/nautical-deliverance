@@ -207,7 +207,9 @@ export function Comparison({ inquiryId, api, roles }: ComparisonProps) {
                 header: "Δ to lowest",
                 align: "end",
                 render: (r) =>
-                  r.delta_to_lowest === null || r.lowest ? "—" : `+${formatUsd(r.delta_to_lowest)}`,
+                  r.delta_to_lowest === null || r.lowest
+                    ? "—"
+                    : `${r.delta_to_lowest.startsWith("-") ? "" : "+"}${formatUsd(r.delta_to_lowest)}`,
               },
               {
                 key: "valid",

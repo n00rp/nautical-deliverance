@@ -121,6 +121,7 @@ const decision: Decision = {
   decided_at: "2026-11-06T10:30:00Z",
   decided_by_name: "Bea Buyer",
   decided_total: "390722.50",
+  currency: "USD",
 };
 
 /** Beta was picked although Alpha is cheaper. */

@@ -72,6 +72,20 @@ describe("Comparison", () => {
     expect((await row("Echo Fuels")).hasAttribute("data-highlight")).toBe(false);
   });
 
+  it("[B4-R12] cheaper expired and declined rows show no delta and a negative delta does not crash", async () => {
+    const data = structuredClone(partialAndExpired); // engine-shaped: null deltas (R7)
+    expect(data.rows.find((r) => r.offer_id === "oe")?.delta_to_lowest).toBeNull();
+    expect(data.rows.find((r) => r.offer_id === "of")?.delta_to_lowest).toBeNull();
+    setup(compareApi(data));
+    for (const name of ["Echo Fuels", "Foxtrot Supply"]) {
+      expect((await row(name)).textContent).not.toMatch(/\+USD|USD -/);
+    }
+    cleanup();
+    data.rows.find((r) => r.offer_id === "oe")!.delta_to_lowest = "-25000.00"; // defensive
+    setup(compareApi(data));
+    expect(within(await row("Echo Fuels")).getByText("USD -25,000.00")).toBeTruthy();
+  });
+
   it("[B4-R12] the detail panel shows the worked calculation, the fixed costs and the total", async () => {
     const data = structuredClone(completeOnly);
     const beta = data.rows.find((r) => r.offer_id === "ob")!;

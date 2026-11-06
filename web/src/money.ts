@@ -3,16 +3,20 @@
 // No floats anywhere (D-074).
 
 const pow10 = (n: number) => 10n ** BigInt(n);
-const DECIMAL = /^(\d+)(?:\.(\d+))?$/;
+const DECIMAL = /^(-?)(\d+)(?:\.(\d+))?$/;
 /** 999999999999.99 as cents. */
 const MAX_CENTS = 99_999_999_999_999n;
 
-/** "612.345" with scale 3 -> 612345n. Throws on bad text or more than `scale` decimals. */
-export function parseDecimal(s: string, scale: number): bigint {
+/**
+ * "612.345" with scale 3 -> 612345n. Throws on bad text or more than `scale` decimals.
+ * A leading "-" is accepted only with `signed` (display of deltas); prices stay non-negative.
+ */
+export function parseDecimal(s: string, scale: number, signed = false): bigint {
   const m = DECIMAL.exec(s);
-  const frac = m?.[2] ?? "";
-  if (!m?.[1] || frac.length > scale) throw new Error(`Invalid decimal "${s}" (scale ${scale})`);
-  return BigInt(m[1] + frac.padEnd(scale, "0"));
+  const frac = m?.[3] ?? "";
+  if (!m?.[2] || frac.length > scale || (m[1] && !signed))
+    throw new Error(`Invalid decimal "${s}" (scale ${scale})`);
+  return BigInt(m[1] + m[2] + frac.padEnd(scale, "0"));
 }
 
 /** 612345n with scale 3 -> "612.345". */
@@ -93,8 +97,9 @@ export function evaluateOffer(o: OfferInput): OfferResult {
   };
 }
 
-/** "1234567.89" -> "USD 1,234,567.89". */
+/** "1234567.89" -> "USD 1,234,567.89"; "-25000" -> "USD -25,000.00". */
 export function formatUsd(s: string): string {
-  const [int = "", frac = ""] = formatDecimal(parseDecimal(s, 2), 2).split(".");
-  return `USD ${int.replace(/\B(?=(\d{3})+$)/g, ",")}.${frac}`;
+  const cents = parseDecimal(s, 2, true);
+  const [int = "", frac = ""] = formatDecimal(cents < 0n ? -cents : cents, 2).split(".");
+  return `USD ${cents < 0n ? "-" : ""}${int.replace(/\B(?=(\d{3})+$)/g, ",")}.${frac}`;
 }

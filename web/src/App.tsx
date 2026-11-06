@@ -4,6 +4,7 @@ import { MasterDataPage } from "./admin/MasterDataPage";
 import { parseAdmin, parseInquiries, useHash } from "./admin/routes";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
+import { ErrorBoundary } from "./ErrorBoundary";
 import type { TokenSource } from "./http";
 import { InquiryPage } from "./inquiries/InquiryPage";
 import { Comparison } from "./offers/Comparison";
@@ -112,67 +113,69 @@ export function App() {
         nav={user ? NAV : []}
         current={route ? `#/admin/${route.path}` : inquiries ? "#/inquiries" : undefined}
       >
-        {state.kind === "loading" && <p role="status">Loading…</p>}
-        {state.kind === "error" && <p role="alert">{state.message}</p>}
-        {(state.kind === "signedOut" || state.kind === "error") && (
-          <button type="button" onClick={() => void userManager.signinRedirect()}>
-            Sign in
-          </button>
-        )}
-        {user && api && route && (
-          <MasterDataPage
-            key={route.path}
-            config={configFor(route.path)}
-            api={api}
-            roles={user.roles}
-          />
-        )}
-        {user && inquiryApi && inquiries && !inquiries.id && (
-          <WorkList api={inquiryApi} roles={user.roles} />
-        )}
-        {user && suppliersApi && inquiries?.id && inquiries.view === "suppliers" && (
-          <SupplierSelection
-            key={inquiries.id}
-            inquiryId={inquiries.id}
-            api={suppliersApi}
-            roles={user.roles}
-          />
-        )}
-        {user && suppliersApi && inquiries?.id && inquiries.view === "rfqs" && (
-          <RfqLog
-            key={inquiries.id}
-            inquiryId={inquiries.id}
-            api={suppliersApi}
-            roles={user.roles}
-          />
-        )}
-        {user && offersApi && inquiries?.id && inquiries.view === "offers" && (
-          <Comparison
-            key={inquiries.id}
-            inquiryId={inquiries.id}
-            api={offersApi}
-            roles={user.roles}
-          />
-        )}
-        {user && offersApi && inquiries?.id && inquiries.view === "offer" && inquiries.rfqId && (
-          <OfferEntry
-            key={inquiries.rfqId}
-            inquiryId={inquiries.id}
-            rfqId={inquiries.rfqId}
-            api={offersApi}
-            roles={user.roles}
-          />
-        )}
-        {user && api && inquiryApi && inquiries?.id && !inquiries.view && (
-          <InquiryPage
-            key={inquiries.id}
-            id={inquiries.id}
-            api={inquiryApi}
-            master={api}
-            roles={user.roles}
-          />
-        )}
-        {user && !route && !inquiries && <p>Page not found. Choose a page from the menu.</p>}
+        <ErrorBoundary>
+          {state.kind === "loading" && <p role="status">Loading…</p>}
+          {state.kind === "error" && <p role="alert">{state.message}</p>}
+          {(state.kind === "signedOut" || state.kind === "error") && (
+            <button type="button" onClick={() => void userManager.signinRedirect()}>
+              Sign in
+            </button>
+          )}
+          {user && api && route && (
+            <MasterDataPage
+              key={route.path}
+              config={configFor(route.path)}
+              api={api}
+              roles={user.roles}
+            />
+          )}
+          {user && inquiryApi && inquiries && !inquiries.id && (
+            <WorkList api={inquiryApi} roles={user.roles} />
+          )}
+          {user && suppliersApi && inquiries?.id && inquiries.view === "suppliers" && (
+            <SupplierSelection
+              key={inquiries.id}
+              inquiryId={inquiries.id}
+              api={suppliersApi}
+              roles={user.roles}
+            />
+          )}
+          {user && suppliersApi && inquiries?.id && inquiries.view === "rfqs" && (
+            <RfqLog
+              key={inquiries.id}
+              inquiryId={inquiries.id}
+              api={suppliersApi}
+              roles={user.roles}
+            />
+          )}
+          {user && offersApi && inquiries?.id && inquiries.view === "offers" && (
+            <Comparison
+              key={inquiries.id}
+              inquiryId={inquiries.id}
+              api={offersApi}
+              roles={user.roles}
+            />
+          )}
+          {user && offersApi && inquiries?.id && inquiries.view === "offer" && inquiries.rfqId && (
+            <OfferEntry
+              key={inquiries.rfqId}
+              inquiryId={inquiries.id}
+              rfqId={inquiries.rfqId}
+              api={offersApi}
+              roles={user.roles}
+            />
+          )}
+          {user && api && inquiryApi && inquiries?.id && !inquiries.view && (
+            <InquiryPage
+              key={inquiries.id}
+              id={inquiries.id}
+              api={inquiryApi}
+              master={api}
+              roles={user.roles}
+            />
+          )}
+          {user && !route && !inquiries && <p>Page not found. Choose a page from the menu.</p>}
+        </ErrorBoundary>
       </AppShell>
       <ToastHost />
     </ToastProvider>

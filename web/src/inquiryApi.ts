@@ -40,6 +40,7 @@ export type Decision = {
   decided_at: string;
   decided_by_name: string;
   decided_total: string;
+  currency: string;
 };
 
 /** A work-list row. `eta` is null on a duplicated draft that has none yet. */
