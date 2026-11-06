@@ -17,6 +17,8 @@ export default defineConfig({
     baseURL,
     // A trace records typed passwords and bearer tokens. Local and CI runs use throwaway dev
     // credentials and keep it; a remote (pilot) run uses real ones, so nothing is recorded.
-    trace: /^https?:\/\/(localhost|127\.0\.0\.1)[:/]?/.test(baseURL) ? "retain-on-failure" : "off",
+    trace: /^https?:\/\/(localhost|127\.0\.0\.1)(?:[:/]|$)/.test(baseURL)
+      ? "retain-on-failure"
+      : "off",
   },
 });
