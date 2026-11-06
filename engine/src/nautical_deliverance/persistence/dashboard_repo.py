@@ -58,6 +58,7 @@ def _inquiries(*cols: Any) -> Any:  # noqa: ANN401
             Inquiry.reference,
             Vessel.name.label("vessel"),
             Port.name.label("port"),
+            Port.time_zone.label("tz"),
             *cols,
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)
@@ -68,7 +69,8 @@ def _inquiries(*cols: Any) -> Any:  # noqa: ANN401
 def _item(row: Row[Any], kind: str, due: datetime | None, detail: str | None) -> dict[str, Any]:
     return {
         "inquiry_id": row.id, "reference": row.reference, "vessel_name": row.vessel,
-        "port_name": row.port, "kind": kind, "due_at": due, "detail": detail,
+        "port_name": row.port, "port_time_zone": row.tz, "kind": kind, "due_at": due,
+        "detail": detail,
     }  # fmt: skip
 
 
@@ -90,7 +92,7 @@ def _grouped(session: Session, *where: Any) -> Sequence[Row[Any]]:  # noqa: ANN4
         _inquiries(func.min(Rfq.response_deadline).label("due"), func.count().label("n"))
         .join(Rfq, Rfq.inquiry_id == Inquiry.id)
         .where(*where)
-        .group_by(Inquiry.id, Vessel.name, Port.name)
+        .group_by(Inquiry.id, Vessel.name, Port.name, Port.time_zone)
     ).all()
 
 

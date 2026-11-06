@@ -201,7 +201,7 @@ def assert_operator_dashboard(operator: Nc, soon: dict[str, Any]) -> None:
         ("eta_unnominated", soon["id"], None)
     ]
     assert set(dash["attention"][0]) == {
-        *("inquiry_id", "reference", "vessel_name", "port_name"),
+        *("inquiry_id", "reference", "vessel_name", "port_name", "port_time_zone"),
         *("kind", "due_at", "detail"),
     }
     assert dash["status_counts"]["nominated"] == 1

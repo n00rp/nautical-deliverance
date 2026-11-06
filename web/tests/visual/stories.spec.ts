@@ -47,6 +47,10 @@ const open = async (page: import("@playwright/test").Page, id: string) => {
       await page.getByRole("link", { name: "Open in e-mail" }).first().waitFor();
     }
   }
+  if (id.startsWith("dashboard-dashboard")) {
+    await page.getByRole("region", { name: "Needs attention" }).waitFor();
+    await page.getByRole("region", { name: "Inquiries by status" }).waitFor();
+  }
   if (id.startsWith("rfqs-rfqpreview")) {
     await page.getByRole("link", { name: "Open in e-mail" }).waitFor();
   }

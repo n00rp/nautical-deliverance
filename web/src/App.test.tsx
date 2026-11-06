@@ -27,6 +27,14 @@ vi.mock("./inquiryApi", async (orig) => {
   };
 });
 
+vi.mock("./dashboardApi", async (orig) => {
+  const { full } = await import("./dashboard/testSupport");
+  return {
+    ...(await orig<typeof import("./dashboardApi")>()),
+    createDashboardApi: () => ({ getDashboard: () => Promise.resolve(full) }),
+  };
+});
+
 vi.mock("./rfqApi", async (orig) => {
   const { logApi } = await import("./rfqs/testSupport");
   return { ...(await orig<typeof import("./rfqApi")>()), createRfqApi: () => logApi() };
@@ -186,8 +194,11 @@ describe("App master data", () => {
     render(<App />);
 
     const nav = await screen.findByRole("navigation", { name: "Main" });
-    expect(nav.querySelectorAll("a")).toHaveLength(8);
-    expect(nav.querySelector("a")?.textContent).toBe("Inquiries");
+    expect(nav.querySelectorAll("a")).toHaveLength(9);
+    expect([...nav.querySelectorAll("a")].slice(0, 2).map((a) => a.textContent)).toEqual([
+      "Dashboard",
+      "Inquiries",
+    ]);
     expect(screen.getByText("Master data")).toBeTruthy();
     expect(await screen.findByRole("heading", { name: "Ports" })).toBeTruthy();
     expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Ports");
@@ -204,17 +215,22 @@ describe("App master data", () => {
 });
 
 describe("App inquiries", () => {
-  it("[B2-R12] the work list is the start page", async () => {
-    auth.getUser.mockResolvedValue(user);
-    vi.mocked(fetchMe).mockResolvedValue(me);
-    render(<App />);
+  it.each(["", "#", "#/"])(
+    "[B5-R11] the hash %j opens the dashboard as start page",
+    async (hash) => {
+      auth.getUser.mockResolvedValue(user);
+      vi.mocked(fetchMe).mockResolvedValue(me);
+      window.location.hash = hash;
+      render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Inquiries" })).toBeTruthy();
-    const nav = screen.getByRole("navigation", { name: "Main" });
-    expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Inquiries");
-  });
+      expect(await screen.findByRole("heading", { name: "Needs attention" })).toBeTruthy();
+      expect(screen.queryByRole("heading", { name: "Inquiries" })).toBeNull();
+      const nav = screen.getByRole("navigation", { name: "Main" });
+      expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Dashboard");
+    },
+  );
 
-  it.each(["", "#/", "#/inquiries", "#/inquiries/"])(
+  it.each(["#/inquiries", "#/inquiries/"])(
     "[B2-R12] the hash %j opens the work list",
     async (hash) => {
       auth.getUser.mockResolvedValue(user);
@@ -223,6 +239,8 @@ describe("App inquiries", () => {
       render(<App />);
 
       expect(await screen.findByRole("heading", { name: "Inquiries" })).toBeTruthy();
+      const nav = screen.getByRole("navigation", { name: "Main" });
+      expect(nav.querySelector("[aria-current=page]")?.textContent).toBe("Inquiries");
     },
   );
 

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ADMIN_NAV, configFor } from "./admin/configs";
 import { MasterDataPage } from "./admin/MasterDataPage";
-import { parseAdmin, parseInquiries, useHash } from "./admin/routes";
+import { isDashboard, parseAdmin, parseInquiries, useHash } from "./admin/routes";
 import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
+import { Dashboard } from "./dashboard/Dashboard";
+import { createDashboardApi } from "./dashboardApi";
 import { ErrorBoundary } from "./ErrorBoundary";
 import type { TokenSource } from "./http";
 import { InquiryPage } from "./inquiries/InquiryPage";
@@ -39,7 +41,11 @@ const tokens: TokenSource = {
   renew: async () => (await userManager.signinSilent())?.access_token ?? null,
 };
 
-const NAV = [{ href: "#/inquiries", label: "Inquiries" }, ...ADMIN_NAV];
+const NAV = [
+  { href: "#/", label: "Dashboard" },
+  { href: "#/inquiries", label: "Inquiries" },
+  ...ADMIN_NAV,
+];
 
 function cleanUrl() {
   window.history.replaceState({}, document.title, window.location.pathname);
@@ -103,6 +109,7 @@ export function App() {
     () => (suppliersApi && signedIn ? { ...suppliersApi, ...createOfferApi(tokens) } : null),
     [suppliersApi, signedIn],
   );
+  const dashboardApi = useMemo(() => (signedIn ? createDashboardApi(tokens) : null), [signedIn]);
   const nominationApi = useMemo(() => (signedIn ? createNominationApi(tokens) : null), [signedIn]);
   const pageApi = useMemo(
     () => (inquiryApi && nominationApi ? { ...inquiryApi, ...nominationApi } : null),
@@ -115,6 +122,7 @@ export function App() {
   const hash = useHash();
   const route = parseAdmin(hash);
   const inquiries = parseInquiries(hash);
+  const start = isDashboard(hash);
 
   return (
     <ToastProvider>
@@ -122,7 +130,9 @@ export function App() {
         productName={PRODUCT_NAME}
         user={user}
         nav={user ? NAV : []}
-        current={route ? `#/admin/${route.path}` : inquiries ? "#/inquiries" : undefined}
+        current={
+          route ? `#/admin/${route.path}` : inquiries ? "#/inquiries" : start ? "#/" : undefined
+        }
       >
         <ErrorBoundary>
           {state.kind === "loading" && <p role="status">Loading…</p>}
@@ -140,6 +150,7 @@ export function App() {
               roles={user.roles}
             />
           )}
+          {user && dashboardApi && start && <Dashboard api={dashboardApi} />}
           {user && inquiryApi && inquiries && !inquiries.id && (
             <WorkList api={inquiryApi} roles={user.roles} />
           )}
@@ -193,7 +204,9 @@ export function App() {
               roles={user.roles}
             />
           )}
-          {user && !route && !inquiries && <p>Page not found. Choose a page from the menu.</p>}
+          {user && !route && !inquiries && !start && (
+            <p>Page not found. Choose a page from the menu.</p>
+          )}
         </ErrorBoundary>
       </AppShell>
       <ToastHost />

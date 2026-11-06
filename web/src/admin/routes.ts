@@ -18,6 +18,9 @@ export function parseAdmin(hash: string): { path: MasterType; id: string | undef
   return config ? { path: config.path, id: m?.[2] } : null;
 }
 
+/** The start page: an empty hash, `#` or `#/`. */
+export const isDashboard = (hash: string) => /^#?\/?$/.test(hash);
+
 export type InquiryRoute = {
   id: string | undefined;
   view?: "suppliers" | "rfqs" | "offer" | "offers" | "nomination";
@@ -27,12 +30,10 @@ export type InquiryRoute = {
 
 /**
  * `#/inquiries`, `#/inquiries/<id|new>`, `#/inquiries/<id>/suppliers`, `/rfqs`, `/offers`, `/nomination` or
- * `/rfqs/<rfqId>/offer`; an empty hash,
- * `#/` and `#/inquiries/` are the start page.
+ * `/rfqs/<rfqId>/offer`; `#/inquiries` and `#/inquiries/` are the work list.
  */
 export function parseInquiries(hash: string): InquiryRoute | null {
   const path = hash.replace(/^#\/?/, "").replace(/\/$/, "");
-  if (path === "") return { id: undefined };
   const o = /^inquiries\/([^/]+)\/rfqs\/([^/]+)\/offer$/.exec(path);
   if (o) return { id: o[1], view: "offer", rfqId: o[2] };
   const m = /^inquiries(?:\/([^/]+)(?:\/(suppliers|rfqs|offers|nomination))?)?$/.exec(path);

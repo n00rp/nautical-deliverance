@@ -29,6 +29,7 @@ class AttentionItem(BaseModel):
     reference: str
     vessel_name: str
     port_name: str
+    port_time_zone: str
     kind: Literal["rfq_deadline", "offer_validity", "eta_unnominated", "rfq_drafts_unsent"]
     due_at: datetime | None
     detail: str | None

@@ -20,6 +20,8 @@ export default tseslint.config(
       "src/ui/NumberField/normalize.ts",
       "src/offers/**",
       "src/nominations/**",
+      "src/dashboard/**",
+      "src/dashboardApi.ts",
     ],
     ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "**/testSupport.ts"],
     rules: {

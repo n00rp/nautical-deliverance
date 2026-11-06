@@ -307,9 +307,10 @@ def test_dashboard_per_role(
     assert item["kind"] == ETA
     assert item["detail"] is None
     assert set(item) == {
-        *("inquiry_id", "reference", "vessel_name", "port_name"),
+        *("inquiry_id", "reference", "vessel_name", "port_name", "port_time_zone"),
         *("kind", "due_at", "detail"),
     }
+    assert item["port_time_zone"]
     assert dash["status_counts"]["offers_received"] == 1
 
 
