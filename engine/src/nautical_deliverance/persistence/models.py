@@ -191,7 +191,9 @@ class Inquiry(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     rfq_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    winner_offer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("offer.id"))
+    winner_offer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("offer.id", use_alter=True)
+    )
     decision_reason: Mapped[str | None] = mapped_column(Text)
     decision_note: Mapped[str | None] = mapped_column(Text)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -93,7 +93,7 @@ def upgrade() -> None:
         " organization_id uuid NOT NULL REFERENCES organization (id),"
         " offer_id uuid NOT NULL, inquiry_id uuid NOT NULL, inquiry_line_id uuid NOT NULL,"
         " price_per_mt numeric(12,3) NOT NULL, density numeric(6,1),"
-        " CONSTRAINT offer_line_offer_line_key UNIQUE (offer_id, inquiry_line_id),"
+        " CONSTRAINT offer_line_one_per_line_key UNIQUE (offer_id, inquiry_line_id),"
         " CONSTRAINT offer_line_price_positive CHECK (price_per_mt > 0),"
         " CONSTRAINT offer_line_density_range CHECK (density BETWEEN 600 AND 1100),"
         " CONSTRAINT offer_line_offer_fk FOREIGN KEY (organization_id, inquiry_id, offer_id)"

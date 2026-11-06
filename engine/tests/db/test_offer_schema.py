@@ -195,7 +195,7 @@ def test_offer_line_unique_per_offer(app_engine: Engine, org: tuple[uuid.UUID, I
         off = _offer(s, o, ids, inq)
         il = _line(s, o, ids, inq)
         _oline(s, o, off, inq, il)
-        with pytest.raises(IntegrityError, match="offer_line_offer_line_key"):
+        with pytest.raises(IntegrityError, match="offer_line_one_per_line_key"):
             _oline(s, o, off, inq, il)
 
 
@@ -205,18 +205,21 @@ def test_offer_line_must_belong_to_offers_inquiry(
 ) -> None:
     """A line of another inquiry, or an inquiry_id other than the offer's, is rejected."""
     o, ids = org
-    with org_session(o, app_engine) as s:
+    with org_session(o, app_engine) as s:  # committed first: each negative runs on its own
         a = _inquiry(s, o, ids)
         b = _inquiry(s, o, ids, reference="R2")
         off = _offer(s, o, ids, a)
         line_b = _line(s, o, ids, b)
-        with pytest.raises(IntegrityError, match="offer_line_inquiry_line_fk"):
-            _oline(s, o, off, a, line_b)
+    with (
+        org_session(o, app_engine) as s,
+        pytest.raises(IntegrityError, match="offer_line_inquiry_line_fk"),
+    ):
+        _oline(s, o, off, a, line_b)  # right offer inquiry, line of another inquiry
     with (
         org_session(o, app_engine) as s,
         pytest.raises(IntegrityError, match="offer_line_offer_fk"),
     ):
-        _oline(s, o, off, b, line_b)
+        _oline(s, o, off, b, line_b)  # line fits inquiry_id, but offer is not of that inquiry
 
 
 DENSITY_CASES = [
