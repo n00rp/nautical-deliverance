@@ -88,6 +88,35 @@ describe("WorkList", () => {
     expect(third.getByText("Create nomination")).toBeTruthy();
   });
 
+  it("[B5-R11] a winner links to the nomination screen; a nominated inquiry shows its version", async () => {
+    setup([
+      item("1", { status: "winner_selected", rfq_total: 3, rfq_sent: 3, offer_total: 2 }),
+      item("2", { status: "nominated", rfq_total: 3, rfq_sent: 3, nomination_sent: 2 }),
+    ]);
+    const create = await screen.findByRole("link", { name: "Create nomination" });
+    expect(create.getAttribute("href")).toBe("#/inquiries/1/nomination");
+    const done = screen.getByRole("link", { name: "Nominated (v2)" });
+    expect(done.getAttribute("href")).toBe("#/inquiries/2/nomination");
+  });
+
+  it("[B5-R11] the Operator sees Nominated with the supplier and no link", async () => {
+    setup(
+      [
+        item("1", {
+          status: "nominated",
+          rfq_total: null,
+          rfq_sent: null,
+          offer_total: null,
+          nomination_sent: null,
+          winner_counterparty_name: "Beta Marine",
+        }),
+      ],
+      ["operator"],
+    );
+    expect(await screen.findByText("Nominated: Beta Marine")).toBeTruthy();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
   it("[B4-R12] the Operator sees the selected supplier and no comparison", async () => {
     setup(
       [

@@ -52,3 +52,13 @@ export const Locked: Story = {
   render: () => <Page rec={{ ...draft, status: "rfq_sent" }} roles={["bunker_buyer"]} />,
 };
 export const AsOperator: Story = { render: () => <Page rec={draft} roles={["operator"]} /> };
+
+/** A winner is selected: the buyer can create the nomination. */
+export const WinnerSelected: Story = {
+  render: () => (
+    <Page
+      rec={inquiry({ status: "winner_selected", winner_counterparty_name: "Beta Marine" })}
+      roles={["bunker_buyer"]}
+    />
+  ),
+};

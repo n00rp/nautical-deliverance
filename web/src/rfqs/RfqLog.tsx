@@ -260,7 +260,7 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
         >
           {open && (
             <>
-              <RfqPreview key={open.id} rfq={open} api={api} />
+              <RfqPreview key={open.id} item={open} load={api.getPreview} />
               {canWrite && open.status === "sent" && (
                 <a className={css.mail} href={`#/inquiries/${inquiryId}/rfqs/${open.id}/offer`}>
                   {open.offer_received ? "Edit offer" : "Enter offer"}

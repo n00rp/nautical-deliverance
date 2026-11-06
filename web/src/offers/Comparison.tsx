@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { useBusy } from "../admin/useBusy";
 import { useLoaded } from "../admin/useLoaded";
 import { useReload } from "../admin/useReload";
-import { STATUS_LABEL, type DecisionReason, type InquiryApi } from "../inquiryApi";
+import type { DecisionReason, InquiryApi } from "../inquiryApi";
 import { formatDecimal, formatUsd, parseDecimal } from "../money";
 import {
   COST_KEYS,
@@ -17,12 +18,14 @@ import { EmptyState } from "../ui/EmptyState/EmptyState";
 import { InlineConfirm } from "../ui/InlineConfirm/InlineConfirm";
 import { LockedNote } from "../ui/LockedNote/LockedNote";
 import { Panel } from "../ui/Panel/Panel";
+import { access } from "../ui/RoleGate/access";
 import type { Role } from "../ui/RoleGate/RoleGate";
 import { StatusPill } from "../ui/StatusPill/StatusPill";
 import { Table } from "../ui/Table/Table";
 import { useToast } from "../ui/Toast/Toast";
 import rfqs from "../rfqs/RfqLog.module.css";
 import page from "../rfqs/SupplierSelection.module.css";
+import { InquiryTitle } from "../inquiries/InquiryTitle";
 import css from "./Comparison.module.css";
 import { DecisionForm } from "./DecisionForm";
 
@@ -32,8 +35,6 @@ export type ComparisonProps = {
   roles: Role[];
 };
 
-const READERS: Role[] = ["admin", "bunker_buyer", "viewer"];
-const WRITERS: Role[] = ["admin", "bunker_buyer"];
 /** The statuses in which the engine accepts a (new) winner. */
 const SELECTABLE = ["offers_received", "winner_selected"];
 
@@ -66,12 +67,10 @@ type Body = { reason?: DecisionReason; note?: string };
 /** S6: compare the offers of an inquiry and select the winner (B4-R12). */
 export function Comparison({ inquiryId, api, roles }: ComparisonProps) {
   const toast = useToast();
-  const allowed = roles.some((r) => READERS.includes(r));
-  const canWrite = roles.some((r) => WRITERS.includes(r));
+  const { allowed, canWrite } = access(roles);
   const [openId, setOpenId] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
-  const [pending, setPending] = useState(false);
-  const busy = useRef(false);
+  const { pending, guarded } = useBusy();
   const { tick, reload, fail } = useReload();
   const { data, failed } = useLoaded(allowed, async () => {
     const [inquiry, cmp] = await Promise.all([
@@ -94,20 +93,13 @@ export function Comparison({ inquiryId, api, roles }: ComparisonProps) {
   const canSelect = canWrite && SELECTABLE.includes(inquiry.status);
 
   /** One selection at a time; a stale version (409) reloads through `fail`. */
-  const select = async (row: ComparisonRow, body: Body) => {
-    if (busy.current) return;
-    busy.current = true;
-    setPending(true);
-    try {
+  const select = (row: ComparisonRow, body: Body) =>
+    guarded(async () => {
       await api.selectWinner(inquiry.id, inquiry.version, { offer_id: row.offer_id, ...body });
       toast("Winner selected", "ok");
       setDeciding(false);
       reload();
-    } finally {
-      busy.current = false;
-      setPending(false);
-    }
-  };
+    });
 
   const actions = (r: ComparisonRow) => {
     if (r.selected) return null;
@@ -147,15 +139,11 @@ export function Comparison({ inquiryId, api, roles }: ComparisonProps) {
 
   return (
     <div className={page.page}>
-      <div className={page.title}>
-        <h2 className={page.heading}>{`${inquiry.reference} — Offers`}</h2>
-        <StatusPill status={STATUS_LABEL[inquiry.status]} />
-        <div className={rfqs.links}>
-          <a className={page.back} href={`#/inquiries/${inquiryId}`}>
-            Back to inquiry
-          </a>
-        </div>
-      </div>
+      <InquiryTitle
+        heading={`${inquiry.reference} — Offers`}
+        status={inquiry.status}
+        inquiryId={inquiryId}
+      />
       {cmp.decision && (
         <Panel title="Decision">
           <p className={css.decision}>

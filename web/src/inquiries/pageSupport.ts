@@ -1,6 +1,7 @@
 // Sample reference data and inquiries, shared by the InquiryPage tests and stories.
 import type { DirectoryUser, Inquiry, InquiryApi } from "../inquiryApi";
 import type { MasterApi, MasterType, Rec } from "../masterApi";
+import type { NominationApi } from "../nominationApi";
 
 const r = (id: string, fields: Record<string, string | number | null>): Rec => ({
   id,
@@ -120,7 +121,9 @@ export const inquiry = (fields: Partial<Inquiry> = {}): Inquiry => ({
 });
 
 /** Inquiry client that serves one inquiry and answers every action with it. */
-export function inquiryApi(current: Inquiry = inquiry()): InquiryApi {
+export function inquiryApi(
+  current: Inquiry = inquiry(),
+): InquiryApi & Pick<NominationApi, "createNomination"> {
   const same = () => Promise.resolve(current);
   return {
     listInquiries: () => Promise.resolve([]),
@@ -130,6 +133,7 @@ export function inquiryApi(current: Inquiry = inquiry()): InquiryApi {
     takeInquiry: same,
     cancelInquiry: same,
     duplicateInquiry: same,
+    createNomination: () => Promise.reject(new Error("createNomination is not stubbed")),
     inquiryHistory: () =>
       Promise.resolve([
         {

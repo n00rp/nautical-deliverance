@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import type { Inquiry, InquiryApi } from "../inquiryApi";
+import type { NominationApi } from "../nominationApi";
 import type { Role } from "../ui/RoleGate/RoleGate";
 import { ToastHost, ToastProvider } from "../ui/Toast/Toast";
 import { InquiryPage } from "./InquiryPage";
@@ -20,7 +21,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-type Over = Partial<InquiryApi>;
+type Over = Partial<InquiryApi & Pick<NominationApi, "createNomination">>;
 
 function setup(
   rec: Inquiry | "new" = inquiry(),
@@ -372,6 +373,74 @@ describe("InquiryPage actions", () => {
     cleanup();
     setup(inquiry({ status: "offers_received" }), ["bunker_buyer"]);
     await form();
+    expect(screen.queryByText(/Selected supplier/)).toBeNull();
+  });
+
+  it.each([
+    ["winner_selected", "Create nomination"],
+    ["nominated", "Amend nomination"],
+  ] as const)(
+    "[B5-R11] a buyer in %s sees %s and opens the nomination screen",
+    async (status, label) => {
+      const create = vi.fn().mockResolvedValue({});
+      setup(inquiry({ status }), ["bunker_buyer"], { createNomination: create });
+      await form();
+      await userEvent.click(screen.getByRole("button", { name: label }));
+      await waitFor(() => {
+        expect(window.location.hash).toBe("#/inquiries/i1/nomination");
+      });
+      expect(create).toHaveBeenCalledWith("i1");
+    },
+  );
+
+  it("[B5-R11] an existing draft is opened instead of reported as an error", async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValue(
+        new ApiError(422, [{ field: "inquiry_id", message: "A nomination draft already exists" }]),
+      );
+    setup(inquiry({ status: "winner_selected" }), ["admin"], { createNomination: create });
+    await form();
+    await userEvent.click(screen.getByRole("button", { name: "Create nomination" }));
+    await waitFor(() => {
+      expect(window.location.hash).toBe("#/inquiries/i1/nomination");
+    });
+  });
+
+  it("[B5-R11] other failures stay on the page; other statuses and roles have no button", async () => {
+    const create = vi.fn().mockRejectedValue(new ApiError(409));
+    setup(inquiry({ status: "winner_selected" }), ["bunker_buyer"], { createNomination: create });
+    await form();
+    await userEvent.click(screen.getByRole("button", { name: "Create nomination" }));
+    expect(await screen.findByText(/changed by someone else/)).toBeTruthy();
+    expect(window.location.hash).toBe("");
+    cleanup();
+    for (const [status, role] of [
+      ["offers_received", "bunker_buyer"],
+      ["cancelled", "admin"],
+      ["winner_selected", "viewer"],
+      ["winner_selected", "operator"],
+    ] as const) {
+      setup(inquiry({ status }), [role]);
+      await form();
+      expect(screen.queryByRole("button", { name: /nomination/ })).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("[B5-R11] readers get a Nomination link once a winner is selected; the Operator sees Nominated: supplier", async () => {
+    const link = () => screen.queryByRole("link", { name: "Nomination" });
+    const rec = inquiry({ status: "nominated", winner_counterparty_name: "Beta Marine" });
+    for (const role of ["bunker_buyer", "admin", "viewer"] as const) {
+      setup(rec, [role]);
+      await form();
+      expect(link()?.getAttribute("href")).toBe("#/inquiries/i1/nomination");
+      cleanup();
+    }
+    setup({ ...rec, rfq_total: null, rfq_sent: null, decision: null }, ["operator"]);
+    await form();
+    expect(link()).toBeNull();
+    expect(screen.getByText("Nominated: Beta Marine")).toBeTruthy();
     expect(screen.queryByText(/Selected supplier/)).toBeNull();
   });
 

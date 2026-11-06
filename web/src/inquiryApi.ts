@@ -60,6 +60,8 @@ export type InquiryListItem = {
   offer_total: number | null;
   /** The only decision fact an Operator sees. */
   winner_counterparty_name: string | null;
+  /** Sent nomination versions; null for the Operator. */
+  nomination_sent: number | null;
   eta_warning: boolean;
 };
 

@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { describe } from "../admin/errors";
-import type { RfqApi, RfqItem, RfqPreview as Preview } from "../rfqApi";
+import type { RfqPreview as Preview } from "../rfqApi";
 import { Button } from "../ui/Button/Button";
 import { useToast } from "../ui/Toast/Toast";
 import css from "./RfqLog.module.css";
 
 export type RfqPreviewProps = {
-  rfq: RfqItem;
-  api: Pick<RfqApi, "getPreview">;
+  /** The RFQ or nomination whose message is shown; a new version reloads it. */
+  item: { id: string; version: number };
+  load: (id: string) => Promise<Preview>;
 };
 
 /** The exact message that would be mailed, with the mail link and Copy text (B3-R12). */
-export function RfqPreview({ rfq, api }: RfqPreviewProps) {
+export function RfqPreview({ item, load }: RfqPreviewProps) {
   const toast = useToast();
   const [preview, setPreview] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,7 @@ export function RfqPreview({ rfq, api }: RfqPreviewProps) {
   useEffect(() => {
     let live = true;
     // The old preview stays until the new one arrives (no flash after an action).
-    api.getPreview(rfq.id).then(
+    load(item.id).then(
       (p) => {
         if (!live) return;
         setPreview(p);
@@ -34,7 +35,7 @@ export function RfqPreview({ rfq, api }: RfqPreviewProps) {
     return () => {
       live = false;
     };
-  }, [api, rfq.id, rfq.version]);
+  }, [load, item.id, item.version]);
 
   if (error) return <p role="alert">{error}</p>;
   if (!preview) return <p role="status">Loading…</p>;

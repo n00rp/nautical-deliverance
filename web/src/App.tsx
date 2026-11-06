@@ -9,6 +9,8 @@ import type { TokenSource } from "./http";
 import { InquiryPage } from "./inquiries/InquiryPage";
 import { Comparison } from "./offers/Comparison";
 import { OfferEntry } from "./offers/OfferEntry";
+import { createNominationApi } from "./nominationApi";
+import { Nomination } from "./nominations/Nomination";
 import { createOfferApi } from "./offerApi";
 import { RfqLog } from "./rfqs/RfqLog";
 import { SupplierSelection } from "./rfqs/SupplierSelection";
@@ -101,6 +103,15 @@ export function App() {
     () => (suppliersApi && signedIn ? { ...suppliersApi, ...createOfferApi(tokens) } : null),
     [suppliersApi, signedIn],
   );
+  const nominationApi = useMemo(() => (signedIn ? createNominationApi(tokens) : null), [signedIn]);
+  const pageApi = useMemo(
+    () => (inquiryApi && nominationApi ? { ...inquiryApi, ...nominationApi } : null),
+    [inquiryApi, nominationApi],
+  );
+  const nominationScreenApi = useMemo(
+    () => (suppliersApi && nominationApi ? { ...suppliersApi, ...nominationApi } : null),
+    [suppliersApi, nominationApi],
+  );
   const hash = useHash();
   const route = parseAdmin(hash);
   const inquiries = parseInquiries(hash);
@@ -165,11 +176,19 @@ export function App() {
               roles={user.roles}
             />
           )}
-          {user && api && inquiryApi && inquiries?.id && !inquiries.view && (
+          {user && nominationScreenApi && inquiries?.id && inquiries.view === "nomination" && (
+            <Nomination
+              key={inquiries.id}
+              inquiryId={inquiries.id}
+              api={nominationScreenApi}
+              roles={user.roles}
+            />
+          )}
+          {user && api && pageApi && inquiries?.id && !inquiries.view && (
             <InquiryPage
               key={inquiries.id}
               id={inquiries.id}
-              api={inquiryApi}
+              api={pageApi}
               master={api}
               roles={user.roles}
             />
