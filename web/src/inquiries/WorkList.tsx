@@ -54,7 +54,7 @@ function nextStep(r: InquiryListItem) {
   }
   if (r.status === "winner_selected" || (r.status === "nominated" && r.nomination_sent)) {
     const text = r.nomination_sent
-      ? `Nominated (v${String(r.nomination_sent)})`
+      ? `Nominated${r.nomination_sent > 1 ? ` (v${String(r.nomination_sent)})` : ""}`
       : r.nomination_draft
         ? "Send nomination"
         : "Create nomination";

@@ -210,6 +210,19 @@ describe("Nomination changes", () => {
     });
   });
 
+  it("[B5-R11] an expired winning offer on the first send says to record the extended validity", async () => {
+    const message = "Offer validity has expired — record the extended validity first";
+    const reject = () => Promise.reject(new ApiError(422, [{ field: "offer_id", message }]));
+    setup(["bunker_buyer"], { ...nominationApi(), markNominationSent: reject });
+    await userEvent.click(await screen.findByRole("button", { name: "Mark sent" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm sent" }));
+    expect(
+      await screen.findByText(
+        /validity has expired.*Record the extended validity on the offer.*then send/,
+      ),
+    ).toBeTruthy();
+  });
+
   it("[B5-R11] contact options come from the winner's counterparty id and preselect by contact id", async () => {
     const api = nominationApi();
     const other = {

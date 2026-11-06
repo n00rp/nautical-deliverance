@@ -1,7 +1,7 @@
 import { useLoaded } from "../admin/useLoaded";
 import type { AttentionItem, AttentionKind, DashboardApi, MonthFigures } from "../dashboardApi";
 import { STATUS_LABEL, type InquiryStatus } from "../inquiryApi";
-import { formatUsd } from "../money";
+import { formatMt, formatUsd } from "../money";
 import { formatInstant } from "../ui/DateTimeField/format";
 import { EmptyState } from "../ui/EmptyState/EmptyState";
 import { Panel } from "../ui/Panel/Panel";
@@ -61,7 +61,7 @@ function Month({ month }: { month: MonthFigures }) {
         <div className={css.tile}>
           <dt>Nominated volume</dt>
           <dd>
-            {month.nominated_mt} mt
+            {formatMt(month.nominated_mt)} mt
             {excluded > 0 && (
               <span className={css.note}> excl. {String(excluded)} lines without density</span>
             )}
@@ -85,7 +85,7 @@ export function Dashboard({ api }: DashboardProps) {
     <div className={css.stack}>
       <Panel title="Needs attention">
         <Table
-          caption="Needs attention"
+          caption="Inquiries needing attention"
           rows={data.attention}
           rowKey={(i) => `${i.inquiry_id}-${i.kind}`}
           empty={

@@ -32,7 +32,7 @@ export const full: Dashboard = {
   status_counts: counts,
   month: {
     period: "2026-11",
-    nominated_mt: "1234.5",
+    nominated_mt: "12345.678",
     mt_excluded_lines: 2,
     nominated_spend: "987654.30",
     currency: "USD",

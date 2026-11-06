@@ -99,6 +99,11 @@ describe("WorkList", () => {
     expect(done.getAttribute("href")).toBe("#/inquiries/2/nomination");
   });
 
+  it("[B5-R11] the first nomination version shows no version number", async () => {
+    setup([item("1", { status: "nominated", rfq_total: 3, rfq_sent: 3, nomination_sent: 1 })]);
+    expect(await screen.findByRole("link", { name: "Nominated" })).toBeTruthy();
+  });
+
   it("[B5-R11] a winner with a waiting draft says Send nomination", async () => {
     setup([
       item("1", { status: "winner_selected", rfq_total: 3, rfq_sent: 3, nomination_draft: true }),

@@ -43,6 +43,13 @@ describe("Dashboard", () => {
     expect(drafts.getByText("—")).toBeTruthy();
   });
 
+  it("[B5-R11] the local due time follows the item's own port zone", async () => {
+    const [first] = full.attention;
+    if (!first) throw new Error("fixture");
+    setup({ ...full, attention: [{ ...first, port_time_zone: "Asia/Singapore" }] });
+    expect(await screen.findByText("12 Nov 06:00 UTC · 14:00 local")).toBeTruthy();
+  });
+
   it("[B5-R11] the reference links to the inquiry and the link navigates", async () => {
     setup(full);
     const link = await screen.findByRole("link", { name: "INQ-2611-001" });
@@ -76,7 +83,7 @@ describe("Dashboard", () => {
     setup(full);
     const month = within(await screen.findByRole("region", { name: "Month 2026-11" }));
     expect(month.getByText("USD 987,654.30")).toBeTruthy();
-    expect(month.getByText("1234.5 mt")).toBeTruthy();
+    expect(month.getByText("12,345.678 mt")).toBeTruthy();
     expect(month.getByText("excl. 2 lines without density")).toBeTruthy();
     expect(month.getByText("2.50")).toBeTruthy();
   });

@@ -47,6 +47,12 @@ type Contact = Suggestions["covers_all"][number]["contacts"][number];
 
 /** What the engine's 409 reason means for the buyer, with the right next step; null if unknown. */
 function conflictText(e: unknown): string | null {
+  if (
+    e instanceof ApiError &&
+    e.issues.some((i) => i.message.startsWith("Offer validity has expired"))
+  ) {
+    return "The winning offer's validity has expired. Record the extended validity on the offer, then send the nomination.";
+  }
   const reason = e instanceof ApiError && e.status === 409 ? e.detail : null;
   if (reason?.startsWith("Winning offer changed")) {
     return "The winner changed since this draft was made. Withdraw the draft and create a new one.";
