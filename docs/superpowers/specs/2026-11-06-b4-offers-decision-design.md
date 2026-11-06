@@ -1,6 +1,6 @@
 # B4 Offers and Decision — Specification
 
-- **Status:** Draft for owner review
+- **Status:** Approved by owner 2026-11-06 (including proposed decisions B4-D9–B4-D14)
 - **Date:** 2026-11-06
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md), build step B4 (D-076); D-071 (USD), D-072 (roles), D-074 (exact money), E3, E4; B0-D2, B0-D3, B0-D4, A5; B0 screens S5/S6; builds on [B2](2026-11-05-b2-inquiries-design.md) and [B3](2026-11-05-b3-supplier-selection-rfq-design.md).
 - **Goal:** The buyer enters each supplier's offer manually against its sent RFQ, compares offers by exact total cost, and selects a winner — with a rationale whenever the choice is not the lowest complete offer.
