@@ -829,6 +829,8 @@ def test_list_item_fields(admin: Client) -> None:
         "rfq_sent": 0,
         "offer_total": 0,
         "winner_counterparty_name": None,
+        "nomination_sent": 0,
+        "nomination_draft": False,
         "eta_warning": False,
     }
 

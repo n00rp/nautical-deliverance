@@ -10,12 +10,15 @@ export type FieldIssue = { field: string; message: string };
 export class ApiError extends Error {
   readonly status: number;
   readonly issues: FieldIssue[];
+  /** The engine's text when `detail` is a plain string (409 reasons); null otherwise. */
+  readonly detail: string | null;
 
-  constructor(status: number, issues: FieldIssue[] = []) {
+  constructor(status: number, issues: FieldIssue[] = [], detail: string | null = null) {
     super(`Request failed with status ${String(status)}`);
     this.name = "ApiError";
     this.status = status;
     this.issues = issues;
+    this.detail = detail;
   }
 }
 

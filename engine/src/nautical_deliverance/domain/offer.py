@@ -76,11 +76,16 @@ class OfferResult:
     complete: bool
 
 
+def effective_density(line: LineInput) -> Decimal | None:
+    """Density used to convert an m3 line: the inquiry's first, else the offer's."""
+    return line.inquiry_density if line.inquiry_density is not None else line.offer_density
+
+
 def quantity_mt(line: LineInput) -> Decimal | None:
     """Exact quantity in mt; None for m3 without any density."""
     if line.unit == "mt":
         return line.quantity
-    density = line.inquiry_density if line.inquiry_density is not None else line.offer_density
+    density = effective_density(line)
     return None if density is None else line.quantity * density / _THOUSAND
 
 
@@ -88,6 +93,15 @@ def format_qty_mt(q: Decimal) -> str:
     """Shortest exact decimal string with at least 3 decimals (never rounds)."""
     whole, _, frac = format(q.normalize(), "f").partition(".")
     return f"{whole}.{frac.ljust(3, '0')}"
+
+
+def format_usd(d: Decimal) -> str:
+    """``USD 1,234,567.89`` (``USD -25,000.00``); raises over 2 decimals."""
+    q = d.quantize(_CENT)
+    if q != d:
+        msg = "more than 2 decimals"
+        raise ValueError(msg)
+    return f"USD {q.copy_abs() if q == 0 else q:,.2f}"
 
 
 def line_cost(qty_mt: Decimal, price: Decimal) -> Decimal:

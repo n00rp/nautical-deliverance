@@ -40,6 +40,17 @@ const open = async (page: import("@playwright/test").Page, id: string) => {
   if (id.startsWith("offers-offerentry") && !id.endsWith("as-operator")) {
     await page.getByRole("form", { name: "Offer" }).waitFor();
   }
+  if (id.startsWith("nominations-nomination") && !id.endsWith("as-operator")) {
+    await page.getByRole("table", { name: "Sent versions" }).waitFor();
+    // Only the stories with a draft (or an opened version) have a mail link.
+    if (!id.endsWith("--nominated")) {
+      await page.getByRole("link", { name: "Open in e-mail" }).first().waitFor();
+    }
+  }
+  if (id.startsWith("dashboard-dashboard")) {
+    await page.getByRole("region", { name: "Needs attention" }).waitFor();
+    await page.getByRole("region", { name: "Inquiries by status" }).waitFor();
+  }
   if (id.startsWith("rfqs-rfqpreview")) {
     await page.getByRole("link", { name: "Open in e-mail" }).waitFor();
   }

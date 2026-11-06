@@ -1,11 +1,15 @@
-"""B4-R09: an Operator can never obtain a price, cost, total, rationale or offer text.
+"""B4-R09 / B5-R09: an Operator can never obtain a price, cost, total, rationale or offer text.
 
 Every route of the app is called as the Operator (403 and 404 bodies included) against inquiries
 that carry unique marker values in every commercial field. The route list is read from the app, so
 a route added later is swept too; a new kind of path parameter makes the test fail until it is
 taught how to fill it in.
+
+B5 adds nominations (their frozen texts carry the winning offer's terms) and the dashboard (month
+figures); the Operator's dashboard is only status counts and ETA items.
 """
 
+import json
 import random
 import re
 import uuid
@@ -24,6 +28,7 @@ from nautical_deliverance.domain.offer import DecisionReason
 from nautical_deliverance.main import create_app
 from nautical_deliverance.settings import Settings
 from tests.db.test_inquiry_api import FORBIDDEN, OK
+from tests.db.test_nomination_api import Nc
 from tests.db.test_offer_api import Oc, prices
 from tests.db.test_offer_decision import pick
 from tests.db.test_rfq_api import rfq_world
@@ -34,7 +39,12 @@ if TYPE_CHECKING:
 
 PREFIX = "/api/v1"
 WRITES = ("POST", "PUT", "PATCH")
-IDS = {"inquiry_id", "rfq_id", "offer_id"}  # parameters the sweep fills with real rows
+IDS = {
+    "inquiry_id",
+    "rfq_id",
+    "offer_id",
+    "nomination_id",
+}  # parameters the sweep fills with real rows
 SERVER_ERROR = 500
 KINDS = ("ports", "products")
 NAMES = ["Alpha Marine", "Beta Marine", "Gamma Marine"]
@@ -49,6 +59,14 @@ EXPECTED = {  # the sweep must see at least these, so a broken enumeration canno
     ("GET", "/offers/{offer_id}"),
     ("PATCH", "/offers/{offer_id}"),
     ("GET", "/offers/{offer_id}/history"),
+    ("GET", "/inquiries/{inquiry_id}/nominations"),
+    ("POST", "/inquiries/{inquiry_id}/nominations"),
+    ("PATCH", "/nominations/{nomination_id}"),
+    ("GET", "/nominations/{nomination_id}/preview"),
+    ("POST", "/nominations/{nomination_id}/mark-sent"),
+    ("POST", "/nominations/{nomination_id}/withdraw"),
+    ("GET", "/nominations/{nomination_id}/history"),
+    ("GET", "/dashboard"),
     ("GET", "/users"),
     ("GET", "/me"),
 }
@@ -67,7 +85,7 @@ def route_table(app: FastAPI) -> set[tuple[str, str]]:
 
 def commercial(path: str) -> bool:
     """Routes that exist only for buyers and viewers: the Operator must get 403."""
-    return bool(re.search(r"/(rfqs|offers|comparison|select-winner)\b", path))
+    return bool(re.search(r"/(rfqs|offers|nominations|comparison|select-winner)\b", path))
 
 
 def test_route_table_is_not_empty() -> None:
@@ -118,7 +136,7 @@ def sweep(operator: Oc, ids: dict[str, str]) -> tuple[list[str], dict[tuple[str,
     statuses: dict[tuple[str, str], int] = {}  # what was actually requested, with the outcome
     for method, path in sorted(route_table(operator.http.app)):  # type: ignore[arg-type]
         params = set(re.findall(r"{(\w+)}", path))
-        if re.search(r"/(inquiries|rfqs|offers)\b", path):
+        if re.search(r"/(inquiries|rfqs|offers|nominations)\b", path):
             assert params <= IDS, f"teach this test to fill {params - IDS} in {path}"
         resp = operator.http.request(
             method, url_for(operator, ids, path), json={} if method in WRITES else None
@@ -154,6 +172,41 @@ def comparison_markers(cmp: dict[str, Any]) -> set[str]:
     return found
 
 
+def nomination_markers(admin: Nc, inq: dict[str, Any], chosen: dict[str, Any]) -> set[str]:
+    """Send a nomination and an amendment; return their frozen texts and the month's KPI values.
+
+    The admin's own responses must contain every one of them first, so the scanner can see them.
+    """
+    sent = [admin.send(admin.nominate(inq["id"])) for _ in range(2)]
+    previews = [admin.preview(n["id"]) for n in sent]
+    texts = {p[k] for p in previews for k in ("body", "mailto")}
+    assert all(chosen[k] in previews[0]["body"] for k in ("physical_supplier", "payment_terms"))
+    dash = admin.api("/dashboard")
+    month = dash["month"]
+    decided = admin.api(f"/inquiries/{inq['id']}/comparison")["decision"]["decided_total"]
+    assert month["nominated_spend"] == decided
+    spend = Decimal(month["nominated_spend"])
+    kpis = {month["nominated_spend"], month["nominated_mt"], f"USD {spend:,.2f}"}
+    admin_sees = json.dumps(dash) + "".join(p["body"] for p in previews)
+    assert all(k in admin_sees for k in kpis)
+    return texts | kpis
+
+
+def assert_operator_dashboard(operator: Nc, soon: dict[str, Any]) -> None:
+    """Assert the Operator's dashboard is status counts and ETA items only, no month or detail."""
+    dash = operator.api("/dashboard")
+    assert set(dash) == {"attention", "status_counts", "month"}
+    assert dash["month"] is None
+    assert [(i["kind"], i["inquiry_id"], i["detail"]) for i in dash["attention"]] == [
+        ("eta_unnominated", soon["id"], None)
+    ]
+    assert set(dash["attention"][0]) == {
+        *("inquiry_id", "reference", "vessel_name", "port_name", "port_time_zone"),
+        *("kind", "due_at", "detail"),
+    }
+    assert dash["status_counts"]["nominated"] == 1
+
+
 def variants(marker: str) -> set[str]:
     """Every way a decimal marker may be printed: raw, trailing zeros stripped, quantized."""
     if not re.fullmatch(r"-?\d+\.\d+", marker):
@@ -165,6 +218,7 @@ def variants(marker: str) -> set[str]:
 
 
 @pytest.mark.req("B4-R09")
+@pytest.mark.req("B5-R09")
 @hyp_settings(
     max_examples=6, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture]
 )
@@ -173,7 +227,7 @@ def variants(marker: str) -> set[str]:
     winner=st.integers(0, 2),
     reason=st.sampled_from(list(DecisionReason)),
 )
-def test_operator_never_sees_commercial_data(
+def test_operator_never_sees_commercial_data(  # noqa: PLR0915  (one long scenario)
     settings: Settings, app_engine: Engine, seed: int, winner: int, reason: DecisionReason
 ) -> None:
     """No marker of any price, cost, total, rationale or offer text is in any Operator response."""
@@ -192,7 +246,7 @@ def test_operator_never_sees_commercial_data(
         return f"mk{next(numbers)}z"
 
     world = rfq_world(app_engine)
-    admin, operator = (Oc(settings, app_engine, world, r) for r in (Role.ADMIN, Role.OPERATOR))
+    admin, operator = (Nc(settings, app_engine, world, r) for r in (Role.ADMIN, Role.OPERATOR))
     operator.http.app.dependency_overrides[get_me_engine] = lambda: app_engine  # type: ignore[attr-defined]
     inq, rfqs = admin.sent(("Alpha", "a1"), ("Beta", "b1"), ("Gamma", "c1"))
     markers: set[str] = set()
@@ -221,9 +275,16 @@ def test_operator_never_sees_commercial_data(
     markers = {m for m in markers if m and len(m) >= 6}  # noqa: PLR2004  ("0.00" is not a marker)
     assert len(markers) >= 30  # noqa: PLR2004
     assert all(m in shown.text for m in markers - {note, first_total})  # scanner sees them
+    markers |= nomination_markers(admin, inq, chosen)
     scanned = {v for m in markers for v in variants(m) if len(v) >= 6}  # noqa: PLR2004
 
-    ids = {"inquiry_id": inq["id"], "rfq_id": rfqs[0]["id"], "offer_id": chosen["id"]}
+    soon = admin.create(eta="2026-11-05T13:00:00Z", etd="2026-11-06T13:00:00Z")  # ETA within 48 h
+    ids = {
+        "inquiry_id": inq["id"],
+        "rfq_id": rfqs[0]["id"],
+        "offer_id": chosen["id"],
+        "nomination_id": admin.items(inq["id"])[0]["id"],
+    }
     bodies = checked_sweep(operator, ids)
 
     everything = "\n".join(bodies)
@@ -233,10 +294,14 @@ def test_operator_never_sees_commercial_data(
     final = (winner + 1) % 3  # the re-selected winner
     assert got.json()["winner_counterparty_name"] == NAMES[final]
     assert got.json()["decision"] is None
+    assert got.json()["winner_counterparty_id"] is None
     assert NAMES[final] in got.text
-    listed = operator.http.get(f"{PREFIX}/inquiries").json()
+    listed = [i for i in operator.http.get(f"{PREFIX}/inquiries").json() if i["id"] == inq["id"]]
     assert [i["winner_counterparty_name"] for i in listed] == [NAMES[final]]
     assert [i["offer_total"] for i in listed] == [None]  # how many offers came in is commercial
+    assert [i["nomination_sent"] for i in listed] == [None]
+    assert [i["nomination_draft"] for i in listed] == [None]
+    assert_operator_dashboard(operator, soon)
     hist = operator.http.get(f"{PREFIX}/inquiries/{inq['id']}/history").text
     assert NAMES[final] in hist
     for word in ("decision_reason", "decision_note", "decided_total", "winner_offer_id"):

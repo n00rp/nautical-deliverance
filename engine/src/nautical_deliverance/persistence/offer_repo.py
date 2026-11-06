@@ -69,9 +69,9 @@ def _input(offer: Offer, rows: Sequence[Any]) -> OfferInput:
     )
 
 
-def inputs_for(session: Session, offer: Offer) -> OfferInput:
-    """Return the domain input of an offer: all inquiry lines, priced or not."""
-    return _input(offer, line_rows(session, offer))
+def inputs_for(session: Session, offer: Offer, rows: Sequence[Any] | None = None) -> OfferInput:
+    """Return the domain input of an offer: all inquiry lines, priced or not (`rows` if given)."""
+    return _input(offer, line_rows(session, offer) if rows is None else rows)
 
 
 def _text(value: Decimal | None) -> str | None:

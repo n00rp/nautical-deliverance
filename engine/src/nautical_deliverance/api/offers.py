@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
-from nautical_deliverance.api.access import Eng, Now, Reader, Writer  # noqa: TC001
+from nautical_deliverance.api.access import Eng, Now, RfqReader, Writer  # noqa: TC001
 from nautical_deliverance.api.common import conflict, scope, unprocessable
 from nautical_deliverance.api.inquiries import (
     _lock_open,
@@ -42,10 +42,9 @@ from nautical_deliverance.domain.inquiry import Status
 from nautical_deliverance.domain.offer import DecisionReason, evaluate_offer, rationale_required
 from nautical_deliverance.domain.rfq import RfqStatus
 from nautical_deliverance.persistence import offer_repo
-from nautical_deliverance.persistence.audit import Action, record_change
+from nautical_deliverance.persistence.audit import Action, history, record_change
 from nautical_deliverance.persistence.inquiry_repo import dec
 from nautical_deliverance.persistence.models import (
-    AuditEntry,
     Inquiry,
     InquiryLine,
     Offer,
@@ -227,7 +226,7 @@ def create_offer(
 
 
 @router.get("/offers/{offer_id}", response_model=OfferOut)
-def get_offer(offer_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def get_offer(offer_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Return the offer with computed lines and total; readable whatever its RFQ became."""
     with scope(principal, engine) as s:
         offer = s.get(Offer, offer_id)
@@ -281,24 +280,19 @@ def update_offer(
 
 
 @router.get("/offers/{offer_id}/history", response_model=list[HistoryOut])
-def offer_history(offer_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
+def offer_history(offer_id: uuid.UUID, principal: RfqReader, engine: Eng) -> object:
     """Audit entries of the offer, newest first."""
     with scope(principal, engine) as s:
         if s.get(Offer, offer_id) is None:
             raise _not_found()
-        stmt = (
-            select(AuditEntry)
-            .where(AuditEntry.entity_type == "offer", AuditEntry.entity_id == offer_id)
-            .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
-        )
-        return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+        return [HistoryOut.model_validate(e) for e in history(s, "offer", offer_id)]
 
 
 # --- comparison and decision --------------------------------------------------------------------
 
 
 @router.get("/inquiries/{inquiry_id}/comparison", response_model=ComparisonOut)
-def comparison(inquiry_id: uuid.UUID, principal: Reader, engine: Eng, now: Now) -> object:
+def comparison(inquiry_id: uuid.UUID, principal: RfqReader, engine: Eng, now: Now) -> object:
     """Every offer with its flags (complete first, cheapest first) and the decision."""
     with scope(principal, engine) as s:
         inq = s.get(Inquiry, inquiry_id)

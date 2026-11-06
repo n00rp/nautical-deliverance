@@ -8,7 +8,7 @@ function Story({ msg }: { msg: Preview }) {
   return (
     <ToastProvider>
       <div style={{ maxWidth: "26rem" }}>
-        <RfqPreview rfq={draftRfq} api={{ getPreview: () => Promise.resolve(msg) }} />
+        <RfqPreview item={draftRfq} load={() => Promise.resolve(msg)} />
       </div>
       <ToastHost />
     </ToastProvider>

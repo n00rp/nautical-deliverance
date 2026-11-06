@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ADMIN_NAV, MASTER_CONFIGS } from "./configs";
-import { parseAdmin, parseInquiries } from "./routes";
+import { isDashboard, parseAdmin, parseInquiries } from "./routes";
 
 describe("admin routes", () => {
   it("[B1-R11] parses list, record and new hashes", () => {
@@ -18,10 +18,16 @@ describe("admin routes", () => {
     expect(ADMIN_NAV.map((n) => n.href)).toEqual(MASTER_CONFIGS.map((c) => `#/admin/${c.path}`));
   });
 
-  it("[B2-R12] parses the inquiry hashes, with the empty hash as the start page", () => {
-    expect(parseInquiries("")).toEqual({ id: undefined });
-    expect(parseInquiries("#")).toEqual({ id: undefined });
-    expect(parseInquiries("#/")).toEqual({ id: undefined });
+  it("[B5-R11] the empty hash, # and #/ are the dashboard start page", () => {
+    for (const h of ["", "#", "#/"]) {
+      expect(isDashboard(h)).toBe(true);
+      expect(parseInquiries(h)).toBeNull();
+    }
+    expect(isDashboard("#/inquiries")).toBe(false);
+    expect(isDashboard("#/admin/ports")).toBe(false);
+  });
+
+  it("[B2-R12] parses the inquiry hashes, with #/inquiries as the work list", () => {
     expect(parseInquiries("#/inquiries")).toEqual({ id: undefined });
     expect(parseInquiries("#/inquiries/")).toEqual({ id: undefined });
     expect(parseInquiries("#/inquiries/new")).toEqual({ id: "new" });
@@ -37,6 +43,10 @@ describe("admin routes", () => {
 
   it("[B4-R12] parses the comparison hash", () => {
     expect(parseInquiries("#/inquiries/abc/offers")).toEqual({ id: "abc", view: "offers" });
+  });
+
+  it("[B5-R11] parses the nomination hash", () => {
+    expect(parseInquiries("#/inquiries/abc/nomination")).toEqual({ id: "abc", view: "nomination" });
   });
 
   it("[B4-R12] parses the offer entry hash", () => {

@@ -18,6 +18,7 @@ from nautical_deliverance.persistence.models import (
     InquiryReferenceCounter,
     IsoSpecVersion,
     LegalEntity,
+    Nomination,
     Offer,
     Port,
     Product,
@@ -73,10 +74,19 @@ def _offer_count() -> Any:  # noqa: ANN401
     return select(func.count()).where(Offer.inquiry_id == Inquiry.id).scalar_subquery()
 
 
-def _winner_name() -> Any:  # noqa: ANN401
-    """Correlated name of the selected offer's counterparty (kept even once it is inactive)."""
+def _nomination_count(state: str) -> Any:  # noqa: ANN401
+    """Correlated number of the inquiry's nominations in the given status."""
     return (
-        select(Counterparty.name)
+        select(func.count())
+        .where(Nomination.inquiry_id == Inquiry.id, Nomination.status == state)
+        .scalar_subquery()
+    )
+
+
+def _winner(column: Any) -> Any:  # noqa: ANN401
+    """Correlated column of the selected offer's counterparty (kept even once it is inactive)."""
+    return (
+        select(column)
         .join(Rfq, Rfq.counterparty_id == Counterparty.id)
         .join(Offer, Offer.rfq_id == Rfq.id)
         .where(Offer.id == Inquiry.winner_offer_id)
@@ -102,7 +112,9 @@ def list_rows(
             _rfq_count(is_active_rfq()).label("rfq_total"),
             _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
             _offer_count().label("offer_total"),
-            _winner_name().label("winner_counterparty_name"),
+            _winner(Counterparty.name).label("winner_counterparty_name"),
+            _nomination_count("sent").label("nomination_sent"),
+            (_nomination_count("draft") > 0).label("nomination_draft"),
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)
         .join(Port, Port.id == Inquiry.port_id)
@@ -202,7 +214,8 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
                 _shown(requester).label("requester_name"),
                 _rfq_count(is_active_rfq()).label("rfq_total"),
                 _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
-                _winner_name().label("winner_counterparty_name"),
+                _winner(Counterparty.name).label("winner_counterparty_name"),
+                _winner(Counterparty.id).label("winner_counterparty_id"),
             )
             .select_from(Inquiry)
             .join(Vessel, Vessel.id == Inquiry.vessel_id)

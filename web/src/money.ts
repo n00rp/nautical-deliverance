@@ -97,6 +97,10 @@ export function evaluateOffer(o: OfferInput): OfferResult {
   };
 }
 
+/** Groups the integer part of an exact decimal string: "12345.678" -> "12,345.678". */
+export const formatMt = (s: string): string =>
+  s.replace(/^-?\d+/, (i) => i.replace(/\B(?=(\d{3})+$)/g, ","));
+
 /** "1234567.89" -> "USD 1,234,567.89"; "-25000" -> "USD -25,000.00". */
 export function formatUsd(s: string): string {
   const cents = parseDecimal(s, 2, true);

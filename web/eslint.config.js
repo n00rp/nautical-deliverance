@@ -14,7 +14,15 @@ export default tseslint.config(
   },
   {
     // B4-R04: money is exact. No binary floats on money paths.
-    files: ["src/money.ts", "src/offerApi.ts", "src/ui/NumberField/normalize.ts", "src/offers/**"],
+    files: [
+      "src/money.ts",
+      "src/offerApi.ts",
+      "src/ui/NumberField/normalize.ts",
+      "src/offers/**",
+      "src/nominations/**",
+      "src/dashboard/**",
+      "src/dashboardApi.ts",
+    ],
     ignores: ["**/*.test.ts", "**/*.test.tsx", "**/*.stories.tsx", "**/testSupport.ts"],
     rules: {
       "no-restricted-globals": [

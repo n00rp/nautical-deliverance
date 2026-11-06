@@ -62,6 +62,19 @@
 | B4-R12 | web/src/App.test.tsx, web/src/ErrorBoundary.test.tsx, web/src/admin/routes.test.ts, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiries/WorkList.test.tsx, web/src/money.test.ts, web/src/offerApi.test.ts, web/src/offers/Comparison.test.tsx, web/src/offers/OfferEntry.test.tsx, web/src/offers/comparisonBudget.test.tsx, web/src/offers/offerBudget.test.tsx, web/src/rfqs/RfqLog.test.tsx, web/src/ui/NumberField/NumberField.test.tsx, web/src/ui/Select/Select.test.tsx, web/src/ui/Table/Table.test.tsx, web/src/ui/TextField/TextField.test.tsx |
 | B4-R13 | engine/tests/db/test_seed_inquiries.py |
 | B4-R14 | .github/workflows/ci.yml |
+| B5-R01 | engine/tests/db/test_nomination_api.py, engine/tests/db/test_nomination_schema.py |
+| B5-R02 | engine/tests/db/test_nomination_api.py, engine/tests/db/test_nomination_schema.py |
+| B5-R03 | engine/tests/db/test_dashboard.py, engine/tests/db/test_nomination_api.py |
+| B5-R04 | engine/tests/db/test_nomination_api.py, engine/tests/unit/test_nomination_domain.py |
+| B5-R05 | engine/tests/unit/test_nomination_domain.py |
+| B5-R06 | engine/tests/db/test_nomination_api.py, engine/tests/unit/test_nomination_domain.py |
+| B5-R07 | engine/tests/db/test_dashboard.py |
+| B5-R08 | engine/tests/db/test_dashboard.py |
+| B5-R09 | engine/tests/db/test_operator_never_sees_prices.py |
+| B5-R10 | engine/tests/db/test_nomination_api.py |
+| B5-R11 | web/src/App.test.tsx, web/src/admin/routes.test.ts, web/src/dashboard/Dashboard.test.tsx, web/src/inquiries/InquiryPage.test.tsx, web/src/inquiries/WorkList.test.tsx, web/src/nominationApi.test.ts, web/src/nominations/Nomination.test.tsx, web/src/nominations/nominationBudget.test.tsx |
+| B5-R12 | engine/tests/db/test_seed_inquiries.py |
+| B5-R13 | .github/workflows/ci.yml |
 | S0-R01 | .github/workflows/ci.yml |
 | S0-R02 | engine/tests/unit/test_health.py |
 | S0-R03 | engine/tests/db/test_me.py, engine/tests/unit/test_auth.py, web/src/App.test.tsx, web/src/api.test.ts, web/src/auth.test.ts |

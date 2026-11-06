@@ -12,7 +12,6 @@ from sqlalchemy import Engine  # noqa: TC002
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session  # noqa: TC002
 
-from nautical_deliverance.domain.identity import Principal  # noqa: TC001
 from nautical_deliverance.domain.rfq import single_address
 from nautical_deliverance.persistence.db import org_session
 
@@ -20,6 +19,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from fastapi.exceptions import RequestValidationError
+
+    from nautical_deliverance.domain.identity import Principal
 
 DB_DOWN = "Database unavailable"
 STALE = "Record was changed by someone else"

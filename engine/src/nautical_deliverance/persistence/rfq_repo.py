@@ -29,27 +29,35 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
+def header(session: Session, inq: Inquiry) -> dict[str, Any]:
+    """Return the inquiry, vessel, port, agent and buyer fields every outgoing text shares."""
+    vessel = session.get(Vessel, inq.vessel_id)
+    port = session.get(Port, inq.port_id)
+    assert vessel is not None  # noqa: S101  (FK)
+    assert port is not None  # noqa: S101  (FK)
+    buyer = None if inq.buyer_id is None else session.get(AppUser, inq.buyer_id)
+    return {
+        "reference": inq.reference,
+        "vessel_name": vessel.name,
+        "vessel_imo": vessel.imo,
+        "port_name": port.name,
+        "port_locode": port.locode,
+        "port_time_zone": port.time_zone,
+        "eta": inq.eta,
+        "etd": inq.etd,
+        "agent_name": inq.agent_name,
+        "buyer_name": (buyer.name if buyer else None) or "",
+    }
+
+
 def build_context(session: Session, rfq: Rfq) -> RfqContext:
     """Return the live, allow-listed render input of an RFQ (B3-D9). Nothing else may be added."""
     inq = session.get(Inquiry, rfq.inquiry_id)
     contact = session.get(Contact, rfq.contact_id)
     assert inq is not None  # noqa: S101  (FK)
     assert contact is not None  # noqa: S101  (FK)
-    vessel = session.get(Vessel, inq.vessel_id)
-    port = session.get(Port, inq.port_id)
-    assert vessel is not None  # noqa: S101  (FK)
-    assert port is not None  # noqa: S101  (FK)
-    buyer = None if inq.buyer_id is None else session.get(AppUser, inq.buyer_id)
     return RfqContext(
-        reference=inq.reference,
-        vessel_name=vessel.name,
-        vessel_imo=vessel.imo,
-        port_name=port.name,
-        port_locode=port.locode,
-        port_time_zone=port.time_zone,
-        eta=inq.eta,
-        etd=inq.etd,
-        agent_name=inq.agent_name,
+        **header(session, inq),
         lines=tuple(
             RfqLine(
                 product=r.product_name,
@@ -64,7 +72,6 @@ def build_context(session: Session, rfq: Rfq) -> RfqContext:
         response_deadline=rfq.response_deadline,
         recipient_name=contact.name,
         recipient_email=contact.email,
-        buyer_name=(buyer.name if buyer else None) or "",
     )
 
 

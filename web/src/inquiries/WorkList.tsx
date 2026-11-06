@@ -47,11 +47,19 @@ function nextStep(r: InquiryListItem) {
   if (r.status === "draft" && r.buyer_name === null) return "Assign buyer";
   const { rfq_total: total, rfq_sent: sent } = r;
   if (total === null || sent === null) {
+    const label = r.status === "nominated" ? "Nominated" : "Selected supplier";
     return r.winner_counterparty_name
-      ? `Selected supplier: ${r.winner_counterparty_name}`
+      ? `${label}: ${r.winner_counterparty_name}`
       : STATUS_LABEL[r.status];
   }
-  if (r.status === "winner_selected") return "Create nomination";
+  if (r.status === "winner_selected" || (r.status === "nominated" && r.nomination_sent)) {
+    const text = r.nomination_sent
+      ? `Nominated${r.nomination_sent > 1 ? ` (v${String(r.nomination_sent)})` : ""}`
+      : r.nomination_draft
+        ? "Send nomination"
+        : "Create nomination";
+    return <a href={`#/inquiries/${r.id}/nomination`}>{text}</a>;
+  }
   if (r.status === "offers_received" && r.offer_total) {
     const n = r.offer_total;
     return (
