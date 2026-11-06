@@ -74,7 +74,7 @@ DEV_USERS = (
 )
 PILOT_USERS = _users(
     "c", next(iter(PILOT_ORGS)), "pilot-demo.example",
-    ("Pia Pilot", "Bruno Buyer", "Ola Operator", "Vilma Viewer"),
+    ("Pia Pilot (demo)", "Bruno Buyer (demo)", "Ola Operator (demo)", "Vilma Viewer (demo)"),
 )  # fmt: skip
 
 PRODUCTS = (  # name, default unit (spec §3.1, per the brief)
@@ -287,8 +287,34 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
         ),
     },
 }
-# The pilot organization reuses the first dev organization's demo master data (same dict).
-ORG_DATA[next(iter(PILOT_ORGS))] = ORG_DATA[ACME]
+
+
+def _imo(base: int) -> str:
+    """Return a synthetic IMO number: six digits plus the check digit (weights 7..2)."""
+    return f"{base}{sum(int(d) * w for d, w in zip(str(base), range(7, 1, -1), strict=True)) % 10}"
+
+
+def _pilot_data() -> dict[str, Any]:
+    """Acme's counterparties and fleet shape under the pilot's own invented names (B6-D6)."""
+    acme = ORG_DATA[ACME]
+    entities = (("PDL", "Pilot Demo Shipping Ltd"), ("PDS", "Pilot Demo Singapore Pte"))
+    codes = {old: new for (old, _), (new, _) in zip(acme["entities"], entities, strict=True)}
+    names = (
+        "Demo Aurora",
+        "Demo Meridian",
+        "Demo Polaris",
+        "Demo Horizon",
+        "Demo Tern",
+        "Demo Vega",
+    )
+    vessels = tuple(
+        (name, _imo(947300 + i), *v[2:5], codes[v[5]], v[6])
+        for i, (name, v) in enumerate(zip(names, acme["vessels"], strict=True))
+    )
+    return {**acme, "entities": entities, "vessels": vessels}
+
+
+ORG_DATA[next(iter(PILOT_ORGS))] = _pilot_data()
 
 
 def seed_dev_orgs(engine: Engine, orgs: dict[uuid.UUID, str] = DEV_ORGS) -> None:
@@ -707,9 +733,12 @@ def _seed_nominations(db: _Org, s: Session, now: datetime, users: dict[str, uuid
 
 
 def seed(engine: Engine, mode: str | None, now: datetime | None = None) -> None:
-    """Seed ``dev`` (Acme, Borealis) or ``pilot`` (Pilot Demo Shipping); anything else: nothing."""
-    if mode not in ("dev", "pilot"):
+    """Seed ``dev`` (Acme, Borealis) or ``pilot`` (Pilot Demo Shipping); unset or empty: nothing."""
+    if not mode:
         return
+    if mode not in ("dev", "pilot"):
+        msg = f"unknown seed mode {mode!r}: expected dev or pilot"
+        raise ValueError(msg)
     orgs = PILOT_ORGS if mode == "pilot" else DEV_ORGS
     seed_dev_orgs(engine, orgs)
     seed_demo_master(engine, tuple(orgs))

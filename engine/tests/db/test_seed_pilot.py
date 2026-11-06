@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     import uuid
 
 from nautical_deliverance.domain.inquiry import eta_warning
+from nautical_deliverance.domain.master import imo_valid
 from nautical_deliverance.persistence import dashboard_repo, seed
 
 NOW = datetime.now(UTC)
@@ -58,6 +59,8 @@ def test_pilot_has_full_demo_coverage(seeded: Engine) -> None:
     n = {t: len(q(seeded, PILOT, f"SELECT 1 FROM {t}")) for t in TABLES}
     assert n["product"] == 8
     assert n["vessel"] >= 6
+    imos = q(seeded, PILOT, "SELECT imo FROM vessel")
+    assert all(imo_valid(r["imo"]) for r in imos)
     assert n["counterparty"] >= 8
     assert n["inquiry"] == 8
     assert n["rfq"] > 0
@@ -102,11 +105,32 @@ def test_pilot_is_idempotent_and_clean(seeded: Engine) -> None:
 
 @pytest.mark.req("B6-R04")
 def test_modes(owner_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pilot touches only the pilot org; dev only the dev orgs; unset or unknown seeds nothing."""
+    """Pilot seeds only the pilot org, dev the dev orgs; unset seeds nothing, unknown raises."""
     orgs: list[Any] = []
     monkeypatch.setattr(seed, "seed_dev_orgs", lambda _e, o: orgs.append(set(o)))
     monkeypatch.setattr(seed, "seed_demo_master", lambda *_a: None)
     monkeypatch.setattr(seed, "seed_demo_inquiries", lambda *_a: None)
-    for mode in (None, "", "prod", "pilot", "dev"):
+    for mode in (None, "", "pilot", "dev"):
         seed.seed(owner_engine, mode)
+    with pytest.raises(ValueError, match="unknown seed mode"):
+        seed.seed(owner_engine, "prod")
     assert orgs == [set(seed.PILOT_ORGS), set(seed.DEV_ORGS)]
+
+
+@pytest.mark.req("B6-R04")
+def test_pilot_has_no_dev_names(seeded: Engine) -> None:
+    """No text of any pilot-org row (every table, every column) mentions Acme or Borealis."""
+    tables = [
+        r["table_name"]
+        for r in q(
+            seeded,
+            PILOT,
+            "SELECT table_name FROM information_schema.columns"
+            " WHERE table_schema = 'public' AND column_name = 'organization_id'",
+        )
+    ]
+    assert {"vessel", "inquiry", "rfq", "offer", "nomination"} <= set(tables)
+    for t in tables:
+        blob = json.dumps(q(seeded, PILOT, f"SELECT x::text AS r FROM {t} x")).lower()
+        assert "acme" not in blob
+        assert "borealis" not in blob, t
