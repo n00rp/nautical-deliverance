@@ -4,7 +4,17 @@ import jwt
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 
-from nautical_deliverance.api import common, health, inquiries, master, me, offers, rfqs, users
+from nautical_deliverance.api import (
+    common,
+    health,
+    inquiries,
+    master,
+    me,
+    nominations,
+    offers,
+    rfqs,
+    users,
+)
 from nautical_deliverance.settings import Settings
 
 
@@ -23,5 +33,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inquiries.router, prefix="/api/v1")
     app.include_router(rfqs.router, prefix="/api/v1")
     app.include_router(offers.router, prefix="/api/v1")
+    app.include_router(nominations.router, prefix="/api/v1")
     app.add_exception_handler(RequestValidationError, common.validation_handler)
     return app

@@ -6,7 +6,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
-from sqlalchemy import literal_column
+from sqlalchemy import literal_column, select
 
 from nautical_deliverance.persistence.models import AuditEntry
 
@@ -88,3 +88,13 @@ def record_change(  # noqa: PLR0913
     session.flush()
     session.refresh(entry)
     return entry
+
+
+def history(session: Session, entity_type: str, entity_id: uuid.UUID) -> list[AuditEntry]:
+    """Audit entries of one entity, newest first (one entry per transaction, so `at` is unique)."""
+    stmt = (
+        select(AuditEntry)
+        .where(AuditEntry.entity_type == entity_type, AuditEntry.entity_id == entity_id)
+        .order_by(AuditEntry.at.desc())
+    )
+    return list(session.scalars(stmt))

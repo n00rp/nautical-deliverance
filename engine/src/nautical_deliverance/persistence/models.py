@@ -239,7 +239,17 @@ class _Stamped:
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class Rfq(_Stamped, Base):
+class _Sent:
+    """The frozen e-mail snapshot of an RFQ or nomination, all set exactly when it was sent."""
+
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_to_email: Mapped[str | None] = mapped_column(Text)
+    sent_subject: Mapped[str | None] = mapped_column(Text)
+    sent_body: Mapped[str | None] = mapped_column(Text)
+    inquiry_version_at_send: Mapped[int | None]
+
+
+class Rfq(_Stamped, _Sent, Base):
     """A request for quotation to one supplier contact; sent_* freeze at send."""
 
     __tablename__ = "rfq"
@@ -252,11 +262,6 @@ class Rfq(_Stamped, Base):
     status: Mapped[str] = mapped_column(Text, server_default=text("'draft'"))
     response_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    sent_to_email: Mapped[str | None] = mapped_column(Text)
-    sent_subject: Mapped[str | None] = mapped_column(Text)
-    sent_body: Mapped[str | None] = mapped_column(Text)
-    inquiry_version_at_send: Mapped[int | None]
 
 
 class Offer(_Stamped, Base):
@@ -300,7 +305,7 @@ class OfferLine(Base):
     density: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
 
 
-class Nomination(_Stamped, Base):
+class Nomination(_Stamped, _Sent, Base):
     """A nomination e-mail draft to the winning supplier; sent_* and sequence freeze at send."""
 
     __tablename__ = "nomination"
@@ -312,8 +317,3 @@ class Nomination(_Stamped, Base):
     contact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contact.id"))
     status: Mapped[str] = mapped_column(Text, server_default=text("'draft'"))
     sequence: Mapped[int | None]
-    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    sent_to_email: Mapped[str | None] = mapped_column(Text)
-    sent_subject: Mapped[str | None] = mapped_column(Text)
-    sent_body: Mapped[str | None] = mapped_column(Text)
-    inquiry_version_at_send: Mapped[int | None]

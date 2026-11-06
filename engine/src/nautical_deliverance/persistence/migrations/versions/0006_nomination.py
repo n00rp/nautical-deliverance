@@ -80,7 +80,8 @@ def upgrade() -> None:
         " RETURN NEW; END; $$"
     )
     op.execute(
-        "CREATE TRIGGER nomination_contact_counterparty AFTER INSERT OR UPDATE ON nomination"
+        "CREATE TRIGGER nomination_contact_counterparty"
+        " AFTER INSERT OR UPDATE OF contact_id, offer_id ON nomination"
         " FOR EACH ROW EXECUTE FUNCTION nomination_contact_fn()"
     )
     op.execute(

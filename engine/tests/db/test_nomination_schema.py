@@ -215,6 +215,25 @@ def test_sent_snapshot_is_immutable(app_engine: Engine, fx: Fx, change: dict[str
 
 
 @pytest.mark.req("B5-R01")
+@pytest.mark.parametrize("to", ["draft", "withdrawn"])
+def test_sent_cannot_move_back(app_engine: Engine, fx: Fx, to: str) -> None:
+    """A sent nomination cannot become draft or withdrawn, even with the snapshot cleared."""
+    with org_session(fx.org, app_engine) as s:
+        nid = _nom(s, fx, status="sent", **SENT_N)
+    with pytest.raises(IntegrityError), org_session(fx.org, app_engine) as s:  # checks
+        s.execute(text("UPDATE nomination SET status = :t WHERE id = :i"), {"t": to, "i": nid})
+    clear = (
+        "UPDATE nomination SET status = :t, sequence = NULL, sent_at = NULL, sent_to_email = NULL,"
+        " sent_subject = NULL, sent_body = NULL, inquiry_version_at_send = NULL WHERE id = :i"
+    )
+    with (
+        pytest.raises(DBAPIError, match="nomination_sent_immutable"),
+        org_session(fx.org, app_engine) as s,
+    ):
+        s.execute(text(clear), {"t": to, "i": nid})
+
+
+@pytest.mark.req("B5-R01")
 def test_draft_can_be_sent_once(app_engine: Engine, fx: Fx) -> None:
     """A draft is sent (snapshot and sequence filled in) in one update."""
     with org_session(fx.org, app_engine) as s:
