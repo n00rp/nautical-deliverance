@@ -241,9 +241,16 @@ jobs:
   # req: B6-R02
   # Ruling R1: arm64 builds run under QEMU and are slow, so this job runs on pushes to main and on
   # PRs that touch a Dockerfile or infra/. On other PRs the steps are skipped and the job is green.
+  # Matrix: the three builds run in parallel. multiarch is in ci-duration's needs, so CHECK the
+  # duration of the first main-run; if it exceeds 900 s, move arm64 to its own workflow (not out of
+  # the gate's sight).
   multiarch:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        context: [infra/postgis, engine, web]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -266,12 +273,9 @@ jobs:
       - if: steps.changed.outputs.run == 'true'
         uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
       # No --push and no --load: the build proves both architectures compile; nothing is published.
-      - name: Build postgis, engine and web for amd64 and arm64
+      - name: Build ${{ matrix.context }} for amd64 and arm64
         if: steps.changed.outputs.run == 'true'
-        run: |
-          for ctx in infra/postgis engine web; do
-            docker buildx build --platform linux/amd64,linux/arm64 "$ctx"
-          done
+        run: docker buildx build --platform linux/amd64,linux/arm64 "${{ matrix.context }}"
 
   # req: S0-R16
   readme:
