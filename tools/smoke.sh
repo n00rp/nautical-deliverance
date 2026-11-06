@@ -86,6 +86,20 @@ check_inquiries() { # check_inquiries <user>: the seeded demo inquiries are list
 check_inquiries bunker_buyer@acme.test
 check_inquiries bunker_buyer@borealis.test
 
+check_rfqs() { # check_rfqs <org suffix>: the seeded RFQ log is readable by the buyer, not the operator
+  local tok id n code
+  if ! tok="$(token "bunker_buyer@$1")" || [[ -z "$tok" ]]; then fail "token for bunker_buyer@$1"; return; fi
+  id="$(curl -sf -H "Authorization: Bearer $tok" http://localhost:8080/api/v1/inquiries | json "[i['id'] for i in d if i['status']=='rfq_sent'][0]" 2>/dev/null || true)"
+  n="$(curl -sf -H "Authorization: Bearer $tok" "http://localhost:8080/api/v1/inquiries/$id/rfqs" | json "len(d)" 2>/dev/null || true)"
+  [[ "$n" =~ ^[0-9]+$ ]] || n=0
+  ((n >= 1)) && ok "GET /inquiries/{id}/rfqs for buyer@$1 >= 1 ($n)" || fail "rfqs for buyer@$1: got '$n'"
+  tok="$(token "operator@$1" || true)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $tok" "http://localhost:8080/api/v1/inquiries/$id/rfqs" || true)"
+  [[ "$code" == 403 ]] && ok "GET /inquiries/{id}/rfqs for operator@$1 = 403" || fail "operator rfqs for $1 returned '$code'"
+}
+check_rfqs acme.test
+check_rfqs borealis.test
+
 for svc in engine web; do
   img="nautical-deliverance/$svc:$TAG"
   user="$(docker inspect --format '{{.Config.User}}' "$img")"

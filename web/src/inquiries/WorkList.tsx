@@ -3,6 +3,7 @@ import { describe } from "../admin/errors";
 import { goInquiry } from "../admin/routes";
 import {
   STATUS_LABEL,
+  SUPPLIER_STATES,
   type InquiryApi,
   type InquiryListItem,
   type InquiryStatus,
@@ -40,12 +41,20 @@ const SORT_OPTIONS: { value: Sort; label: string }[] = [
 ];
 const DEBOUNCE_MS = 250;
 
-const nextStep = (r: InquiryListItem) =>
-  r.status === "draft"
-    ? "Select suppliers"
-    : r.status === "cancelled"
-      ? "—"
-      : STATUS_LABEL[r.status];
+/** What to do next; the counts are null for the Operator, who then sees the status only. */
+function nextStep(r: InquiryListItem) {
+  if (r.status === "cancelled") return "—";
+  if (r.status === "draft" && r.buyer_name === null) return "Assign buyer";
+  const { rfq_total: total, rfq_sent: sent } = r;
+  if (total === null || sent === null) return STATUS_LABEL[r.status];
+  if (r.status === "draft" && total === 0) return "Create RFQs";
+  if (SUPPLIER_STATES.includes(r.status) && sent < total) {
+    return (
+      <a href={`#/inquiries/${r.id}/rfqs`}>{`${String(sent)} of ${String(total)} RFQs sent`}</a>
+    );
+  }
+  return STATUS_LABEL[r.status];
+}
 
 const eta = (r: InquiryListItem) =>
   r.eta === null ? (

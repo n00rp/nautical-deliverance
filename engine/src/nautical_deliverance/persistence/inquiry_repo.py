@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
 from nautical_deliverance.domain.inquiry import format_reference
+from nautical_deliverance.domain.rfq import RfqStatus
 from nautical_deliverance.persistence.models import (
     AppUser,
     BunkeringReason,
@@ -18,6 +19,7 @@ from nautical_deliverance.persistence.models import (
     LegalEntity,
     Port,
     Product,
+    Rfq,
     Vessel,
     VesselApprovedFuel,
 )
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from decimal import Decimal
 
-    from sqlalchemy import Row
+    from sqlalchemy import ColumnElement, Row
     from sqlalchemy.orm import Session
 
 Counter = InquiryReferenceCounter
@@ -54,6 +56,16 @@ def _shown(user: Any) -> Any:  # noqa: ANN401
     return func.coalesce(func.nullif(user.name, ""), user.email)
 
 
+def is_active_rfq() -> ColumnElement[bool]:
+    """Return the one definition of an active RFQ: anything not withdrawn."""
+    return Rfq.status != RfqStatus.WITHDRAWN.value
+
+
+def _rfq_count(*where: ColumnElement[bool]) -> Any:  # noqa: ANN401
+    """Correlated count of the inquiry's RFQs that satisfy every condition."""
+    return select(func.count()).where(Rfq.inquiry_id == Inquiry.id, *where).scalar_subquery()
+
+
 def list_rows(
     session: Session, *, status: str | None, q: str | None, buyer: uuid.UUID | None, sort: str
 ) -> Sequence[Row[Any]]:
@@ -68,6 +80,9 @@ def list_rows(
             Port.time_zone.label("port_time_zone"),
             Inquiry.eta,
             _shown(AppUser).label("buyer_name"),
+            # Active RFQs; "sent" is the active ones that left Draft (a declined one was sent).
+            _rfq_count(is_active_rfq()).label("rfq_total"),
+            _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)
         .join(Port, Port.id == Inquiry.port_id)
@@ -144,6 +159,8 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
                 _shown(operator).label("operator_name"),
                 _shown(buyer).label("buyer_name"),
                 _shown(requester).label("requester_name"),
+                _rfq_count(is_active_rfq()).label("rfq_total"),
+                _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
             )
             .select_from(Inquiry)
             .join(Vessel, Vessel.id == Inquiry.vessel_id)

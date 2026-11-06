@@ -18,12 +18,18 @@ export function parseAdmin(hash: string): { path: MasterType; id: string | undef
   return config ? { path: config.path, id: m?.[2] } : null;
 }
 
-/** `#/inquiries` or `#/inquiries/<id|new>`; an empty hash, `#/` and `#/inquiries/` are the start page. */
-export function parseInquiries(hash: string): { id: string | undefined } | null {
+export type InquiryRoute = { id: string | undefined; view?: "suppliers" | "rfqs" };
+
+/**
+ * `#/inquiries`, `#/inquiries/<id|new>`, `#/inquiries/<id>/suppliers` or `/rfqs`; an empty hash,
+ * `#/` and `#/inquiries/` are the start page.
+ */
+export function parseInquiries(hash: string): InquiryRoute | null {
   const path = hash.replace(/^#\/?/, "").replace(/\/$/, "");
   if (path === "") return { id: undefined };
-  const m = /^inquiries(?:\/([^/]+))?$/.exec(path);
-  return m ? { id: m[1] } : null;
+  const m = /^inquiries(?:\/([^/]+)(?:\/(suppliers|rfqs))?)?$/.exec(path);
+  if (!m) return null;
+  return m[2] ? { id: m[1], view: m[2] as "suppliers" | "rfqs" } : { id: m[1] };
 }
 
 export const goInquiry = (sub: string) => {

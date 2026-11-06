@@ -10,6 +10,8 @@ export const item = (id: string, fields: Partial<InquiryListItem> = {}): Inquiry
   port_time_zone: "Europe/Amsterdam",
   eta: "2026-11-12T06:00:00Z",
   buyer_name: "Bea Buyer",
+  rfq_total: 0,
+  rfq_sent: 0,
   eta_warning: false,
   ...fields,
 });

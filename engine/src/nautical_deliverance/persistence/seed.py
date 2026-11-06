@@ -30,7 +30,10 @@ from typing import Any, cast
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.orm import Session
 
+from nautical_deliverance.domain.rfq import render_rfq
 from nautical_deliverance.persistence.inquiry_repo import next_reference
+from nautical_deliverance.persistence.models import Rfq
+from nautical_deliverance.persistence.rfq_repo import build_context
 
 # Must match the `org_id` attributes of the users in infra/keycloak/realm-dev.json.
 DEV_ORGS = {
@@ -499,7 +502,7 @@ def _seed_inquiry(  # noqa: PLR0913, PLR0917
 
 
 def seed_demo_inquiries(engine: Engine, now: datetime | None = None) -> None:
-    """Insert demo users and each organization's demo inquiries (ETAs relative to ``now``).
+    """Insert demo users, inquiries and RFQs per organization (ETAs relative to ``now``).
 
     Needs seed_demo_master first. Non-draft statuses are written directly (no transition API
     yet). Like the master seed this writes no audit entries (B1-D12); safe to re-run.
@@ -513,6 +516,49 @@ def seed_demo_inquiries(engine: Engine, now: datetime | None = None) -> None:
             s = Session(conn)
             for n, spec in enumerate(_INQUIRIES, 1):
                 _seed_inquiry(db, s, now, n, spec, data["vessels"], users)
+            _seed_rfqs(db, s, now, users)
+
+
+# Demo RFQs by inquiry voyage marker: the final status of each RFQ, one per recipient.
+_RFQS = {
+    "DEMO-2": ("draft", "draft"),
+    "DEMO-4": ("sent", "sent"),
+    "DEMO-5": ("sent", "declined"),
+    "DEMO-6": ("sent",),
+}
+
+
+def _seed_rfqs(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID]) -> None:
+    """Add the demo RFQs; recipients are covering counterparties first, with a primary contact."""
+    for voyage, statuses in _RFQS.items():
+        row = db.conn.execute(
+            text("SELECT id, port_id, version, eta FROM inquiry WHERE voyage = :v"), {"v": voyage}
+        ).one()
+        if db.conn.execute(text("SELECT 1 FROM rfq WHERE inquiry_id = :i"), {"i": row.id}).first():
+            continue
+        recipients = db.conn.execute(
+            text(
+                "SELECT cp.id AS cp, ct.id AS contact FROM counterparty cp"
+                " JOIN contact ct ON ct.counterparty_id = cp.id AND ct.is_primary"
+                " WHERE cp.active AND ct.active ORDER BY EXISTS (SELECT 1 FROM coverage c"
+                " WHERE c.counterparty_id = cp.id AND c.port_id = :p) DESC, cp.name LIMIT :n"
+            ),
+            {"p": row.port_id, "n": len(statuses)},
+        ).all()
+        for (cp, contact), status in zip(recipients, statuses, strict=True):
+            rfq = Rfq(
+                id=uuid.uuid4(), organization_id=db.org, inquiry_id=row.id, counterparty_id=cp,
+                contact_id=contact, status=status, response_deadline=row.eta - timedelta(hours=24),
+                generated_at=now, created_at=now, created_by=users["bunker_buyer"], updated_at=now,
+                version=1,
+            )  # fmt: skip
+            if status != "draft":  # frozen exactly as the send action would
+                ctx = build_context(s, rfq)
+                rfq.sent_subject, rfq.sent_body = render_rfq(ctx)
+                rfq.sent_at, rfq.sent_to_email = now, ctx.recipient_email
+                rfq.inquiry_version_at_send = row.version
+            s.add(rfq)
+        s.flush()
 
 
 def main() -> None:

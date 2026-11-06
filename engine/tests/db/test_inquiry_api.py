@@ -825,6 +825,8 @@ def test_list_item_fields(admin: Client) -> None:
         "port_time_zone": "Asia/Singapore",
         "eta": made["eta"],
         "buyer_name": "User admin",
+        "rfq_total": 0,
+        "rfq_sent": 0,
         "eta_warning": False,
     }
 

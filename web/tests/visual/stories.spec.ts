@@ -31,6 +31,15 @@ const open = async (page: import("@playwright/test").Page, id: string) => {
   if (id.startsWith("inquiries-worklist")) {
     await page.getByRole("cell", { name: "INQ-2611-001" }).waitFor();
   }
+  if (id.startsWith("rfqs-supplierselection") && !id.endsWith("as-operator")) {
+    await page.getByRole("form", { name: "Supplier selection" }).waitFor();
+  }
+  if (id.startsWith("rfqs-rfqlog") && !id.endsWith("as-operator")) {
+    await page.getByRole("cell", { name: "Alpha Marine" }).waitFor();
+  }
+  if (id.startsWith("rfqs-rfqpreview")) {
+    await page.getByRole("link", { name: "Open in e-mail" }).waitFor();
+  }
   if (id.startsWith("inquiries-inquirypage")) {
     await page.getByRole("form", { name: "Inquiry" }).waitFor();
     // The history panel loads after the form.

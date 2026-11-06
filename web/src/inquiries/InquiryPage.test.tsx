@@ -306,6 +306,52 @@ describe("InquiryPage actions", () => {
     expect(screen.queryByRole("button", { name: "Take" })).toBeNull();
   });
 
+  it("[B3-R13] Select suppliers opens the supplier screen, in the states that accept RFQs only", async () => {
+    setup(inquiry(), ["bunker_buyer"]);
+    await form();
+    await userEvent.click(screen.getByRole("button", { name: "Select suppliers" }));
+    expect(window.location.hash).toBe("#/inquiries/i1/suppliers");
+    cleanup();
+    setup(inquiry({ status: "nominated" }), ["bunker_buyer"]);
+    await form();
+    expect(screen.queryByRole("button", { name: "Select suppliers" })).toBeNull();
+    cleanup();
+    setup(inquiry(), ["operator"]);
+    await form();
+    expect(screen.queryByRole("button", { name: "Select suppliers" })).toBeNull();
+  });
+
+  it("[B3-R13] the RFQs link opens the log for readers, and for writers even before any RFQ", async () => {
+    const link = () => screen.queryByRole("link", { name: "RFQs" });
+    setup(inquiry({ rfq_total: 2, rfq_sent: 1 }), ["viewer"]);
+    await form();
+    expect(link()?.getAttribute("href")).toBe("#/inquiries/i1/rfqs");
+    cleanup();
+    setup(inquiry({ rfq_total: 0 }), ["viewer"]);
+    await form();
+    expect(link()).toBeNull(); // nothing to read yet
+    cleanup();
+    setup(inquiry({ rfq_total: 0 }), ["bunker_buyer"]);
+    await form();
+    expect(link()?.getAttribute("href")).toBe("#/inquiries/i1/rfqs");
+    cleanup();
+    setup(inquiry({ rfq_total: 0 }), ["admin"]);
+    await form();
+    expect(link()).toBeTruthy();
+    cleanup();
+    setup(inquiry({ rfq_total: null, rfq_sent: null }), ["operator"]);
+    await form();
+    expect(link()).toBeNull();
+  });
+
+  it("[B3-R13] the fields that go into the RFQ text say so; internal comments stay internal", async () => {
+    setup(twoLines());
+    await form();
+    // Spec notes of 2 lines and the agent name; the agent e-mail is not in the RFQ text.
+    expect(screen.getAllByText("Sent to suppliers in the RFQ")).toHaveLength(3);
+    expect(screen.getByText("Internal — never sent to suppliers")).toBeTruthy();
+  });
+
   it("[B2-R11] shows the history, with actors named when known", async () => {
     setup();
     await form();

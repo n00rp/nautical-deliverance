@@ -54,6 +54,7 @@ const people = (list: DirectoryUser[]): Opt[] => list.map((u) => ({ value: u.id,
 const withCurrent = (opts: Opt[], id?: string | null, label?: string | null): Opt[] =>
   id && label && !opts.some((o) => o.value === id) ? [...opts, { value: id, label }] : opts;
 
+const SENT_TO_SUPPLIERS = "Sent to suppliers in the RFQ";
 const CREATE: Role[] = ["admin", "bunker_buyer", "operator"];
 const EDIT: Role[] = ["admin", "bunker_buyer"];
 const allowed = (roles: Role[], allow: Role[]) => roles.some((r) => allow.includes(r));
@@ -94,10 +95,11 @@ export function InquiryForm({ rec, refs, roles, onCreate, onPatch, onFail }: Inq
       }}
     />
   );
-  const text = (key: Scalar, label: string, off = readOnly) => (
+  const text = (key: Scalar, label: string, off = readOnly, hint?: string) => (
     <TextField
       id={fieldId(key)}
       label={label}
+      hint={hint}
       value={values[key]}
       disabled={off}
       error={err(key)}
@@ -215,8 +217,8 @@ export function InquiryForm({ rec, refs, roles, onCreate, onPatch, onFail }: Inq
           )}
           {when("eta", "ETA")}
           {when("etd", "ETD")}
-          {text("agent_name", "Agent name")}
-          {text("agent_email", "Agent e-mail")}
+          {text("agent_name", "Agent name", readOnly, SENT_TO_SUPPLIERS)}
+          {text("agent_email", "Agent e-mail", readOnly)}
           {sel(
             "bunkering_reason_id",
             "Bunkering reason",

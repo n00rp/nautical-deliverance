@@ -121,6 +121,7 @@ export function LinesEditor({
             <TextField
               id={id("spec_notes")}
               label="Spec notes"
+              hint="Sent to suppliers in the RFQ"
               value={l.spec_notes}
               disabled={disabled}
               error={err("spec_notes")}

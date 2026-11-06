@@ -190,6 +190,7 @@ class Inquiry(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    rfq_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class InquiryLine(Base):
@@ -219,3 +220,27 @@ class InquiryReferenceCounter(Base):
     )
     year_month: Mapped[str] = mapped_column(CHAR(4), primary_key=True)
     next_value: Mapped[int]
+
+
+class Rfq(Base):
+    """A request for quotation to one supplier contact; sent_* freeze at send."""
+
+    __tablename__ = "rfq"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organization.id"))
+    inquiry_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inquiry.id"))
+    counterparty_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("counterparty.id"))
+    contact_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contact.id"))
+    status: Mapped[str] = mapped_column(Text, server_default=text("'draft'"))
+    response_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sent_to_email: Mapped[str | None] = mapped_column(Text)
+    sent_subject: Mapped[str | None] = mapped_column(Text)
+    sent_body: Mapped[str | None] = mapped_column(Text)
+    inquiry_version_at_send: Mapped[int | None]
+    version: Mapped[int] = mapped_column(server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -6,6 +6,9 @@ import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
 import type { TokenSource } from "./http";
 import { InquiryPage } from "./inquiries/InquiryPage";
+import { RfqLog } from "./rfqs/RfqLog";
+import { SupplierSelection } from "./rfqs/SupplierSelection";
+import { createRfqApi } from "./rfqApi";
 import { WorkList } from "./inquiries/WorkList";
 import { createInquiryApi } from "./inquiryApi";
 import { createMasterApi } from "./masterApi";
@@ -85,6 +88,11 @@ export function App() {
   const signedIn = state.kind === "signedIn";
   const api = useMemo(() => (signedIn ? createMasterApi(tokens) : null), [signedIn]);
   const inquiryApi = useMemo(() => (signedIn ? createInquiryApi(tokens) : null), [signedIn]);
+  const rfqApi = useMemo(() => (signedIn ? createRfqApi(tokens) : null), [signedIn]);
+  const suppliersApi = useMemo(
+    () => (inquiryApi && rfqApi ? { ...inquiryApi, ...rfqApi } : null),
+    [inquiryApi, rfqApi],
+  );
   const hash = useHash();
   const route = parseAdmin(hash);
   const inquiries = parseInquiries(hash);
@@ -115,7 +123,23 @@ export function App() {
         {user && inquiryApi && inquiries && !inquiries.id && (
           <WorkList api={inquiryApi} roles={user.roles} />
         )}
-        {user && api && inquiryApi && inquiries?.id && (
+        {user && suppliersApi && inquiries?.id && inquiries.view === "suppliers" && (
+          <SupplierSelection
+            key={inquiries.id}
+            inquiryId={inquiries.id}
+            api={suppliersApi}
+            roles={user.roles}
+          />
+        )}
+        {user && suppliersApi && inquiries?.id && inquiries.view === "rfqs" && (
+          <RfqLog
+            key={inquiries.id}
+            inquiryId={inquiries.id}
+            api={suppliersApi}
+            roles={user.roles}
+          />
+        )}
+        {user && api && inquiryApi && inquiries?.id && !inquiries.view && (
           <InquiryPage
             key={inquiries.id}
             id={inquiries.id}

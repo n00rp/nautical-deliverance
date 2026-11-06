@@ -1,0 +1,56 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.back {
+  color: var(--color-accent);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.deadline {
+  max-width: 20rem;
+}
+
+/* The table header names the column, so the select label is read aloud but not drawn. */
+.contact label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.more summary {
+  cursor: pointer;
+  margin-bottom: var(--space-3);
+  color: var(--color-fg);
+  font-weight: 600;
+}
+
+.more summary:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
