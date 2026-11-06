@@ -21,7 +21,7 @@ import pytest
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-pytestmark = pytest.mark.skipif(os.environ.get("ND_KC_TESTS") != "1", reason="set ND_KC_TESTS=1")
+needs_kc = pytest.mark.skipif(os.environ.get("ND_KC_TESTS") != "1", reason="set ND_KC_TESTS=1")
 ROOT = Path(__file__).resolve().parent.parent
 REALM = ROOT / "infra" / "keycloak" / "realm-pilot.json"
 IMAGE = next(
@@ -91,9 +91,13 @@ def _admin(kc: str) -> tuple[str, str]:
 
 
 def _run(
-    kc: str, email: str, capsys: pytest.CaptureFixture[str], *extra: str
+    kc: str,
+    email: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    *extra: str,
 ) -> tuple[int, str, str]:
-    os.environ["ND_KC_ADMIN_PASSWORD"] = ADMIN_PW
+    monkeypatch.setenv("ND_KC_ADMIN_PASSWORD", ADMIN_PW)
     code = pilot_user.main(["--url", kc, "--email", email, *ARGS, *extra])
     out = capsys.readouterr()
     return code, out.out, out.err
@@ -105,11 +109,12 @@ def test_default_org_is_the_seeded_pilot_org() -> None:
     assert [str(u) for u in PILOT_ORGS] == [pilot_user.DEFAULT_ORG]
 
 
+@needs_kc
 @pytest.mark.req("B6-R05")
 def test_create_sets_role_org_and_forces_password_change(
-    kc: str, capsys: pytest.CaptureFixture[str]
+    kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    code, out, err = _run(kc, "ada@pilot.example", capsys)
+    code, out, err = _run(kc, "ada@pilot.example", capsys, monkeypatch)
     assert code == 0
     assert err == ""
     password = out.strip().rsplit(" ", 1)[1]
@@ -135,17 +140,18 @@ def test_create_sets_role_org_and_forces_password_change(
     assert "not fully set up" in body["error_description"]
 
 
+@needs_kc
 @pytest.mark.req("B6-R05")
 def test_duplicate_email_exits_2_and_changes_nothing(
-    kc: str, capsys: pytest.CaptureFixture[str]
+    kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert _run(kc, "dup@pilot.example", capsys)[0] == 0
+    assert _run(kc, "dup@pilot.example", capsys, monkeypatch)[0] == 0
     tok, admin = _admin(kc)
     (before,) = _json(f"{admin}/users?email=dup@pilot.example&exact=true", tok)
     creds = _json(f"{admin}/users/{before['id']}/credentials", tok)
 
     other_org = "44444444-4444-4444-8444-444444444444"
-    code, out, err = _run(kc, "DUP@pilot.example", capsys, "--org", other_org)
+    code, out, err = _run(kc, "DUP@pilot.example", capsys, monkeypatch, "--org", other_org)
     assert code == EXIT_REFUSED
     assert out == ""
     assert "already exists" in err
@@ -155,10 +161,13 @@ def test_duplicate_email_exits_2_and_changes_nothing(
     assert _json(f"{admin}/users/{before['id']}/credentials", tok) == creds
 
 
+@needs_kc
 @pytest.mark.req("B6-R05")
-def test_unknown_role_is_refused(kc: str, capsys: pytest.CaptureFixture[str]) -> None:
+def test_unknown_role_is_refused(
+    kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     args = ["--url", kc, "--email", "x@pilot.example", *ARGS[:-1], "superuser"]
-    os.environ["ND_KC_ADMIN_PASSWORD"] = ADMIN_PW
+    monkeypatch.setenv("ND_KC_ADMIN_PASSWORD", ADMIN_PW)
     assert pilot_user.main(args) == EXIT_REFUSED
     cap = capsys.readouterr()
     assert "unknown role" in cap.err
@@ -167,14 +176,113 @@ def test_unknown_role_is_refused(kc: str, capsys: pytest.CaptureFixture[str]) ->
     assert _json(f"{admin}/users?email=x@pilot.example&exact=true", tok) == []
 
 
+@needs_kc
 @pytest.mark.req("B6-R05")
 def test_password_appears_once_and_in_no_log(
-    kc: str, capsys: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+    kc: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level("DEBUG")
-    code, out, err = _run(kc, "log@pilot.example", capsys)
+    code, out, err = _run(kc, "log@pilot.example", capsys, monkeypatch)
     password = out.strip().rsplit(" ", 1)[1]
     assert code == 0
     assert out.count(password) == 1
     assert password not in err
     assert password not in caplog.text
+
+
+# --- rollback, no Docker: _call is stubbed -------------------------------------------------
+
+TOKEN = "tok-secret-value"  # noqa: S105
+LOC = "http://kc/admin/realms/r/users/uid-1"
+
+
+def _stub(
+    monkeypatch: pytest.MonkeyPatch,
+    fail_on: str,
+    *,
+    delete_fails: bool = False,
+    loc: str | None = LOC,
+) -> list[str]:
+    calls: list[str] = []
+
+    def fake(method: str, url: str, *_a: object, **kw: object) -> object:
+        calls.append(f"{method} {url.split('/admin/realms/r')[-1]}")
+        if "openid-connect/token" in url:
+            return {"access_token": TOKEN}
+        if method == "DELETE" and delete_fails:
+            msg = "down"
+            raise urllib.error.URLError(msg)
+        if fail_on in (method, url.rpartition("/")[2]):
+            raise urllib.error.HTTPError(url, 500, "boom", None, None)  # type: ignore[arg-type]
+        if kw.get("location"):
+            return loc
+        if method == "GET":
+            return {"name": "bunker_buyer"} if "/roles/" in url else []
+        return None
+
+    monkeypatch.setattr(pilot_user, "_call", fake)
+    monkeypatch.setenv("ND_KC_ADMIN_PASSWORD", "admin-secret-value")
+    return calls
+
+
+def _main() -> int:
+    return pilot_user.main(
+        ["--url", "http://127.0.0.1:1", "--realm", "r", "--email", "a@b.example", *ARGS]
+    )
+
+
+def test_failure_after_create_rolls_back(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls = _stub(monkeypatch, "realm")
+    assert _main() == 1
+    cap = capsys.readouterr()
+    assert "DELETE /users/uid-1" in calls
+    assert "rolled back" in cap.err
+    assert "WARNING" not in cap.err
+    assert cap.out == ""
+    for secret in (TOKEN, "admin-secret-value"):
+        assert secret not in cap.err
+
+
+def test_failed_rollback_warns(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _stub(monkeypatch, "reset-password", delete_fails=True)
+    assert _main() == 1
+    cap = capsys.readouterr()
+    assert "WARNING: user a@b.example may remain without role" in cap.err
+    assert "HTTP 500" in cap.err  # the original error is not masked
+    assert cap.out == ""
+    for secret in (TOKEN, "admin-secret-value"):
+        assert secret not in cap.err + cap.out
+
+
+def test_missing_location_still_warns(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _stub(monkeypatch, "none", loc="no-slash")  # id parse fails after create
+    assert _main() == 1
+    assert "WARNING" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--role", "offline_access"],
+        ["--org", "not-a-uuid"],
+        ["--url", "http://kc.example.com"],
+    ],
+)
+def test_bad_inputs_refused(
+    extra: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    calls = _stub(monkeypatch, "none")
+    base = ["--url", "http://127.0.0.1:1", "--email", "a@b.example", *ARGS]
+    # later options win in argparse
+    assert pilot_user.main([*base, *extra]) == EXIT_REFUSED
+    assert calls == []
+    assert capsys.readouterr().out == ""

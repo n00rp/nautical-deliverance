@@ -15,25 +15,30 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from typing import Any
 
 HTTP_NOT_FOUND = 404
 # Pilot Demo Shipping; test_pilot_user.py asserts it equals the engine's seed constant.
 DEFAULT_ORG = "33333333-3333-4333-8333-333333333333"
 EXIT_REFUSED = 2
+ROLES = ("admin", "bunker_buyer", "operator", "viewer")
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
 
 class Refused(Exception):  # noqa: N818 - a refusal, not an error
     """The request is invalid or would change an existing user; nothing was changed."""
 
 
-def _call(
+def _call(  # noqa: PLR0913
     method: str,
     url: str,
     token: str | None = None,
     body: Any = None,  # noqa: ANN401 - any JSON
     form: dict[str, str] | None = None,
-) -> Any:  # noqa: ANN401 - decoded JSON
+    *,
+    location: bool = False,
+) -> Any:  # noqa: ANN401 - decoded JSON (or the Location header with location=True)
     data = urllib.parse.urlencode(form).encode() if form else None
     headers = {"Accept": "application/json"}
     if body is not None:
@@ -44,12 +49,42 @@ def _call(
     req = urllib.request.Request(url, data=data, headers=headers, method=method)  # noqa: S310
     with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
         raw = resp.read()
+        if location:
+            return resp.headers["Location"]
     return json.loads(raw) if raw else None
+
+
+def _err(msg: str) -> None:
+    print(msg, file=sys.stderr)  # noqa: T201
+
+
+def _rollback(admin: str, token: str, email: str, uid: str | None) -> None:
+    """Delete the half-created user; say on stderr whether that worked. Never raises."""
+    try:
+        if uid is None:
+            raise ValueError  # noqa: TRY301 - no id (no Location header): cannot delete
+        _call("DELETE", f"{admin}/users/{uid}", token)
+    except Exception:  # noqa: BLE001 - the original error is re-raised by the caller
+        _err(f"WARNING: user {email} may remain without role - remove it in the admin console")
+    else:
+        _err("Created user was rolled back.")
 
 
 def create_user(args: argparse.Namespace, admin_password: str) -> str:
     """Create the user; return the temporary password. Rolls the user back if a later step fails."""
     base = args.url.rstrip("/")
+    if args.role not in ROLES:
+        msg = f"unknown role: {args.role} (allowed: {', '.join(ROLES)})"
+        raise Refused(msg)
+    try:
+        uuid.UUID(args.org)
+    except ValueError:
+        msg = f"--org is not a UUID: {args.org}"
+        raise Refused(msg) from None
+    url = urllib.parse.urlsplit(base)
+    if url.scheme != "https" and not (url.scheme == "http" and url.hostname in LOOPBACK):
+        msg = "use https, or http only for a loopback host (127.0.0.1, localhost, ::1)"
+        raise Refused(msg)
     token = _call(
         "POST",
         f"{base}/realms/master/protocol/openid-connect/token",
@@ -77,7 +112,7 @@ def create_user(args: argparse.Namespace, admin_password: str) -> str:
     password = secrets.token_urlsafe(18)
     uid = None
     try:
-        _call(
+        loc = _call(
             "POST",
             f"{admin}/users",
             token,
@@ -90,8 +125,9 @@ def create_user(args: argparse.Namespace, admin_password: str) -> str:
                 "requiredActions": ["UPDATE_PASSWORD"],
                 "attributes": {"org_id": [args.org]},
             },
+            location=True,
         )
-        uid = _call("GET", f"{admin}/users?username={q}&exact=true", token)[0]["id"]
+        uid = loc.rsplit("/", 1)[1]
         _call(
             "PUT",
             f"{admin}/users/{uid}/reset-password",
@@ -100,8 +136,7 @@ def create_user(args: argparse.Namespace, admin_password: str) -> str:
         )
         _call("POST", f"{admin}/users/{uid}/role-mappings/realm", token, [role])
     except Exception:
-        if uid:
-            _call("DELETE", f"{admin}/users/{uid}", token)
+        _rollback(admin, token, args.email, uid)
         raise
     return password
 
@@ -117,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--email", required=True)
     p.add_argument("--first", required=True)
     p.add_argument("--last", required=True)
-    p.add_argument("--role", required=True)
+    p.add_argument("--role", required=True, help=" / ".join(ROLES))
     p.add_argument("--org", default=DEFAULT_ORG)
     args = p.parse_args(argv)
     admin_password = os.environ.get("ND_KC_ADMIN_PASSWORD") or getpass.getpass(
@@ -126,13 +161,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         password = create_user(args, admin_password)
     except Refused as err:
-        print(f"refused: {err}", file=sys.stderr)  # noqa: T201
+        _err(f"refused: {err}")
         return EXIT_REFUSED
     except urllib.error.HTTPError as err:
-        print(f"Keycloak answered HTTP {err.code} for {err.url}", file=sys.stderr)  # noqa: T201
+        _err(f"Keycloak answered HTTP {err.code} for {err.url}")
         return 1
     except urllib.error.URLError as err:
-        print(f"cannot reach Keycloak at {args.url}: {err.reason}", file=sys.stderr)  # noqa: T201
+        _err(f"cannot reach Keycloak at {args.url}: {err.reason}")
+        return 1
+    except Exception as err:  # noqa: BLE001 - report the type only, never values
+        _err(f"failed: {type(err).__name__}")
         return 1
     print(  # noqa: T201
         f"Created {args.email} ({args.role}). Temporary password (shown once): {password}"

@@ -334,7 +334,8 @@ jobs:
       - name: Pilot user script against Keycloak
         env:
           ND_KC_TESTS: "1"
-        run: uv run --locked --project engine pytest tools/test_pilot_user.py -v
+          ND_KC_REQUIRED: "1"
+        run: uv run --locked --project engine pytest tools/test_pilot_user.py -v -rs
 
   # req: S0-R16
   readme:
