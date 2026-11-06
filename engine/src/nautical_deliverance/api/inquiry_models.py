@@ -158,6 +158,17 @@ class WarningOut(BaseModel):
     message: str
 
 
+class DecisionOut(BaseModel):
+    """The winner decision; commercial, so never sent to an Operator (B4-D14)."""
+
+    winner_offer_id: uuid.UUID
+    reason: str | None
+    note: str | None
+    decided_at: datetime
+    decided_by_name: str
+    decided_total: str
+
+
 class InquiryOut(BaseModel):
     """The full inquiry with display names, inactive flags, lines and warnings."""
 
@@ -195,6 +206,8 @@ class InquiryOut(BaseModel):
     rfq_deadline: datetime | None
     rfq_total: int | None  # RFQ facts are null for the Operator (R6)
     rfq_sent: int | None
+    winner_counterparty_name: str | None  # the only decision fact an Operator sees
+    decision: DecisionOut | None
     created_at: datetime
     created_by: uuid.UUID
     updated_at: datetime
@@ -215,4 +228,5 @@ class InquiryListItem(BaseModel):
     buyer_name: str | None
     rfq_total: int | None  # null for the Operator: who was contacted stays hidden (R6)
     rfq_sent: int | None
+    winner_counterparty_name: str | None
     eta_warning: bool

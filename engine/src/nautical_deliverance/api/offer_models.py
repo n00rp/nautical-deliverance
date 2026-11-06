@@ -9,8 +9,12 @@ from typing import Annotated
 from pydantic import AwareDatetime, BaseModel, Field, StringConstraints
 
 from nautical_deliverance.api.common import Strict, check
+from nautical_deliverance.api.inquiry_models import DecisionOut  # noqa: TC001  (pydantic runtime)
 from nautical_deliverance.domain.inquiry import DENSITY_MAX, DENSITY_MIN, MAX_LINES
-from nautical_deliverance.domain.offer import DeliveryMethod  # noqa: TC001  (pydantic runtime)
+from nautical_deliverance.domain.offer import (  # noqa: TC001  (pydantic runtime)
+    DecisionReason,
+    DeliveryMethod,
+)
 
 COSTS = ("barging_cost", "port_call_cost", "agent_cost", "surveyor_cost", "other_cost")
 FIELDS = (
@@ -122,3 +126,29 @@ class OfferOut(BaseModel):
     complete: bool
     received_at: datetime
     version: int
+
+
+class ComparisonRow(OfferOut):
+    """An offer in the comparison with its ranking flags."""
+
+    offer_id: uuid.UUID
+    lowest: bool
+    delta_to_lowest: str | None
+    expired: bool
+    expiring_soon: bool
+
+
+class ComparisonOut(BaseModel):
+    """Offers ordered complete first, then cheapest first, and the decision (or null)."""
+
+    rows: list[ComparisonRow]
+    decision: DecisionOut | None
+
+
+class SelectWinnerIn(Strict):
+    """Select the winner; a reason is needed unless the offer is the lowest."""
+
+    version: int = Field(ge=1)
+    offer_id: uuid.UUID
+    reason: DecisionReason | None = None
+    note: Text2000 | None = None

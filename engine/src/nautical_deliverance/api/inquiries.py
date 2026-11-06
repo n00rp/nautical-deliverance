@@ -64,6 +64,7 @@ OPERATOR_ROLES = frozenset({Role.OPERATOR, Role.ADMIN})
 BUYER_ROLES = frozenset({Role.BUNKER_BUYER, Role.ADMIN})
 RFQ_READERS = BUYER_ROLES | {Role.VIEWER}
 RFQ_FIELDS = ("rfq_deadline", "rfq_total", "rfq_sent")  # null for everyone else (R6)
+DECISION_FIELDS = ("winner_offer_id", "decision_reason", "decision_note", "decided_total")
 USER_ROLES = {"operator_id": OPERATOR_ROLES, "buyer_id": BUYER_ROLES}  # requester: any user
 MASTER: dict[str, tuple[Any, str]] = {
     "vessel_id": (Vessel, "vessel"),
@@ -256,7 +257,7 @@ def _sees_rfqs(principal: Principal) -> bool:
 
 def _out(s: Session, inq: Inquiry, principal: Principal) -> InquiryOut:
     """Return the inquiry record; the RFQ deadline is hidden from the Operator."""
-    hide = {} if _sees_rfqs(principal) else dict.fromkeys(RFQ_FIELDS)
+    hide = {} if _sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "decision"))
     return InquiryOut(**{**detail(s, inq), **hide})
 
 
@@ -507,6 +508,7 @@ def inquiry_history(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> ob
         out = [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
         if _sees_rfqs(principal):
             return out
-        for e in out:  # the RFQ deadline reveals that suppliers were contacted
-            e.changes.pop("rfq_deadline", None)
+        for e in out:  # RFQ deadline and decision details are commercial (R6, B4-R09)
+            for k in ("rfq_deadline", *DECISION_FIELDS):
+                e.changes.pop(k, None)
         return [e for e in out if e.changes]

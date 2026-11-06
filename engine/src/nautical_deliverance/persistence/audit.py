@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 Action = Literal[
     "create", "update", "deactivate", "reactivate", "take", "cancel", "duplicate",
-    "send", "withdraw", "decline",
+    "send", "withdraw", "decline", "select_winner",
 ]  # fmt: skip
 
 

@@ -255,6 +255,34 @@ def test_total_too_large_is_422_on_lines(admin: Oc, world: SimpleNamespace) -> N
     assert admin.fresh(inq)["status"] == "rfq_sent"
 
 
+@pytest.mark.req("B4-R01")
+def test_patch_total_too_large_is_422_on_lines(admin: Oc, world: SimpleNamespace) -> None:
+    """A patch that pushes the total past the limit is 422 on lines and changes nothing."""
+    inq = admin.inquiry()
+    inq = admin.patch(inq, lines=[line(world, quantity="999999999.999")])
+    [rfq] = admin.make(inq["id"], ("Alpha", "a1"))
+    admin.http.post(f"/api/v1/rfqs/{rfq['id']}/mark-sent", json={"version": 1})
+    off = admin.offer(rfq["id"], lines=prices(inq, "1"))
+    r = admin.http.patch(
+        f"/api/v1/offers/{off['id']}",
+        json={"version": 1, "payment_terms": "x", "lines": prices(inq, "99999999.999")},
+    )
+    assert errors(r) == {"lines": "Total too large"}
+    assert admin.http.get(f"/api/v1/offers/{off['id']}").json() == off  # rolled back
+    assert len(admin.trail("offer", off["id"])) == 1
+
+
+@pytest.mark.req("B4-R01")
+def test_patch_reports_the_first_empty_field_in_field_order(admin: Oc) -> None:
+    """Two null required fields: the error is always the first one in field order."""
+    _, [rfq] = admin.sent()
+    off = admin.offer(rfq["id"])
+    r = admin.http.patch(
+        f"/api/v1/offers/{off['id']}", json={"version": 1, "other_cost": None, "valid_until": None}
+    )
+    assert errors(r) == {"valid_until": "Cannot be empty"}
+
+
 # --- B4-R02: organization isolation -------------------------------------------------------------
 
 
@@ -288,6 +316,8 @@ ROUTES: list[tuple[str, str, bool]] = [
     ("GET", "/offers/{offer}", False),
     ("PATCH", "/offers/{offer}", True),
     ("GET", "/offers/{offer}/history", False),
+    ("GET", "/inquiries/{inq}/comparison", False),
+    ("POST", "/inquiries/{inq}/select-winner", True),
 ]
 
 
@@ -300,17 +330,20 @@ def test_role_matrix(  # noqa: PLR0913
 ) -> None:  # fmt: skip
     """Operator gets 403 everywhere; Viewer reads but cannot write; Admin and Buyer do both."""
     admin = Oc(settings, app_engine, world, Role.ADMIN)
-    _, [rfq] = admin.sent()
-    off = rfq if method == "POST" else admin.offer(rfq["id"])
-    url = "/api/v1" + path.format(rfq=rfq["id"], offer=off["id"])
+    inq, [rfq] = admin.sent()
+    entering = path.startswith("/rfqs")
+    off = rfq if entering else admin.offer(rfq["id"], lines=prices(inq, "500", "500"))
+    url = "/api/v1" + path.format(rfq=rfq["id"], offer=off["id"], inq=inq["id"])
     body: Json = None
-    if method == "POST":
+    if entering:
         body = {"valid_until": VALID}
     elif method == "PATCH":
         body = {"version": 1, "payment_terms": "net 30"}
+    elif method == "POST":
+        body = {"version": admin.fresh(inq)["version"], "offer_id": off["id"]}
     r = Oc(settings, app_engine, world, role).http.request(method, url, json=body)
     allowed = role is not Role.OPERATOR and not (writes and role is Role.VIEWER)
-    expected = (CREATED if method == "POST" else OK) if allowed else FORBIDDEN
+    expected = (CREATED if entering else OK) if allowed else FORBIDDEN
     assert r.status_code == expected, r.text
 
 

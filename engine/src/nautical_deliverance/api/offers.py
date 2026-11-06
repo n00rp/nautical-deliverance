@@ -15,14 +15,17 @@ from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
 from nautical_deliverance.api.common import conflict, scope, unprocessable
-from nautical_deliverance.api.inquiries import _allow, _transition, get_now
-from nautical_deliverance.api.inquiry_models import HistoryOut
+from nautical_deliverance.api.inquiries import _allow, _lock_open, _reject, _transition, get_now
+from nautical_deliverance.api.inquiries import _out as inquiry_out
+from nautical_deliverance.api.inquiry_models import HistoryOut, InquiryOut
 from nautical_deliverance.api.offer_models import (
     COSTS,
+    ComparisonOut,
     OfferIn,
     OfferLineIn,
     OfferOut,
     OfferPatch,
+    SelectWinnerIn,
 )
 from nautical_deliverance.api.offer_models import (
     FIELDS as FIELD_NAMES,
@@ -30,6 +33,7 @@ from nautical_deliverance.api.offer_models import (
 from nautical_deliverance.api.users import get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.inquiry import Status
+from nautical_deliverance.domain.offer import DecisionReason, evaluate_offer, rationale_required
 from nautical_deliverance.domain.rfq import RfqStatus
 from nautical_deliverance.persistence import offer_repo
 from nautical_deliverance.persistence.audit import Action, record_change
@@ -47,7 +51,6 @@ router = APIRouter()
 
 OPEN = frozenset({Status.RFQ_SENT, Status.OFFERS_RECEIVED, Status.WINNER_SELECTED})
 NOT_NULL = frozenset({"valid_until", *COSTS})  # null in a patch is an error, not a clear
-FIELDS = frozenset(FIELD_NAMES)
 CENT, MILLI, TENTH = Decimal("0.01"), Decimal("0.001"), Decimal("0.1")
 
 Reader = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER, Role.VIEWER))]
@@ -113,7 +116,9 @@ def _line_keys(s: Session, inquiry_id: uuid.UUID, lines: list[OfferLineIn]) -> l
 def _changes(offer: Offer, body: OfferPatch) -> dict[str, Any]:
     """Fields the patch really changes; null on a required field is 422."""
     new: dict[str, Any] = {}
-    for k in FIELDS & body.model_fields_set:
+    for k in FIELD_NAMES:  # field order: the first 422 is deterministic
+        if k not in body.model_fields_set:
+            continue
         raw = getattr(body, k)
         if raw is None and k in NOT_NULL:
             raise unprocessable(k, "Cannot be empty")
@@ -294,3 +299,65 @@ def offer_history(offer_id: uuid.UUID, principal: Reader, engine: Eng) -> object
             .order_by(AuditEntry.at.desc())  # one entry per transaction, so `at` is unique
         )
         return [HistoryOut.model_validate(e) for e in s.scalars(stmt)]
+
+
+# --- comparison and decision --------------------------------------------------------------------
+
+
+@router.get("/inquiries/{inquiry_id}/comparison", response_model=ComparisonOut)
+def comparison(inquiry_id: uuid.UUID, principal: Reader, engine: Eng, now: Now) -> object:
+    """Every offer with its flags (complete first, cheapest first) and the decision."""
+    with scope(principal, engine) as s:
+        inq = s.get(Inquiry, inquiry_id)
+        if inq is None:
+            raise _not_found()
+        return offer_repo.comparison(s, inq, now)
+
+
+@router.post("/inquiries/{inquiry_id}/select-winner", response_model=InquiryOut)
+def select_winner(
+    inquiry_id: uuid.UUID, body: SelectWinnerIn, principal: Writer, engine: Eng, now: Now
+) -> object:
+    """Select (or re-select) the winner; a non-lowest offer needs a reason (B0-D4, B4-D13)."""
+    with scope(principal, engine) as s:
+        inq = _lock_open(s, inquiry_id, body.version)  # row lock: concurrent selections queue up
+        if Status(inq.status) not in (Status.OFFERS_RECEIVED, Status.WINNER_SELECTED):
+            raise HTTPException(status.HTTP_409_CONFLICT, f"Inquiry is {inq.status}")
+        offers = list(s.scalars(select(Offer).where(Offer.inquiry_id == inq.id)))
+        chosen = next((o for o in offers if o.id == body.offer_id), None)
+        rfq = None if chosen is None else s.get(Rfq, chosen.rfq_id)
+        if chosen is None or rfq is None:
+            _reject("offer_id", "Not an offer of this inquiry")
+        if rfq.status != RfqStatus.SENT:
+            _reject("offer_id", f"RFQ is {rfq.status}")
+        if chosen.valid_until < now:
+            _reject("offer_id", "Offer has expired")
+        results = {str(o.id): evaluate_offer(offer_repo.inputs_for(s, o)) for o in offers}
+        if body.reason is None and rationale_required(str(chosen.id), results.values()):
+            _reject("reason", "Required when the offer is not the lowest")
+        if body.reason == DecisionReason.OTHER and body.note is None:
+            _reject("note", "Required for reason other")
+        new = {
+            "winner_offer_id": chosen.id, "decision_reason": body.reason,
+            "decision_note": body.note,
+            "decided_total": results[str(chosen.id)].total.quantize(CENT),
+        }  # fmt: skip
+        if all(getattr(inq, k) == v for k, v in new.items()):
+            return inquiry_out(s, inq, principal)  # the same decision again: nothing to write
+        before = {**offer_repo.decision_facts(s, inq), "status": inq.status}
+        moved = (
+            _transition(inq, Status.WINNER_SELECTED)
+            if Status(inq.status) is Status.OFFERS_RECEIVED
+            else {}
+        )
+        for k, v in {**new, **moved, "decided_at": now, "decided_by": principal.user_id}.items():
+            setattr(inq, k, v)
+        inq.version += 1
+        inq.updated_at = now
+        s.flush()
+        record_change(
+            s, actor=principal.user_id, entity_type="inquiry", entity_id=inq.id,
+            action="select_winner", before=before,
+            after={**moved, **offer_repo.decision_facts(s, inq)},
+        )  # fmt: skip
+        return inquiry_out(s, inq, principal)
