@@ -22,6 +22,26 @@ export type ListParams = {
   sort?: "eta" | "reference";
 };
 
+export type DecisionReason =
+  | "flexibility"
+  | "operational_fit"
+  | "availability"
+  | "reliability"
+  | "timing"
+  | "payment_terms"
+  | "commercial_judgement"
+  | "other";
+
+/** The recorded winner decision; Viewer, Buyer and Admin only (B4-D14). */
+export type Decision = {
+  winner_offer_id: string;
+  reason: DecisionReason | null;
+  note: string | null;
+  decided_at: string;
+  decided_by_name: string;
+  decided_total: string;
+};
+
 /** A work-list row. `eta` is null on a duplicated draft that has none yet. */
 export type InquiryListItem = {
   id: string;
@@ -35,6 +55,10 @@ export type InquiryListItem = {
   /** RFQs that are not withdrawn, and how many of those have been sent; null for the Operator. */
   rfq_total: number | null;
   rfq_sent: number | null;
+  /** Offers entered; null for the Operator. */
+  offer_total: number | null;
+  /** The only decision fact an Operator sees. */
+  winner_counterparty_name: string | null;
   eta_warning: boolean;
 };
 
@@ -120,6 +144,9 @@ export type Inquiry = {
   /** Null for the Operator, like rfq_deadline: who was contacted stays hidden. */
   rfq_total: number | null;
   rfq_sent: number | null;
+  winner_counterparty_name: string | null;
+  /** Null for the Operator and before a winner is selected. */
+  decision: Decision | null;
   created_at: string;
   created_by: string;
   updated_at: string;

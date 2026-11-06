@@ -6,6 +6,7 @@ import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
 import type { TokenSource } from "./http";
 import { InquiryPage } from "./inquiries/InquiryPage";
+import { Comparison } from "./offers/Comparison";
 import { OfferEntry } from "./offers/OfferEntry";
 import { createOfferApi } from "./offerApi";
 import { RfqLog } from "./rfqs/RfqLog";
@@ -142,6 +143,14 @@ export function App() {
             key={inquiries.id}
             inquiryId={inquiries.id}
             api={suppliersApi}
+            roles={user.roles}
+          />
+        )}
+        {user && offersApi && inquiries?.id && inquiries.view === "offers" && (
+          <Comparison
+            key={inquiries.id}
+            inquiryId={inquiries.id}
+            api={offersApi}
             roles={user.roles}
           />
         )}

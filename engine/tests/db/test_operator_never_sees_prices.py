@@ -236,6 +236,7 @@ def test_operator_never_sees_commercial_data(
     assert NAMES[final] in got.text
     listed = operator.http.get(f"{PREFIX}/inquiries").json()
     assert [i["winner_counterparty_name"] for i in listed] == [NAMES[final]]
+    assert [i["offer_total"] for i in listed] == [None]  # how many offers came in is commercial
     hist = operator.http.get(f"{PREFIX}/inquiries/{inq['id']}/history").text
     assert NAMES[final] in hist
     for word in ("decision_reason", "decision_note", "decided_total", "winner_offer_id"):

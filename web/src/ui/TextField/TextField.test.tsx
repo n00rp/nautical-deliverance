@@ -27,6 +27,18 @@ describe("TextField", () => {
     expect(onChange).toHaveBeenCalledWith("A");
   });
 
+  it("[B4-R12] rows turn the field into a text area with the same wiring", async () => {
+    const onChange = vi.fn();
+    render(
+      <TextField id="n" label="Note" value="" onChange={onChange} rows={3} error="Required" />,
+    );
+    const area = screen.getByLabelText("Note");
+    expect(area.tagName).toBe("TEXTAREA");
+    expect(area.getAttribute("aria-invalid")).toBe("true");
+    await userEvent.type(area, "A");
+    expect(onChange).toHaveBeenCalledWith("A");
+  });
+
   it("[B1-R13] a plain field has no description and no invalid flag", () => {
     render(<TextField id="v" label="Vessel" value="x" onChange={vi.fn()} disabled />);
     const input = screen.getByLabelText("Vessel");

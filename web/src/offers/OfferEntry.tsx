@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { describe } from "../admin/errors";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { goInquiry } from "../admin/routes";
+import { useLoaded } from "../admin/useLoaded";
 import { useReload } from "../admin/useReload";
 import { useSave } from "../admin/useSave";
 import type { Inquiry, InquiryApi } from "../inquiryApi";
 import { evaluateOffer, formatUsd } from "../money";
 import {
   COST_KEYS,
+  COST_LABEL,
   type DeliveryMethod,
   type Offer,
   type OfferApi,
@@ -46,14 +47,6 @@ const METHODS: { value: DeliveryMethod; label: string }[] = [
   { value: "pipeline", label: "Pipeline" },
   { value: "ex_wharf", label: "Ex-wharf" },
 ];
-
-const COST_LABEL = {
-  barging_cost: "Barging",
-  port_call_cost: "Port call",
-  agent_cost: "Agent",
-  surveyor_cost: "Surveyor",
-  other_cost: "Other",
-} as const;
 
 // Form field ids; the engine's 422 field names map onto them (see `target`).
 const VALID = "offer-valid-until";
@@ -297,40 +290,14 @@ function OfferForm({ inquiry, rfq, offer, api, onFail }: FormProps) {
 
 /** S5: enter or edit the offer of one sent RFQ with live exact totals (B4-R12). */
 export function OfferEntry({ inquiryId, rfqId, api, roles }: OfferEntryProps) {
-  const toast = useToast();
   const allowed = roles.some((r) => WRITERS.includes(r));
-  const [data, setData] = useState<{
-    inquiry: Inquiry;
-    rfqs: RfqItem[];
-    offer: Offer | undefined;
-  } | null>(null);
   const { tick, fail } = useReload();
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!allowed) return;
-    let live = true;
-    const load = async () => {
-      try {
-        const [inquiry, rfqs] = await Promise.all([
-          api.getInquiry(inquiryId),
-          api.listRfqs(inquiryId),
-        ]);
-        const offerId = rfqs.find((r) => r.id === rfqId)?.offer_id;
-        const offer = offerId ? await api.getOffer(offerId) : undefined;
-        if (live) setData({ inquiry, rfqs, offer });
-      } catch (e) {
-        if (live) {
-          setFailed(true);
-          toast(describe(e), "crit");
-        }
-      }
-    };
-    void load();
-    return () => {
-      live = false;
-    };
-  }, [allowed, api, inquiryId, rfqId, tick, toast]);
+  const { data, failed } = useLoaded(allowed, async () => {
+    const [inquiry, rfqs] = await Promise.all([api.getInquiry(inquiryId), api.listRfqs(inquiryId)]);
+    const offerId = rfqs.find((r) => r.id === rfqId)?.offer_id;
+    const offer = offerId ? await api.getOffer(offerId) : undefined;
+    return { inquiry, rfqs, offer };
+  }, [api, inquiryId, rfqId, tick]);
 
   if (!allowed) return <LockedNote what="offer entry" />;
   if (failed) {

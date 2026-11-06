@@ -313,6 +313,7 @@ def test_decision_survives_a_deactivated_counterparty(admin: Oc, world: SimpleNa
     row = admin.api(f"/inquiries/{inq['id']}/comparison")["rows"][0]
     assert (row["counterparty_name"], row["selected"]) == ("Alpha Marine", True)
     assert admin.listing()[0]["winner_counterparty_name"] == "Alpha Marine"
+    assert admin.listing()[0]["offer_total"] == 2  # noqa: PLR2004
 
 
 @pytest.mark.req("B4-R08")

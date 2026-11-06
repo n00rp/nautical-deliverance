@@ -12,6 +12,8 @@ export const item = (id: string, fields: Partial<InquiryListItem> = {}): Inquiry
   buyer_name: "Bea Buyer",
   rfq_total: 0,
   rfq_sent: 0,
+  offer_total: 0,
+  winner_counterparty_name: null,
   eta_warning: false,
   ...fields,
 });

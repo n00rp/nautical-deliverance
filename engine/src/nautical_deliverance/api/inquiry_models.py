@@ -228,5 +228,6 @@ class InquiryListItem(BaseModel):
     buyer_name: str | None
     rfq_total: int | None  # null for the Operator: who was contacted stays hidden (R6)
     rfq_sent: int | None
+    offer_total: int | None  # null for the Operator: how many offers came in is commercial
     winner_counterparty_name: str | None
     eta_warning: bool

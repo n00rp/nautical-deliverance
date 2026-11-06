@@ -1,17 +1,7 @@
 import { createRequest, toHistory, type RawHistory, type TokenSource } from "./http";
-import type { Inquiry } from "./inquiryApi";
+import type { Decision, DecisionReason, Inquiry } from "./inquiryApi";
 
 export type DeliveryMethod = "barge" | "truck" | "pipeline" | "ex_wharf";
-type DecisionReason =
-  | "flexibility"
-  | "operational_fit"
-  | "availability"
-  | "reliability"
-  | "timing"
-  | "payment_terms"
-  | "commercial_judgement"
-  | "other";
-
 /** Amounts, prices, densities and quantities are decimal strings, never numbers (D-074). */
 type OfferLine = {
   inquiry_line_id: string;
@@ -31,6 +21,26 @@ export const COST_KEYS = [
   "other_cost",
 ] as const;
 type CostKey = (typeof COST_KEYS)[number];
+
+export const COST_LABEL: Record<CostKey, string> = {
+  barging_cost: "Barging",
+  port_call_cost: "Port call",
+  agent_cost: "Agent",
+  surveyor_cost: "Surveyor",
+  other_cost: "Other",
+};
+
+/** Why a non-lowest offer was chosen, as the select shows it. */
+export const REASON_LABEL: Record<DecisionReason, string> = {
+  flexibility: "Flexibility",
+  operational_fit: "Operational fit",
+  availability: "Availability",
+  reliability: "Reliability",
+  timing: "Timing",
+  payment_terms: "Payment terms",
+  commercial_judgement: "Commercial judgement",
+  other: "Other",
+};
 
 export type Offer = Record<CostKey, string> & {
   id: string;
@@ -60,15 +70,6 @@ export type ComparisonRow = Offer & {
   delta_to_lowest: string | null;
   expired: boolean;
   expiring_soon: boolean;
-};
-
-type Decision = {
-  winner_offer_id: string;
-  reason: DecisionReason | null;
-  note: string | null;
-  decided_at: string;
-  decided_by_name: string;
-  decided_total: string;
 };
 
 export type Comparison = { rows: ComparisonRow[]; decision: Decision | null };

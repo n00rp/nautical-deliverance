@@ -309,7 +309,7 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
         rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
-        hide = {} if _sees_rfqs(principal) else dict.fromkeys(RFQ_FIELDS)
+        hide = {} if _sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "offer_total"))
         return [
             InquiryListItem(
                 **{**r._asdict(), **hide}, eta_warning=_eta_warning(r.status, r.eta, now)

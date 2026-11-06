@@ -68,6 +68,11 @@ def _rfq_count(*where: ColumnElement[bool]) -> Any:  # noqa: ANN401
     return select(func.count()).where(Rfq.inquiry_id == Inquiry.id, *where).scalar_subquery()
 
 
+def _offer_count() -> Any:  # noqa: ANN401
+    """Correlated number of offers entered for the inquiry."""
+    return select(func.count()).where(Offer.inquiry_id == Inquiry.id).scalar_subquery()
+
+
 def _winner_name() -> Any:  # noqa: ANN401
     """Correlated name of the selected offer's counterparty (kept even once it is inactive)."""
     return (
@@ -96,6 +101,7 @@ def list_rows(
             # Active RFQs; "sent" is the active ones that left Draft (a declined one was sent).
             _rfq_count(is_active_rfq()).label("rfq_total"),
             _rfq_count(is_active_rfq(), Rfq.status != RfqStatus.DRAFT.value).label("rfq_sent"),
+            _offer_count().label("offer_total"),
             _winner_name().label("winner_counterparty_name"),
         )
         .join(Vessel, Vessel.id == Inquiry.vessel_id)

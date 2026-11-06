@@ -32,6 +32,14 @@ vi.mock("./rfqApi", async (orig) => {
   return { ...(await orig<typeof import("./rfqApi")>()), createRfqApi: () => logApi() };
 });
 
+vi.mock("./offerApi", async (orig) => {
+  const { compareApi, completeOnly } = await import("./offers/comparisonSupport");
+  return {
+    ...(await orig<typeof import("./offerApi")>()),
+    createOfferApi: () => compareApi(completeOnly),
+  };
+});
+
 const user = { access_token: "tok", expired: false };
 const me = {
   user_id: "u-1",
@@ -234,6 +242,16 @@ describe("App inquiries", () => {
     render(<App />);
 
     expect(await screen.findByRole("table", { name: "RFQs" })).toBeTruthy();
+    expect(await screen.findByText("Alpha Marine")).toBeTruthy();
+  });
+
+  it("[B4-R12] the offers route opens the comparison", async () => {
+    auth.getUser.mockResolvedValue(user);
+    vi.mocked(fetchMe).mockResolvedValue(me);
+    window.location.hash = "#/inquiries/i1/offers";
+    render(<App />);
+
+    expect(await screen.findByRole("table", { name: "Offers" })).toBeTruthy();
     expect(await screen.findByText("Alpha Marine")).toBeTruthy();
   });
 });

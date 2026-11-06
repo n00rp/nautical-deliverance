@@ -75,6 +75,44 @@ describe("WorkList", () => {
     expect(window.location.hash).toBe("#/inquiries/1/rfqs");
   });
 
+  it("[B4-R12] offers received link to the comparison, a selected winner asks for a nomination", async () => {
+    setup([
+      item("1", { status: "offers_received", rfq_total: 3, rfq_sent: 3, offer_total: 2 }),
+      item("2", { status: "offers_received", rfq_total: 3, rfq_sent: 1, offer_total: 1 }),
+      item("3", { status: "winner_selected", rfq_total: 3, rfq_sent: 3, offer_total: 2 }),
+    ]);
+    const two = await screen.findByRole("link", { name: "Compare 2 offers" });
+    expect(two.getAttribute("href")).toBe("#/inquiries/1/offers");
+    expect(screen.getByRole("link", { name: "Compare 1 offer" })).toBeTruthy();
+    const third = within(await screen.findByRole("row", { name: /INQ-2611-003/ }));
+    expect(third.getByText("Create nomination")).toBeTruthy();
+  });
+
+  it("[B4-R12] the Operator sees the selected supplier and no comparison", async () => {
+    setup(
+      [
+        item("1", {
+          status: "winner_selected",
+          rfq_total: null,
+          rfq_sent: null,
+          offer_total: null,
+          winner_counterparty_name: "Beta Marine",
+        }),
+        item("2", {
+          status: "offers_received",
+          rfq_total: null,
+          rfq_sent: null,
+          offer_total: null,
+        }),
+      ],
+      ["operator"],
+    );
+    expect(await screen.findByText("Selected supplier: Beta Marine")).toBeTruthy();
+    expect(screen.queryByText(/Compare/)).toBeNull();
+    expect(screen.queryByText("Create nomination")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
   it("[B3-R03] the Operator sees no RFQ counts, only the status", async () => {
     setup(
       [

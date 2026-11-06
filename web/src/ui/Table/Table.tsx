@@ -15,6 +15,8 @@ export type TableProps<Row> = {
   rowKey: (row: Row) => string;
   onRowSelect?: (row: Row) => void;
   selectedKey?: string;
+  /** Rows to draw with the highlight tone (e.g. the lowest offer). */
+  highlight?: (row: Row) => boolean;
   loading?: boolean;
   empty?: ReactNode;
   caption: string;
@@ -33,6 +35,7 @@ export function Table<Row>({
   rowKey,
   onRowSelect,
   selectedKey,
+  highlight,
   loading = false,
   empty = "Nothing to show",
   caption,
@@ -111,6 +114,7 @@ export function Table<Row>({
                 <tr
                   key={key}
                   className={onRowSelect ? styles.selectable : undefined}
+                  data-highlight={highlight?.(row) || undefined}
                   tabIndex={onRowSelect ? 0 : undefined}
                   aria-selected={onRowSelect ? key === selectedKey : undefined}
                   onClick={onRowSelect && ((e) => onClick(e, row))}

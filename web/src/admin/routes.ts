@@ -20,13 +20,13 @@ export function parseAdmin(hash: string): { path: MasterType; id: string | undef
 
 export type InquiryRoute = {
   id: string | undefined;
-  view?: "suppliers" | "rfqs" | "offer";
+  view?: "suppliers" | "rfqs" | "offer" | "offers";
   /** Set on the offer entry route. */
   rfqId?: string;
 };
 
 /**
- * `#/inquiries`, `#/inquiries/<id|new>`, `#/inquiries/<id>/suppliers`, `/rfqs` or
+ * `#/inquiries`, `#/inquiries/<id|new>`, `#/inquiries/<id>/suppliers`, `/rfqs`, `/offers` or
  * `/rfqs/<rfqId>/offer`; an empty hash,
  * `#/` and `#/inquiries/` are the start page.
  */
@@ -35,9 +35,9 @@ export function parseInquiries(hash: string): InquiryRoute | null {
   if (path === "") return { id: undefined };
   const o = /^inquiries\/([^/]+)\/rfqs\/([^/]+)\/offer$/.exec(path);
   if (o) return { id: o[1], view: "offer", rfqId: o[2] };
-  const m = /^inquiries(?:\/([^/]+)(?:\/(suppliers|rfqs))?)?$/.exec(path);
+  const m = /^inquiries(?:\/([^/]+)(?:\/(suppliers|rfqs|offers))?)?$/.exec(path);
   if (!m) return null;
-  return m[2] ? { id: m[1], view: m[2] as "suppliers" | "rfqs" } : { id: m[1] };
+  return m[2] ? { id: m[1], view: m[2] as "suppliers" | "rfqs" | "offers" } : { id: m[1] };
 }
 
 export const goInquiry = (sub: string) => {

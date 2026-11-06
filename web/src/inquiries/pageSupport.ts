@@ -93,6 +93,8 @@ export const inquiry = (fields: Partial<Inquiry> = {}): Inquiry => ({
   rfq_deadline: null,
   rfq_total: 0,
   rfq_sent: 0,
+  winner_counterparty_name: null,
+  decision: null,
   created_at: "2026-11-05T09:00:00Z",
   created_by: "op1",
   updated_at: "2026-11-05T09:00:00Z",
