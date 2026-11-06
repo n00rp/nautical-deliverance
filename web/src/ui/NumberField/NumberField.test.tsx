@@ -55,6 +55,14 @@ describe("normalizeDecimal", () => {
     expect(normalizeDecimal(input, 3)).toEqual({ value });
   });
 
+  it("[B4-R12] with dotIsDecimal a single point is the decimal point, a single comma is still ambiguous", () => {
+    expect(normalizeDecimal("612.345", 3, true)).toEqual({ value: "612.345" });
+    expect(normalizeDecimal("1,234.567", 3, true)).toEqual({ value: "1234.567" });
+    expect(normalizeDecimal("612,345", 3, true)).toHaveProperty("error");
+    expect(normalizeDecimal("1.234.567", 3, true)).toEqual({ value: "1234567" });
+    expect(normalizeDecimal("612.345", 3)).toHaveProperty("error");
+  });
+
   it("[B1-R14] normalizeDecimal refuses to round: too many decimals", () => {
     expect(normalizeDecimal("1.234", 2)).toHaveProperty("error");
     expect(normalizeDecimal("1,5", 0)).toEqual({ error: "Whole numbers only" });

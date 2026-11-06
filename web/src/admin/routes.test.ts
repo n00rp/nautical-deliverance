@@ -34,4 +34,13 @@ describe("admin routes", () => {
     expect(parseInquiries("#/inquiries/abc/suppliers")).toEqual({ id: "abc", view: "suppliers" });
     expect(parseInquiries("#/inquiries/abc/rfqs/")).toEqual({ id: "abc", view: "rfqs" });
   });
+
+  it("[B4-R12] parses the offer entry hash", () => {
+    expect(parseInquiries("#/inquiries/abc/rfqs/r1/offer")).toEqual({
+      id: "abc",
+      view: "offer",
+      rfqId: "r1",
+    });
+    expect(parseInquiries("#/inquiries/abc/rfqs/r1")).toBeNull();
+  });
 });

@@ -37,6 +37,9 @@ const open = async (page: import("@playwright/test").Page, id: string) => {
   if (id.startsWith("rfqs-rfqlog") && !id.endsWith("as-operator")) {
     await page.getByRole("cell", { name: "Alpha Marine" }).waitFor();
   }
+  if (id.startsWith("offers-offerentry") && !id.endsWith("as-operator")) {
+    await page.getByRole("form", { name: "Offer" }).waitFor();
+  }
   if (id.startsWith("rfqs-rfqpreview")) {
     await page.getByRole("link", { name: "Open in e-mail" }).waitFor();
   }

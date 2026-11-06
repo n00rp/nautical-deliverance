@@ -10,8 +10,10 @@ const groupsOk = (s: string, sep: string): boolean =>
 /**
  * Exact decimal text -> canonical "-?\d+(\.\d+)?" string. Pure string work, no float is ever
  * involved (D-074). "," and "." both work as decimal separator when unambiguous; spaces group.
+ * With `dotIsDecimal` a single "." is always the decimal point, so 612.345 can be typed in a
+ * field of 3 decimals; a single "," followed by 3 digits stays ambiguous.
  */
-export function normalizeDecimal(input: string, decimals: number): Result {
+export function normalizeDecimal(input: string, decimals: number, dotIsDecimal = false): Result {
   const s = input.replace(/\s/g, ""); // \s covers NBSP and narrow NBSP too
   if (s === "") return { value: "" };
   const m = /^(-?)([\d.,]*)$/.exec(s);
@@ -35,7 +37,9 @@ export function normalizeDecimal(input: string, decimals: number): Result {
       }
       // A head of only zeros (or none) cannot carry a thousands group, so 0.125 is a decimal.
       const grouping = head !== "" && !/^0+$/.test(head);
-      if (seps.length === 1 && tail.length === 3 && grouping) return { error: AMBIGUOUS };
+      if (seps.length === 1 && tail.length === 3 && grouping && !(dotIsDecimal && dec === ".")) {
+        return { error: AMBIGUOUS };
+      }
       int = head.split(other).join("");
       frac = tail;
     } else if (seps.includes(other) || !groupsOk(body, dec)) {

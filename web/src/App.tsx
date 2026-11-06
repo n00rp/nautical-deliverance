@@ -6,6 +6,8 @@ import { fetchMe, type Me } from "./api";
 import { userManager } from "./auth";
 import type { TokenSource } from "./http";
 import { InquiryPage } from "./inquiries/InquiryPage";
+import { OfferEntry } from "./offers/OfferEntry";
+import { createOfferApi } from "./offerApi";
 import { RfqLog } from "./rfqs/RfqLog";
 import { SupplierSelection } from "./rfqs/SupplierSelection";
 import { createRfqApi } from "./rfqApi";
@@ -93,6 +95,10 @@ export function App() {
     () => (inquiryApi && rfqApi ? { ...inquiryApi, ...rfqApi } : null),
     [inquiryApi, rfqApi],
   );
+  const offersApi = useMemo(
+    () => (suppliersApi && signedIn ? { ...suppliersApi, ...createOfferApi(tokens) } : null),
+    [suppliersApi, signedIn],
+  );
   const hash = useHash();
   const route = parseAdmin(hash);
   const inquiries = parseInquiries(hash);
@@ -136,6 +142,15 @@ export function App() {
             key={inquiries.id}
             inquiryId={inquiries.id}
             api={suppliersApi}
+            roles={user.roles}
+          />
+        )}
+        {user && offersApi && inquiries?.id && inquiries.view === "offer" && inquiries.rfqId && (
+          <OfferEntry
+            key={inquiries.rfqId}
+            inquiryId={inquiries.id}
+            rfqId={inquiries.rfqId}
+            api={offersApi}
             roles={user.roles}
           />
         )}

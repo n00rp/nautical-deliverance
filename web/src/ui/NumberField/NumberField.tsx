@@ -11,6 +11,8 @@ export type NumberFieldProps = {
   value: string;
   onChange: (value: string) => void;
   decimals: number;
+  /** A single "." is always the decimal point (for prices with 3 decimals such as 612.345). */
+  dotIsDecimal?: boolean;
   /** Called with false while the text is not a valid number (value is then ""), true again after. */
   onValidityChange?: (valid: boolean) => void;
   unit?: string;
@@ -26,6 +28,7 @@ export function NumberField({
   value,
   onChange,
   decimals,
+  dotIsDecimal,
   onValidityChange,
   unit,
   disabled,
@@ -37,7 +40,7 @@ export function NumberField({
   const [localError, setLocalError] = useState<string | undefined>();
 
   // The parent changed the value to something the draft does not mean (e.g. a form reset).
-  const parsed = draft === null ? null : normalizeDecimal(draft, decimals);
+  const parsed = draft === null ? null : normalizeDecimal(draft, decimals, dotIsDecimal);
   const stale = parsed !== null && ("value" in parsed ? parsed.value !== value : value !== "");
   if (stale) {
     setDraft(null);
@@ -46,7 +49,7 @@ export function NumberField({
 
   const edit = (raw: string) => {
     setDraft(raw);
-    const r = normalizeDecimal(raw, decimals);
+    const r = normalizeDecimal(raw, decimals, dotIsDecimal);
     if ("value" in r) {
       setLocalError(undefined);
       onChange(r.value);
@@ -62,7 +65,7 @@ export function NumberField({
 
   const blur = () => {
     if (draft === null) return;
-    const r = normalizeDecimal(draft, decimals);
+    const r = normalizeDecimal(draft, decimals, dotIsDecimal);
     if ("value" in r) setDraft(null);
     else setLocalError(r.error);
   };
