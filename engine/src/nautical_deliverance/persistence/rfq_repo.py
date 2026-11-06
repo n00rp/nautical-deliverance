@@ -3,7 +3,7 @@
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 
 from nautical_deliverance.domain.rfq import RfqContext, RfqLine, build_mailto, render_rfq
 from nautical_deliverance.persistence.inquiry_repo import is_active_rfq, line_rows
@@ -15,6 +15,7 @@ from nautical_deliverance.persistence.models import (
     Coverage,
     Inquiry,
     InquiryLine,
+    Offer,
     Port,
     Product,
     Rfq,
@@ -96,7 +97,13 @@ def log(
 ) -> list[dict[str, Any]]:
     """Log items of an inquiry (or just `only`), oldest first."""
     stmt = (
-        select(Rfq, Counterparty.name, Contact.name, Contact.email)
+        select(
+            Rfq,
+            Counterparty.name,
+            Contact.name,
+            Contact.email,
+            exists().where(Offer.rfq_id == Rfq.id).label("has_offer"),
+        )
         .join(Counterparty, Counterparty.id == Rfq.counterparty_id)
         .join(Contact, Contact.id == Rfq.contact_id)
         .where(Rfq.inquiry_id == inquiry_id)
@@ -114,11 +121,11 @@ def log(
             "sent_at": rfq.sent_at,
             "status": rfq.status,
             "response_deadline": rfq.response_deadline,
-            "offer_received": False,  # ponytail: B4 sets this when an offer is entered
+            "offer_received": has_offer,
             "changed_since_sent": changed_since_sent(session, rfq),
             "version": rfq.version,
         }
-        for rfq, cp_name, contact_name, email in session.execute(stmt)
+        for rfq, cp_name, contact_name, email, has_offer in session.execute(stmt)
     ]
 
 
