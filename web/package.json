@@ -21,7 +21,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "test:visual": "playwright test",
-    "test:visual:docker": "bash scripts/visual-docker.sh"
+    "test:visual:docker": "bash scripts/visual-docker.sh",
+    "test:e2e": "playwright test -c playwright.e2e.config.ts"
   },
   "dependencies": {
     "@radix-ui/react-select": "2.4.1",

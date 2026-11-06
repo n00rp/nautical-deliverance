@@ -133,6 +133,42 @@ jobs:
           path: web/test-results
           retention-days: 7
 
+  # req: B6-R08
+  # The full purchase flow in the pinned Playwright image against the dev compose stack (dev seed,
+  # realm-dev.json: test credentials, password = username). The same script runs it against the
+  # pilot after a deploy. Runs in parallel with the other jobs, so it adds no wall time unless it
+  # becomes the slowest; it is in ci-duration's needs to stay in the gate's sight.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ND_E2E_BASE_URL: http://localhost:8080
+      ND_E2E_USER: bunker_buyer@acme.test
+      ND_E2E_PASSWORD: bunker_buyer@acme.test
+      ND_E2E_OPERATOR_USER: operator@acme.test
+      ND_E2E_OPERATOR_PASSWORD: operator@acme.test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start the stack
+        run: docker compose -f infra/docker-compose.yml up --detach --build --wait --wait-timeout 300
+      - name: E2E purchase flow
+        run: bash web/scripts/e2e-docker.sh
+      - name: Upload traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-traces
+          path: web/test-results/e2e
+          retention-days: 7
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down --volumes
+
   # req: S0-R09
   traceability:
     runs-on: ubuntu-latest
@@ -388,7 +424,7 @@ jobs:
   # multiarch is in needs: otherwise the gate could run before the slow QEMU build and report a
   # wall time that leaves it out. A skipped multiarch run is a fast green job.
   ci-duration:
-    needs: [engine, web, visual, traceability, security, smoke, multiarch, prod-overlay, backup-restore, readme]
+    needs: [engine, web, visual, e2e, traceability, security, smoke, multiarch, prod-overlay, backup-restore, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

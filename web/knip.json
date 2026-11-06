@@ -3,7 +3,8 @@
     "src/**/*.test.{ts,tsx}",
     "src/**/*.stories.tsx",
     ".storybook/{main,preview}.{ts,tsx}",
-    "tests/visual/*.spec.ts"
+    "tests/visual/*.spec.ts",
+    "e2e/*.spec.ts"
   ],
-  "project": ["src/**", ".storybook/**", "tests/**", "*.ts"]
+  "project": ["src/**", ".storybook/**", "tests/**", "e2e/**", "*.ts"]
 }
