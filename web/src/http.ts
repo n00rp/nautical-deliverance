@@ -19,7 +19,11 @@ const isIssues = (v: unknown): v is FieldIssue[] =>
 async function failure(response: Response): Promise<ApiError> {
   const body: unknown = await response.json().catch(() => null);
   const detail = (body as { detail?: unknown } | null)?.detail;
-  return new ApiError(response.status, isIssues(detail) ? detail : []);
+  return new ApiError(
+    response.status,
+    isIssues(detail) ? detail : [],
+    typeof detail === "string" ? detail : null,
+  );
 }
 
 /** Audit entries as the engine returns them, reshaped for HistoryList. */

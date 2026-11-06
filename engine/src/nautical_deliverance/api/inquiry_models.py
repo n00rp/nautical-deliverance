@@ -208,6 +208,7 @@ class InquiryOut(BaseModel):
     rfq_total: int | None  # RFQ facts are null for the Operator (R6)
     rfq_sent: int | None
     winner_counterparty_name: str | None  # the only decision fact an Operator sees
+    winner_counterparty_id: uuid.UUID | None  # null for the Operator, like the decision
     decision: DecisionOut | None
     created_at: datetime
     created_by: uuid.UUID
@@ -232,4 +233,5 @@ class InquiryListItem(BaseModel):
     offer_total: int | None  # null for the Operator: how many offers came in is commercial
     winner_counterparty_name: str | None
     nomination_sent: int | None  # sent nomination versions; null for the Operator (prices)
+    nomination_draft: bool | None  # a draft is waiting to be sent; null for the Operator
     eta_warning: bool

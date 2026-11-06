@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api";
 import type { Inquiry, InquiryApi } from "../inquiryApi";
-import type { NominationApi } from "../nominationApi";
+import type { NominationApi, NominationItem } from "../nominationApi";
 import type { Role } from "../ui/RoleGate/RoleGate";
 import { ToastHost, ToastProvider } from "../ui/Toast/Toast";
 import { InquiryPage } from "./InquiryPage";
@@ -21,7 +21,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-type Over = Partial<InquiryApi & Pick<NominationApi, "createNomination">>;
+type Over = Partial<InquiryApi & Pick<NominationApi, "createNomination" | "listNominations">>;
 
 function setup(
   rec: Inquiry | "new" = inquiry(),
@@ -393,18 +393,19 @@ describe("InquiryPage actions", () => {
     },
   );
 
-  it("[B5-R11] an existing draft is opened instead of reported as an error", async () => {
-    const create = vi
-      .fn()
-      .mockRejectedValue(
-        new ApiError(422, [{ field: "inquiry_id", message: "A nomination draft already exists" }]),
-      );
-    setup(inquiry({ status: "winner_selected" }), ["admin"], { createNomination: create });
+  it("[B5-R11] an existing draft is opened instead of creating a second one", async () => {
+    const create = vi.fn();
+    const draft = { id: "n3", status: "draft" } as NominationItem;
+    setup(inquiry({ status: "winner_selected" }), ["admin"], {
+      createNomination: create,
+      listNominations: () => Promise.resolve([draft]),
+    });
     await form();
     await userEvent.click(screen.getByRole("button", { name: "Create nomination" }));
     await waitFor(() => {
       expect(window.location.hash).toBe("#/inquiries/i1/nomination");
     });
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("[B5-R11] other failures stay on the page; other statuses and roles have no button", async () => {

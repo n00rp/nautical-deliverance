@@ -99,18 +99,22 @@ def won(admin: Nc) -> Json:
 
 
 @pytest.mark.req("B5-R01")
-def test_create_defaults_to_the_winning_contact(admin: Nc) -> None:
+def test_create_defaults_to_the_winning_contact(admin: Nc, world: SimpleNamespace) -> None:
     """The winner's RFQ contact is used; the item has the list shape."""
     inq = won(admin)
     item = admin.nominate(inq["id"])
     assert set(item) == {
-        *("id", "status", "sequence", "contact_name", "email", "sent_at"),
+        *("id", "status", "sequence", "contact_id", "contact_name", "email", "sent_at"),
         *("changed_since_sent", "version"),
     }
     assert (item["status"], item["sequence"], item["version"]) == ("draft", None, 1)
     assert (item["contact_name"], item["email"]) == ("Name a1", "a1@alpha.example")
+    assert item["contact_id"] == str(world.ct["a1"])
+    assert admin.fresh(inq)["winner_counterparty_id"] == str(world.cp["Alpha"])
     assert (item["sent_at"], item["changed_since_sent"]) == (None, False)
     assert admin.items(inq["id"]) == [item]
+    drafts = [i["nomination_draft"] for i in admin.api("/inquiries") if i["id"] == inq["id"]]
+    assert drafts == [True]
 
 
 @pytest.mark.req("B5-R01")
@@ -527,6 +531,8 @@ def test_first_send_nominates_and_an_amendment_keeps_it(admin: Nc) -> None:
     assert admin.preview(draft["id"])["subject"].startswith("Amended nomination (2) INQ-")
     second = admin.send(draft)
     assert second["sequence"] == AMENDMENT
+    counts = [i["nomination_sent"] for i in admin.api("/inquiries") if i["id"] == inq["id"]]
+    assert counts == [AMENDMENT]  # readers see the number of sent versions
     assert admin.fresh(inq)["version"] == after["version"]  # no second transition
     assert admin.fresh(inq)["status"] == "nominated"
     rows = admin.items(inq["id"])

@@ -27,6 +27,7 @@ class NominationItem(BaseModel):
     id: uuid.UUID
     status: str
     sequence: int | None
+    contact_id: uuid.UUID
     contact_name: str
     email: str
     sent_at: datetime | None

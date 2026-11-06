@@ -59,4 +59,15 @@ describe("nomination API client", () => {
     expect(init.method).toBe(method);
     expect(init.body === undefined ? undefined : JSON.parse(init.body as string)).toEqual(body);
   });
+
+  it("[B5-R11] a 409 keeps the engine's text as ApiError.detail", async () => {
+    const body = JSON.stringify({ detail: "Nomination total differs from the decision" });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 409 })));
+    const e = await api.markNominationSent("n1", 1).catch((x: unknown) => x);
+    expect(e).toMatchObject({
+      status: 409,
+      detail: "Nomination total differs from the decision",
+      issues: [],
+    });
+  });
 });

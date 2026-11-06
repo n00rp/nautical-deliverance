@@ -10,6 +10,7 @@ export const draftNom: NominationItem = {
   id: "n3",
   status: "draft",
   sequence: null,
+  contact_id: "Beta-1",
   contact_name: "Beta Primary",
   email: "beta.primary@example.test",
   sent_at: null,
@@ -51,7 +52,7 @@ const amendedText = mail(AMENDED, "We confirm the amended nomination.\nTotal USD
 const frozenOld = mail(SUBJECT, "We confirm the following nomination.\nETA 11 Nov 06:00 UTC");
 
 /** Beta Marine won; the suggestions list its two contacts for the contact select. */
-const betaSuggestions: Suggestions = {
+export const betaSuggestions: Suggestions = {
   covers_all: [supplier("Beta", { name: "Beta Marine" })],
   covers_some: [],
   not_listed: [],
@@ -77,7 +78,12 @@ export function nominationApi(
     return Promise.resolve(noms.find((n) => n.id === id) ?? draftNom);
   };
   const inq = (): Inquiry =>
-    inquiry({ status, winner_counterparty_name: "Beta Marine", buyer_id: "b1" });
+    inquiry({
+      status,
+      winner_counterparty_name: "Beta Marine",
+      winner_counterparty_id: "Beta",
+      buyer_id: "b1",
+    });
   return {
     getInquiry: () => Promise.resolve(inq()),
     getSuggestions: () => Promise.resolve(betaSuggestions),
@@ -91,8 +97,8 @@ export function nominationApi(
     patchNomination: (id: string, version: number, contactId: string) => {
       const second = contactId === "Beta-2";
       const fields = second
-        ? { contact_name: "Beta Second", email: "beta.second@example.test" }
-        : { contact_name: draftNom.contact_name, email: draftNom.email };
+        ? { contact_id: contactId, contact_name: "Beta Second", email: "beta.second@example.test" }
+        : { contact_id: contactId, contact_name: draftNom.contact_name, email: draftNom.email };
       return change(id, fields, version);
     },
     markNominationSent: (id: string, version: number) => {

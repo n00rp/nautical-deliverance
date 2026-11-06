@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useBusy } from "../admin/useBusy";
+import { useBusy } from "../ui/useBusy";
 import { useLoaded } from "../admin/useLoaded";
 import { useReload } from "../admin/useReload";
 import type { DecisionReason, InquiryApi } from "../inquiryApi";

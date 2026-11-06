@@ -5,7 +5,15 @@ import { ApiError } from "../api";
 import type { Role } from "../ui/RoleGate/RoleGate";
 import { ToastHost, ToastProvider } from "../ui/Toast/Toast";
 import { Nomination } from "./Nomination";
-import { amendedNom, changedNom, draftNom, firstText, nominationApi, sentNom } from "./testSupport";
+import {
+  amendedNom,
+  betaSuggestions,
+  changedNom,
+  draftNom,
+  firstText,
+  nominationApi,
+  sentNom,
+} from "./testSupport";
 
 beforeAll(() => {
   // jsdom lacks the pointer/scroll APIs Radix Select uses.
@@ -163,22 +171,80 @@ describe("Nomination changes", () => {
   });
 
   it.each([
-    ["mark-sent", "Mark sent", "Confirm sent", "markNominationSent", /Could not mark sent/],
-    ["withdraw", "Withdraw draft", "Confirm withdraw", "withdrawNomination", /changed by someone/],
+    ["mark-sent", "Mark sent", "Confirm sent", "markNominationSent"],
+    ["withdraw", "Withdraw draft", "Confirm withdraw", "withdrawNomination"],
   ] as const)(
-    "[B5-R11] a 409 on %s says the state changed and reloads",
-    async (_, open, confirm, method, message) => {
+    "[B5-R11] a stale 409 on %s says so and reloads",
+    async (_, open, confirm, method) => {
       const api = nominationApi();
       const spy = vi.spyOn(api, "listNominations");
-      setup(["bunker_buyer"], { ...api, [method]: () => Promise.reject(new ApiError(409)) });
+      const stale = new ApiError(409, [], "Record was changed by someone else");
+      setup(["bunker_buyer"], { ...api, [method]: () => Promise.reject(stale) });
       await userEvent.click(await screen.findByRole("button", { name: open }));
       await userEvent.click(screen.getByRole("button", { name: confirm }));
-      expect(await screen.findByText(message)).toBeTruthy();
+      expect(await screen.findByText(/changed by someone/)).toBeTruthy();
       await waitFor(() => {
         expect(spy).toHaveBeenCalledTimes(2);
       });
     },
   );
+
+  it.each([
+    ["Winning offer changed; withdraw this draft", /winner changed.*Withdraw the draft and create/],
+    ["Nomination total differs from the decision", /total differs.*would show the same total/],
+    ["Inquiry is cancelled", /inquiry is cancelled.*Withdraw the draft/],
+    ["Inquiry is offers_received", /Inquiry is offers_received.*cannot be sent now/],
+  ])("[B5-R11] Mark sent on a 409 '%s' shows the matching advice", async (detail, text) => {
+    const api = nominationApi();
+    const spy = vi.spyOn(api, "listNominations");
+    const reject = () => Promise.reject(new ApiError(409, [], detail));
+    setup(["bunker_buyer"], { ...api, markNominationSent: reject });
+    await userEvent.click(await screen.findByRole("button", { name: "Mark sent" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm sent" }));
+    const shown = await screen.findByText(text);
+    // Only the total case must not advise a new draft (R6).
+    expect(/total differs/.test(shown.textContent ?? "")).toBe(/total/.test(detail));
+    if (/total/.test(detail)) expect(shown.textContent).not.toMatch(/create a new one/);
+    await waitFor(() => {
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("[B5-R11] contact options come from the winner's counterparty id and preselect by contact id", async () => {
+    const api = nominationApi();
+    const other = {
+      ...betaSuggestions.covers_all[0],
+      counterparty_id: "Other",
+      name: "Beta Marine",
+    };
+    const groups = { ...betaSuggestions, covers_some: [other as never] };
+    setup(["bunker_buyer"], { ...api, getSuggestions: () => Promise.resolve(groups) });
+    const select = await screen.findByRole("combobox", { name: "Contact" });
+    expect(select.textContent).toContain("Beta Primary");
+    await userEvent.click(select);
+    // Same-named Other counterparty's contacts are not offered: two options, not four.
+    expect(await screen.findAllByRole("option")).toHaveLength(2);
+  });
+
+  it("[B5-R11] an inactive winner keeps the current contact read-only", async () => {
+    const api = nominationApi();
+    const none = { covers_all: [], covers_some: [], not_listed: [] };
+    setup(["bunker_buyer"], { ...api, getSuggestions: () => Promise.resolve(none) });
+    expect(
+      await screen.findByText(/Contact: Beta Primary \(beta.primary@example.test\)/),
+    ).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "Contact" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("[B5-R11] contacts that cannot be loaded show an inline error", async () => {
+    const api = nominationApi();
+    setup(["bunker_buyer"], { ...api, getSuggestions: () => Promise.reject(new Error("down")) });
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /Could not load the supplier's contacts/,
+    );
+    expect(screen.queryByRole("combobox", { name: "Contact" })).toBeNull();
+  });
 
   it("[B5-R11] choosing another contact patches the draft with its version", async () => {
     const api = setup();

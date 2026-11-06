@@ -99,6 +99,14 @@ describe("WorkList", () => {
     expect(done.getAttribute("href")).toBe("#/inquiries/2/nomination");
   });
 
+  it("[B5-R11] a winner with a waiting draft says Send nomination", async () => {
+    setup([
+      item("1", { status: "winner_selected", rfq_total: 3, rfq_sent: 3, nomination_draft: true }),
+    ]);
+    const link = await screen.findByRole("link", { name: "Send nomination" });
+    expect(link.getAttribute("href")).toBe("#/inquiries/1/nomination");
+  });
+
   it("[B5-R11] the Operator sees Nominated with the supplier and no link", async () => {
     setup(
       [

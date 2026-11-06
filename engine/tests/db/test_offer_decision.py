@@ -321,6 +321,7 @@ def test_decision_survives_a_deactivated_counterparty(admin: Oc, world: SimpleNa
     deactivate(world, admin.engine, Counterparty, world.cp["Alpha"])
     out = admin.fresh(inq)
     assert out["winner_counterparty_name"] == "Alpha Marine"
+    assert out["winner_counterparty_id"] == str(world.cp["Alpha"])
     assert out["decision"]["decided_total"] == "650000.00"
     row = admin.api(f"/inquiries/{inq['id']}/comparison")["rows"][0]
     assert (row["counterparty_name"], row["selected"]) == ("Alpha Marine", True)

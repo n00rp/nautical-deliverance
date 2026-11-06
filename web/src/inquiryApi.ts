@@ -62,6 +62,8 @@ export type InquiryListItem = {
   winner_counterparty_name: string | null;
   /** Sent nomination versions; null for the Operator. */
   nomination_sent: number | null;
+  /** A draft waits to be sent; null for the Operator. */
+  nomination_draft: boolean | null;
   eta_warning: boolean;
 };
 
@@ -148,6 +150,8 @@ export type Inquiry = {
   rfq_total: number | null;
   rfq_sent: number | null;
   winner_counterparty_name: string | null;
+  /** Null for the Operator, like the decision. */
+  winner_counterparty_id: string | null;
   /** Null for the Operator and before a winner is selected. */
   decision: Decision | null;
   created_at: string;

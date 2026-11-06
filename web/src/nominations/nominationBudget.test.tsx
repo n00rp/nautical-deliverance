@@ -36,6 +36,7 @@ describe("step budget", () => {
     const page = {
       ...inquiryApi(inquiry({ status: "winner_selected" })),
       createNomination: noms.createNomination,
+      listNominations: noms.listNominations,
     };
     function Routes() {
       const route = parseInquiries(useHash());

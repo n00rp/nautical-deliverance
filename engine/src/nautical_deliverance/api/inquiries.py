@@ -283,7 +283,11 @@ def advance(s: Session, principal: Principal, now: datetime, inq: Inquiry, to: S
 
 def _out(s: Session, inq: Inquiry, principal: Principal) -> InquiryOut:
     """Return the inquiry record; the RFQ deadline is hidden from the Operator."""
-    hide = {} if sees_rfqs(principal) else dict.fromkeys((*RFQ_FIELDS, "decision"))
+    hide = (
+        {}
+        if sees_rfqs(principal)
+        else dict.fromkeys((*RFQ_FIELDS, "decision", "winner_counterparty_id"))
+    )
     return InquiryOut(**{**detail(s, inq), **hide})
 
 
@@ -306,7 +310,7 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
         hide = (
             {}
             if sees_rfqs(principal)
-            else dict.fromkeys((*RFQ_FIELDS, "offer_total", "nomination_sent"))
+            else dict.fromkeys((*RFQ_FIELDS, "offer_total", "nomination_sent", "nomination_draft"))
         )
         return [
             InquiryListItem(

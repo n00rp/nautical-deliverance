@@ -137,6 +137,7 @@ def items(
             "id": nom.id,
             "status": nom.status,
             "sequence": nom.sequence,
+            "contact_id": nom.contact_id,
             "contact_name": name,
             "email": nom.sent_to_email or email,
             "sent_at": nom.sent_at,

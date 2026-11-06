@@ -294,11 +294,13 @@ def test_operator_never_sees_commercial_data(  # noqa: PLR0915  (one long scenar
     final = (winner + 1) % 3  # the re-selected winner
     assert got.json()["winner_counterparty_name"] == NAMES[final]
     assert got.json()["decision"] is None
+    assert got.json()["winner_counterparty_id"] is None
     assert NAMES[final] in got.text
     listed = [i for i in operator.http.get(f"{PREFIX}/inquiries").json() if i["id"] == inq["id"]]
     assert [i["winner_counterparty_name"] for i in listed] == [NAMES[final]]
     assert [i["offer_total"] for i in listed] == [None]  # how many offers came in is commercial
     assert [i["nomination_sent"] for i in listed] == [None]
+    assert [i["nomination_draft"] for i in listed] == [None]
     assert_operator_dashboard(operator, soon)
     hist = operator.http.get(f"{PREFIX}/inquiries/{inq['id']}/history").text
     assert NAMES[final] in hist

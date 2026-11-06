@@ -7,6 +7,7 @@ export type NominationItem = {
   status: "draft" | "sent" | "withdrawn";
   /** 1, 2, … for sent versions; null while a draft or withdrawn. */
   sequence: number | null;
+  contact_id: string;
   contact_name: string;
   email: string;
   sent_at: string | null;

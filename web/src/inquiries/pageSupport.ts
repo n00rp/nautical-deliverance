@@ -95,6 +95,7 @@ export const inquiry = (fields: Partial<Inquiry> = {}): Inquiry => ({
   rfq_total: 0,
   rfq_sent: 0,
   winner_counterparty_name: null,
+  winner_counterparty_id: null,
   decision: null,
   created_at: "2026-11-05T09:00:00Z",
   created_by: "op1",
@@ -123,7 +124,7 @@ export const inquiry = (fields: Partial<Inquiry> = {}): Inquiry => ({
 /** Inquiry client that serves one inquiry and answers every action with it. */
 export function inquiryApi(
   current: Inquiry = inquiry(),
-): InquiryApi & Pick<NominationApi, "createNomination"> {
+): InquiryApi & Pick<NominationApi, "createNomination" | "listNominations"> {
   const same = () => Promise.resolve(current);
   return {
     listInquiries: () => Promise.resolve([]),
@@ -133,6 +134,7 @@ export function inquiryApi(
     takeInquiry: same,
     cancelInquiry: same,
     duplicateInquiry: same,
+    listNominations: () => Promise.resolve([]),
     createNomination: () => Promise.reject(new Error("createNomination is not stubbed")),
     inquiryHistory: () =>
       Promise.resolve([
