@@ -1,5 +1,5 @@
 {
-  "format": "Strings only. qty_mt is quantized to 3 decimals; line_cost and total to 2 decimals; null where a line is not in the total (qty_mt null only when m3 has no density). fixed = barging, port call, agent, surveyor, other. Rounding: half-up per line, total = sum of rounded lines + fixed.",
+  "format": "Strings only; null allowed. fixed = barging, port call, agent, surveyor, other. qty_mt is never rounded: the shortest exact decimal with at least 3 decimals (102.000, 9.125, 850.5008505). line_cost and total have exactly 2 decimals. line_cost, qty_mt and in_total are null/false where a line is not in the total (qty_mt is null only when an m3 line has no density). Rounding: half-up per line; inputs are non-negative, so half-up on a scaled integer v is (v + 5) // 10. total = sum of rounded lines + fixed. An offer with no lines is incomplete. expected {\"error\": \"total too large\"} means the total exceeds 999999999999.99 and must be rejected.",
   "cases": [
     {
       "name": "spec worked example",
@@ -322,6 +322,74 @@
       }
     },
     {
+      "name": "m3 exact qty_mt beyond 3 decimals",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "m3",
+            "quantity": "1000.001",
+            "inquiry_density": "850.5",
+            "price_per_mt": "845.500",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "850.5008505",
+            "line_cost": "719098.47",
+            "in_total": true
+          }
+        ],
+        "total": "719098.47",
+        "complete": true
+      }
+    },
+    {
+      "name": "m3 exact qty_mt tie at 4th decimal",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "m3",
+            "quantity": "1.000",
+            "inquiry_density": "600.5",
+            "price_per_mt": "1000.000",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [
+          {
+            "line_id": "A",
+            "qty_mt": "0.6005",
+            "line_cost": "600.50",
+            "in_total": true
+          }
+        ],
+        "total": "600.50",
+        "complete": true
+      }
+    },
+    {
       "name": "m3 without density is not in total",
       "offer": {
         "lines": [
@@ -414,6 +482,24 @@
           }
         ],
         "total": "50000.00",
+        "complete": false
+      }
+    },
+    {
+      "name": "zero lines is incomplete",
+      "offer": {
+        "lines": [],
+        "fixed": [
+          "10.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "lines": [],
+        "total": "10.00",
         "complete": false
       }
     },
@@ -531,6 +617,56 @@
         ],
         "total": "999999999999.99",
         "complete": true
+      }
+    },
+    {
+      "name": "over limit by 0.01 is rejected",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "9999999.000",
+            "inquiry_density": null,
+            "price_per_mt": "99999.999",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "110000.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "error": "total too large"
+      }
+    },
+    {
+      "name": "over limit huge product is rejected",
+      "offer": {
+        "lines": [
+          {
+            "line_id": "A",
+            "unit": "mt",
+            "quantity": "999999999.999",
+            "inquiry_density": null,
+            "price_per_mt": "99999.999",
+            "offer_density": null
+          }
+        ],
+        "fixed": [
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00",
+          "0.00"
+        ]
+      },
+      "expected": {
+        "error": "total too large"
       }
     }
   ]

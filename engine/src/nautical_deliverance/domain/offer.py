@@ -84,13 +84,19 @@ def quantity_mt(line: LineInput) -> Decimal | None:
     return None if density is None else line.quantity * density / _THOUSAND
 
 
+def format_qty_mt(q: Decimal) -> str:
+    """Shortest exact decimal string with at least 3 decimals (never rounds)."""
+    whole, _, frac = format(q.normalize(), "f").partition(".")
+    return f"{whole}.{frac.ljust(3, '0')}"
+
+
 def line_cost(qty_mt: Decimal, price: Decimal) -> Decimal:
     """Line cost rounded half-up to 2 decimals (B4-D1)."""
     return (qty_mt * price).quantize(_CENT, ROUND_HALF_UP)
 
 
 def evaluate_offer(o: OfferInput) -> OfferResult:
-    """Compute line costs and total; raise ValueError when the total is too large."""
+    """Compute line costs and total; ValueError when too large; no lines is incomplete."""
     results = []
     total = sum(o.fixed, Decimal(0))
     for line in o.lines:
@@ -104,7 +110,9 @@ def evaluate_offer(o: OfferInput) -> OfferResult:
     if abs(total) > MAX_TOTAL:
         msg = "total too large"
         raise ValueError(msg)
-    return OfferResult(o.offer_id, tuple(results), total, all(r.in_total for r in results))
+    return OfferResult(
+        o.offer_id, tuple(results), total, bool(results) and all(r.in_total for r in results)
+    )
 
 
 def lowest(results: Iterable[OfferResult]) -> frozenset[str]:

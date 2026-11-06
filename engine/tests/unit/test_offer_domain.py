@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from nautical_deliverance.domain.offer import (
@@ -15,6 +15,7 @@ from nautical_deliverance.domain.offer import (
     OfferInput,
     OfferResult,
     evaluate_offer,
+    format_qty_mt,
     lowest,
     rationale_required,
 )
@@ -45,30 +46,47 @@ def _offer(offer_id: str, spec: dict[str, Any]) -> OfferInput:
     return OfferInput(offer_id, lines, (a, b, c, d, e))
 
 
-def _str(v: Decimal | None, places: str) -> str | None:
-    """Quantize for string comparison."""
-    return None if v is None else str(v.quantize(Decimal(places)))
-
-
 @pytest.mark.req("B4-R04")
 @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
 def test_vectors(case: dict[str, Any]) -> None:
     """Every shared vector gives exactly the expected strings."""
-    r = evaluate_offer(_offer("o", case["offer"]))
+    offer = _offer("o", case["offer"])
+    if "error" in case["expected"]:
+        with pytest.raises(ValueError, match=case["expected"]["error"]):
+            evaluate_offer(offer)
+        return
+    r = evaluate_offer(offer)
     got = {
         "lines": [
             {
                 "line_id": x.line_id,
-                "qty_mt": _str(x.qty_mt, "0.001"),
-                "line_cost": _str(x.line_cost, "0.01"),
+                "qty_mt": None if x.qty_mt is None else format_qty_mt(x.qty_mt),
+                "line_cost": None if x.line_cost is None else str(x.line_cost),
                 "in_total": x.in_total,
             }
             for x in r.lines
         ],
-        "total": _str(r.total, "0.01"),
+        "total": str(r.total),
         "complete": r.complete,
     }
     assert got == case["expected"]
+
+
+@pytest.mark.req("B4-R04")
+def test_zero_lines_incomplete() -> None:
+    """An offer without lines is never complete."""
+    assert not evaluate_offer(OfferInput("o", (), (Decimal(0),) * 5)).complete
+
+
+@pytest.mark.req("B4-R04")
+def test_format_qty_mt() -> None:
+    """Shortest exact decimal, at least 3 decimals, no rounding."""
+    assert format_qty_mt(Decimal(102)) == "102.000"
+    assert format_qty_mt(Decimal("102.0000")) == "102.000"
+    assert format_qty_mt(Decimal("9.125")) == "9.125"
+    assert format_qty_mt(Decimal("850.5008505")) == "850.5008505"
+    assert format_qty_mt(Decimal(0)) == "0.000"
+    assert format_qty_mt(Decimal("1E+3")) == "1000.000"
 
 
 @pytest.mark.req("B4-R04")
@@ -106,6 +124,13 @@ _results = st.lists(st.tuples(st.integers(0, 5), st.booleans()), min_size=0, max
 
 @pytest.mark.req("B4-R05")
 @given(_results)
+@example(
+    (_result(0, 3, complete=True), _result(1, 3, complete=True), _result(2, 5, complete=True)),
+)
+@example(
+    (_result(0, 1, complete=False), _result(1, 4, complete=True), _result(2, 6, complete=True))
+)
+@example((_result(0, 1, complete=False), _result(1, 2, complete=False)))
 def test_lowest_property(results: tuple[OfferResult, ...]) -> None:
     """Lowest is exactly the minimum-total complete offers."""
     complete = [r for r in results if r.complete]
