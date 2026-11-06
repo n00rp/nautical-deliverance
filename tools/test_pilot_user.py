@@ -209,7 +209,7 @@ def _stub(
     calls: list[str] = []
 
     def fake(method: str, url: str, *_a: object, **kw: object) -> object:
-        calls.append(f"{method} {url.split('/admin/realms/r')[-1]}")
+        calls.append(f"{method} {url.rsplit('/admin/realms/r', maxsplit=1)[-1]}")
         if "openid-connect/token" in url:
             return {"access_token": TOKEN}
         if method == "DELETE" and delete_fails:
