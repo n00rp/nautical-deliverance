@@ -240,6 +240,38 @@ def _transition(inq: Inquiry, to: Status) -> dict[str, Any]:
     return {"status": to.value}
 
 
+def bump_and_audit(  # noqa: PLR0913, PLR0917
+    s: Session,
+    principal: Principal,
+    now: datetime,
+    inq: Inquiry,
+    action: Literal["update", "take", "cancel", "select_winner"],
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> None:
+    """Bump the inquiry version after its fields were set and write one audit entry."""
+    inq.version += 1
+    inq.updated_at = now
+    s.flush()
+    record_change(
+        s,
+        actor=principal.user_id,
+        entity_type="inquiry",
+        entity_id=inq.id,
+        action=action,
+        before=before,
+        after=after,
+    )
+
+
+def advance(s: Session, principal: Principal, now: datetime, inq: Inquiry, to: Status) -> None:
+    """Move the inquiry to `to` (409 when not allowed) with a version bump and audit entry."""
+    moved = _transition(inq, to)
+    before = {k: getattr(inq, k) for k in moved}
+    inq.status = moved["status"]
+    bump_and_audit(s, principal, now, inq, "update", before, moved)
+
+
 # --- routes ------------------------------------------------------------------------------------
 
 
@@ -432,18 +464,7 @@ def _change(  # noqa: PLR0913, PLR0917
     before = {k: getattr(inq, k) for k in values}
     for k, v in values.items():
         setattr(inq, k, v)
-    inq.version += 1
-    inq.updated_at = now
-    s.flush()
-    record_change(
-        s,
-        actor=principal.user_id,
-        entity_type="inquiry",
-        entity_id=inq.id,
-        action=action,
-        before=before,
-        after=values,
-    )
+    bump_and_audit(s, principal, now, inq, action, before, values)
     return _out(s, inq, principal)
 
 

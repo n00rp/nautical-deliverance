@@ -6,16 +6,23 @@ RFQ sent to Offers received in the same transaction. Every change is audited.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime  # noqa: TC003  (FastAPI runtime)
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import Engine, delete, select
+from fastapi import APIRouter, HTTPException, status
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session  # noqa: TC002  (FastAPI runtime)
 
+from nautical_deliverance.api.access import Eng, Now, Reader, Writer  # noqa: TC001
 from nautical_deliverance.api.common import conflict, scope, unprocessable
-from nautical_deliverance.api.inquiries import _allow, _lock_open, _reject, _transition, get_now
+from nautical_deliverance.api.inquiries import (
+    _lock_open,
+    _reject,
+    _transition,
+    advance,
+    bump_and_audit,
+)
 from nautical_deliverance.api.inquiries import _out as inquiry_out
 from nautical_deliverance.api.inquiry_models import HistoryOut, InquiryOut
 from nautical_deliverance.api.offer_models import (
@@ -30,8 +37,7 @@ from nautical_deliverance.api.offer_models import (
 from nautical_deliverance.api.offer_models import (
     FIELDS as FIELD_NAMES,
 )
-from nautical_deliverance.api.users import get_users_engine
-from nautical_deliverance.domain.identity import Principal, Role
+from nautical_deliverance.domain.identity import Principal  # noqa: TC001
 from nautical_deliverance.domain.inquiry import Status
 from nautical_deliverance.domain.offer import DecisionReason, evaluate_offer, rationale_required
 from nautical_deliverance.domain.rfq import RfqStatus
@@ -53,10 +59,6 @@ OPEN = frozenset({Status.RFQ_SENT, Status.OFFERS_RECEIVED, Status.WINNER_SELECTE
 NOT_NULL = frozenset({"valid_until", *COSTS})  # null in a patch is an error, not a clear
 CENT, MILLI, TENTH = Decimal("0.01"), Decimal("0.001"), Decimal("0.1")
 
-Reader = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER, Role.VIEWER))]
-Writer = Annotated[Principal, Depends(_allow(Role.ADMIN, Role.BUNKER_BUYER))]
-Eng = Annotated[Engine, Depends(get_users_engine)]
-Now = Annotated[datetime, Depends(get_now)]
 
 LineKey = tuple[uuid.UUID, Decimal, Decimal | None]  # inquiry line, price, density
 
@@ -220,16 +222,7 @@ def create_offer(
             {**values, "rfq_id": rfq.id, "lines": _line_texts(s, offer)}, "create",
         )  # fmt: skip
         if Status(inq.status) is Status.RFQ_SENT:
-            moved = _transition(inq, Status.OFFERS_RECEIVED)
-            before = {k: getattr(inq, k) for k in moved}
-            inq.status = moved["status"]
-            inq.version += 1
-            inq.updated_at = now
-            s.flush()
-            record_change(
-                s, actor=principal.user_id, entity_type="inquiry", entity_id=inq.id,
-                action="update", before=before, after=moved,
-            )  # fmt: skip
+            advance(s, principal, now, inq, Status.OFFERS_RECEIVED)
         return out
 
 
@@ -359,12 +352,9 @@ def select_winner(
         )
         for k, v in {**new, **moved, "decided_at": now, "decided_by": principal.user_id}.items():
             setattr(inq, k, v)
-        inq.version += 1
-        inq.updated_at = now
-        s.flush()
-        record_change(
-            s, actor=principal.user_id, entity_type="inquiry", entity_id=inq.id,
-            action="select_winner", before=before,
-            after={**moved, **offer_repo.decision_facts(s, inq)},
+        s.flush()  # the audit "after" reads the decision back from the database
+        bump_and_audit(
+            s, principal, now, inq, "select_winner", before,
+            {**moved, **offer_repo.decision_facts(s, inq)},
         )  # fmt: skip
         return inquiry_out(s, inq, principal)

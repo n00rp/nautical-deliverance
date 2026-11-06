@@ -230,7 +230,16 @@ class InquiryReferenceCounter(Base):
     next_value: Mapped[int]
 
 
-class Rfq(Base):
+class _Stamped:
+    """Version and audit stamps shared by RFQs and offers."""
+
+    version: Mapped[int] = mapped_column(server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Rfq(_Stamped, Base):
     """A request for quotation to one supplier contact; sent_* freeze at send."""
 
     __tablename__ = "rfq"
@@ -248,13 +257,9 @@ class Rfq(Base):
     sent_subject: Mapped[str | None] = mapped_column(Text)
     sent_body: Mapped[str | None] = mapped_column(Text)
     inquiry_version_at_send: Mapped[int | None]
-    version: Mapped[int] = mapped_column(server_default=text("1"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class Offer(Base):
+class Offer(_Stamped, Base):
     """A supplier's offer for one sent RFQ (one per RFQ)."""
 
     __tablename__ = "offer"
@@ -279,10 +284,6 @@ class Offer(Base):
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    version: Mapped[int] = mapped_column(server_default=text("1"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class OfferLine(Base):
