@@ -12,7 +12,7 @@ Confirmed by the owner in the B4 interview:
 | ID | Decision |
 |---|---|
 | B4-D1 | **Rounding:** each product line cost is rounded **half-up to 2 decimals**; the total is the sum of the rounded line costs plus the fixed costs. Intermediate values are exact. |
-| B4-D2 | **Lowest** is chosen among **complete** offers only (every requested line priced and in total). Partial offers are tagged "Partial", can be selected, and always require a rationale. |
+| B4-D2 | **Lowest** is chosen among **complete** offers only (every requested line priced and in total). Partial offers are tagged "Partial", can be selected, and always require a rationale. Lowest is taken among complete offers that are currently selectable (RFQ sent, not expired). |
 | B4-D3 | **One current offer per sent RFQ**, edited in place; every change is audited with before/after. |
 | B4-D4 | An **expired** offer (valid until in the past) cannot be selected; the buyer first records the supplier's extended validity (an audited edit). |
 | B4-D5 | Offers exist **only for sent RFQs** (at most one each). Entering the first offer marks the RFQ "offer received" and moves the inquiry RFQ sent → Offers received through `can_transition`. |

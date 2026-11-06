@@ -53,21 +53,14 @@ EXPECTED = {  # the sweep must see at least these, so a broken enumeration canno
 
 
 def route_table(app: FastAPI) -> set[tuple[str, str]]:
-    """Return (method, path) of every route under /api/v1, read from `app.routes`."""
-    found: set[tuple[str, str]] = set()
-    routes: list[Any] = list(app.routes)
-    for route in routes:
-        include = getattr(route, "include_context", None)  # an included router, not a Route
-        members: list[tuple[str, Any]] = (
-            [(include.prefix, r) for r in route.original_router.routes]
-            if include
-            else [("", route)]
-        )
-        for prefix, member in members:
-            path = prefix + member.path
-            if path.startswith(PREFIX):
-                found |= {(m, path) for m in member.methods if m != "HEAD"}
-    return found
+    """Return (method, path) of every operation under /api/v1 from the OpenAPI schema."""
+    return {
+        (method.upper(), path)
+        for path, ops in app.openapi()["paths"].items()
+        if path.startswith(PREFIX)
+        for method in ops
+        if method.upper() in {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    }
 
 
 def commercial(path: str) -> bool:
@@ -76,7 +69,7 @@ def commercial(path: str) -> bool:
 
 
 def test_route_table_is_not_empty() -> None:
-    """The enumeration works: the openapi view and `app.routes` agree on every route."""
+    """The enumeration finds the routes the sweep must cover."""
     app = create_app(
         Settings(
             git_sha="x",
@@ -87,15 +80,15 @@ def test_route_table_is_not_empty() -> None:
         )
     )
     table = route_table(app)
-    shown = {(m.upper(), p) for p, ops in app.openapi()["paths"].items() for m in ops}
-    assert shown <= table
     assert {(m, p.removeprefix(PREFIX)) for m, p in table} >= EXPECTED
 
 
 def sweep(operator: Oc, ids: dict[str, str]) -> list[str]:
     """Call every route as the Operator and return all response bodies, errors included."""
+    table = route_table(operator.http.app)  # type: ignore[arg-type]
     bodies: list[str] = []
-    for method, path in sorted(route_table(operator.http.app)):  # type: ignore[arg-type]
+    called: set[tuple[str, str]] = set()
+    for method, path in sorted(table):
         params = set(re.findall(r"{(\w+)}", path))
         if re.search(r"/(inquiries|rfqs|offers)\b", path):
             assert params <= IDS, f"teach this test to fill {params - IDS} in {path}"
@@ -105,6 +98,8 @@ def sweep(operator: Oc, ids: dict[str, str]) -> list[str]:
         if commercial(path):
             assert resp.status_code == FORBIDDEN, (method, path)
         bodies.append(resp.text)
+        called.add((method, path))
+    assert called == table, f"routes not swept: {table - called}"
     return bodies
 
 

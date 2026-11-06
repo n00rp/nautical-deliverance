@@ -326,3 +326,60 @@ def test_inactive_product_does_not_break_the_comparison(admin: Oc, world: Simple
     assert pick(admin, inq, low["id"]).status_code == OK
     with org_session(admin.w.org, admin.engine) as s:
         assert s.get(Inquiry, uuid.UUID(inq["id"])) is not None
+
+
+# --- Ruling R5: only selectable offers are ranked -----------------------------------------------
+
+
+def lowest_ids(admin: Oc, inq: Json) -> tuple[set[str], dict[str, str | None]]:
+    """Return the ids flagged lowest and every offer's delta."""
+    rows = admin.api(f"/inquiries/{inq['id']}/comparison")["rows"]
+    return (
+        {r["offer_id"] for r in rows if r["lowest"]},
+        {r["offer_id"]: r["delta_to_lowest"] for r in rows},
+    )
+
+
+@pytest.mark.req("B4-R05")
+def test_expired_cheapest_offer_is_not_lowest(admin: Oc) -> None:
+    """The next cheapest becomes lowest and needs no rationale; deltas follow it."""
+    inq, rfqs = admin.sent(("Alpha", "a1"), ("Beta", "b1"), ("Gamma", "c1"))
+    cheap = admin.offer(rfqs[0]["id"], lines=prices(inq, "600", "700"), valid_until=PAST)
+    next_ = admin.offer(rfqs[1]["id"], lines=prices(inq, "650", "700"))
+    dear = admin.offer(rfqs[2]["id"], lines=prices(inq, "700", "700"))
+    low, deltas = lowest_ids(admin, inq)
+    assert low == {next_["id"]}
+    assert deltas == {cheap["id"]: "-25000.00", next_["id"]: "0.00", dear["id"]: "25000.00"}
+    assert pick(admin, inq, cheap["id"]).status_code == UNPROCESSABLE
+    assert pick(admin, inq, next_["id"]).status_code == OK
+    assert pick(admin, inq, dear["id"]).status_code == UNPROCESSABLE  # needs a reason
+
+
+@pytest.mark.req("B4-R05")
+def test_declined_cheapest_offer_is_not_lowest(admin: Oc) -> None:
+    """Same for an offer whose RFQ was declined."""
+    inq, rfqs = admin.sent(("Alpha", "a1"), ("Beta", "b1"))
+    cheap = admin.offer(rfqs[0]["id"], lines=prices(inq, "600", "700"))
+    next_ = admin.offer(rfqs[1]["id"], lines=prices(inq, "650", "700"))
+    r = admin.http.post(f"/api/v1/rfqs/{rfqs[0]['id']}/decline", json={"version": 2})
+    assert r.status_code == OK, r.text
+    low, _ = lowest_ids(admin, inq)
+    assert low == {next_["id"]}
+    assert pick(admin, inq, cheap["id"], reason="timing").status_code == UNPROCESSABLE
+    assert pick(admin, inq, next_["id"]).status_code == OK
+
+
+@pytest.mark.req("B4-R05")
+def test_nothing_selectable_means_no_lowest(admin: Oc) -> None:
+    """All complete offers expired or declined: no lowest, null deltas, nothing selectable."""
+    inq, rfqs = admin.sent(("Alpha", "a1"), ("Beta", "b1"))
+    old = admin.offer(rfqs[0]["id"], lines=prices(inq, "600", "700"), valid_until=PAST)
+    gone = admin.offer(rfqs[1]["id"], lines=prices(inq, "650", "700"))
+    admin.http.post(f"/api/v1/rfqs/{rfqs[1]['id']}/decline", json={"version": 2})
+    low, deltas = lowest_ids(admin, inq)
+    assert low == set()
+    assert deltas == {old["id"]: None, gone["id"]: None}
+    for off in (old, gone):
+        r = pick(admin, inq, off["id"], reason="other", note="x")
+        assert r.status_code == UNPROCESSABLE
+        assert list(errors(r)) == ["offer_id"]

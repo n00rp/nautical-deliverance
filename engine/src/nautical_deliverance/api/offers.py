@@ -332,7 +332,14 @@ def select_winner(
             _reject("offer_id", f"RFQ is {rfq.status}")
         if chosen.valid_until < now:
             _reject("offer_id", "Offer has expired")
-        results = {str(o.id): evaluate_offer(offer_repo.inputs_for(s, o)) for o in offers}
+        sent = set(
+            s.scalars(select(Rfq.id).where(Rfq.inquiry_id == inq.id, Rfq.status == RfqStatus.SENT))
+        )
+        results = {  # Ruling R5: only offers that can be selected now compete for "lowest"
+            str(o.id): evaluate_offer(offer_repo.inputs_for(s, o))
+            for o in offers
+            if o.rfq_id in sent and o.valid_until >= now
+        }
         if body.reason is None and rationale_required(str(chosen.id), results.values()):
             _reject("reason", "Required when the offer is not the lowest")
         if body.reason == DecisionReason.OTHER and body.note is None:

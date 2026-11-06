@@ -133,7 +133,8 @@ def comparison(session: Session, inq: Inquiry, now: datetime) -> dict[str, Any]:
         detail(session, o) for o in session.scalars(select(Offer).where(Offer.inquiry_id == inq.id))
     ]
     totals = {r["id"]: Decimal(r["total"]) for r in rows}
-    low = lowest(OfferResult(str(r["id"]), (), totals[r["id"]], r["complete"]) for r in rows)
+    open_ = [r for r in rows if r["rfq_status"] == "sent" and r["valid_until"] >= now]  # R5
+    low = lowest(OfferResult(str(r["id"]), (), totals[r["id"]], r["complete"]) for r in open_)
     floor = min((totals[r["id"]] for r in rows if str(r["id"]) in low), default=None)
     for r in rows:
         r["offer_id"] = r["id"]
