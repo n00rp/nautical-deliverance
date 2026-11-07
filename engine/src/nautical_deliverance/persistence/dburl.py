@@ -2,7 +2,8 @@
 
 Compose builds ``postgresql+psycopg://user:<password>@db:5432/nd`` from the raw password. A ``/``,
 ``@`` or ``:`` in it ends the userinfo early for libpq and SQLAlchemy. The host and database parts
-never contain ``@``, so the last ``@`` separates the userinfo. Already-encoded passwords stay as they are.
+never contain ``@``, so the last ``@`` separates the userinfo. Already-encoded passwords stay
+as they are.
 """
 
 import os

@@ -84,14 +84,15 @@ def test_backup_check_runs_on_every_deploy_and_tolerates_only_a_missing_first_ba
 
 
 @pytest.mark.req("B6-R07")
-def test_deploy_gate_applies_to_the_automatic_path_only_and_dispatch_needs_main_and_green_ci() -> None:
+def test_deploy_gate_covers_only_the_automatic_path_and_dispatch_needs_main() -> None:
     wf = _text(WORKFLOW)
     condition = re.search(r"\n    if: >-\n((?:      .*\n)+)", wf)
     assert condition, "the deploy job needs an if"
     manual, automatic = " ".join(condition.group(1).split()).split(" || ", 1)
     assert "workflow_dispatch" in manual
     assert "github.ref == 'refs/heads/main'" in manual
-    assert "ND_DEPLOY_ENABLED" not in manual  # I1: the first manual deploy happens before the switch
+    # I1: the first manual deploy happens before the switch is turned on.
+    assert "ND_DEPLOY_ENABLED" not in manual
     assert "vars.ND_DEPLOY_ENABLED == 'true'" in automatic
     assert "workflow_run.conclusion == 'success'" in automatic
     # I5: a manual deploy needs a green push CI run for that exact commit.
@@ -180,10 +181,11 @@ def test_runbook_secrets_are_url_safe_and_commands_use_the_right_user() -> None:
     assert "-base64" not in book  # C2: '/' and '+' in a password break database URLs
     assert "openssl rand -hex 24" in book
     assert "MSYS_NO_PATHCONV=1" in book  # I4: Git Bash rewrites container paths otherwise
-    # I2: `deploy` has no sudo; root steps run as ubuntu, and deploy is reached with sudo -iu deploy.
+    # I2: `deploy` has no sudo; root steps run as ubuntu; deploy is reached with sudo -iu deploy.
     assert not re.search(r"^\s*deploy\$ sudo ", book, re.MULTILINE)
     assert "sudo -iu deploy" in book
-    assert "--allow-rollback" in book and "allow_rollback" in book
+    assert "--allow-rollback" in book
+    assert "allow_rollback" in book
     assert "--force" in book  # I3: restoring onto a server that already holds data
 
 

@@ -11,6 +11,7 @@ NASTY = "ab/cd@ef:gh+ij%kl?mn#op=="
 
 @pytest.mark.req("B6-R03")
 def test_special_characters_in_the_password_reach_libpq_and_sqlalchemy_intact() -> None:
+    """Both libpq and SQLAlchemy read back the original password, user, host, port and database."""
     url = quote_password(f"postgresql+psycopg://nd_owner:{NASTY}@db:5432/nd")
     assert NASTY not in url
     parsed = make_url(url)
@@ -23,13 +24,17 @@ def test_special_characters_in_the_password_reach_libpq_and_sqlalchemy_intact() 
     )
     libpq = conninfo_to_dict(url.replace("+psycopg", ""))
     assert libpq["password"] == NASTY
-    assert (libpq["user"], libpq["host"], libpq["port"], libpq["dbname"]) == ("nd_owner", "db", "5432", "nd")
+    got = (libpq["user"], libpq["host"], libpq["port"], libpq["dbname"])
+    assert got == ("nd_owner", "db", "5432", "nd")
 
 
 @pytest.mark.req("B6-R03")
 def test_plain_and_already_encoded_passwords_are_left_alone() -> None:
+    """Plain and already-encoded passwords, and URLs without one, come out unchanged."""
     plain = "postgresql+psycopg://nd_app:3f9c0a@db:5432/nd"
     assert quote_password(plain) == plain
-    assert quote_password(quote_password(f"postgresql://u:{NASTY}@h/d")) == quote_password(f"postgresql://u:{NASTY}@h/d")
+    assert quote_password(quote_password(f"postgresql://u:{NASTY}@h/d")) == quote_password(
+        f"postgresql://u:{NASTY}@h/d"
+    )
     assert quote_password("postgresql://u@h/d") == "postgresql://u@h/d"
     assert quote_password("postgresql://h/d") == "postgresql://h/d"

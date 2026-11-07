@@ -63,7 +63,8 @@ def test_multiarch_job_lives_in_the_heavy_workflow_with_pinned_emulation() -> No
 @pytest.mark.req("B6-R02")
 def test_web_build_stage_runs_on_the_build_host() -> None:
     dockerfile = (ROOT / "web" / "Dockerfile").read_text(encoding="utf-8")
-    assert re.search(r"^FROM --platform=\$BUILDPLATFORM node:\S+ AS build$", dockerfile, re.MULTILINE)
+    pattern = r"^FROM --platform=\$BUILDPLATFORM node:\S+ AS build$"
+    assert re.search(pattern, dockerfile, re.MULTILINE)
 
 
 @pytest.mark.req("B6-R02")
@@ -72,8 +73,9 @@ def test_heavy_workflow_triggers_and_duration_note() -> None:
     head = heavy.split("\njobs:\n", 1)[0]
     for trigger in ("schedule:", "workflow_dispatch:", "push:", "pull_request:"):
         assert trigger in head
-    for path in ("infra/**", "**/Dockerfile", "web/e2e/**", "tools/*backup*", "tools/*smoke*", "tools/pilot_*"):
-        assert head.count(f'"{path}"') == 2, path  # push and pull_request
+    paths = ("infra/**", "**/Dockerfile", "web/e2e/**", "tools/*backup*", "tools/*smoke*")
+    for path in (*paths, "tools/pilot_*"):
+        assert head.count(f'"{path}"') == len(("push", "pull_request")), path
     jobs = {"e2e", "multiarch", "prod-overlay", "pilot-user", "backup-restore"}
     ci = CI.read_text(encoding="utf-8")
     for name in jobs:
@@ -83,7 +85,6 @@ def test_heavy_workflow_triggers_and_duration_note() -> None:
     assert all(name in duration.split("steps:", 1)[0] for name in jobs)
     assert "2700" in duration
     assert "needs: [engine, web, visual, traceability, security, smoke, lint-scripts, readme]" in ci
-
 
 
 @pytest.mark.req("B6-R02")

@@ -12,12 +12,22 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 BASH = shutil.which("bash")
+USAGE_ERROR = 2
 pytestmark = pytest.mark.skipif(BASH is None, reason="needs bash")
 
 
 def _git(cwd: Path, *args: str) -> str:
-    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
-    return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout.strip()
+    who = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t"}
+    env = {**os.environ, **who, "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    done = subprocess.run(  # noqa: S603 - fixed arguments in a temp repository
+        ["git", *args],  # noqa: S607
+        cwd=cwd,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return done.stdout.strip()
 
 
 @pytest.fixture
@@ -47,7 +57,14 @@ def server(tmp_path: Path) -> dict[str, object]:
     fake = bin_dir / "docker"
     fake.write_text('#!/bin/sh\necho "$@" >> "$FAKE_DOCKER_LOG"\n', encoding="utf-8")
     fake.chmod(0o755)
-    return {"clone": clone, "shas": shas, "side": side, "state": tmp_path / "DEPLOYED_SHA", "bin": bin_dir, "log": tmp_path / "docker.log"}
+    return {
+        "clone": clone,
+        "shas": shas,
+        "side": side,
+        "state": tmp_path / "DEPLOYED_SHA",
+        "bin": bin_dir,
+        "log": tmp_path / "docker.log",
+    }
 
 
 def _deploy(server: dict[str, object], *args: str) -> subprocess.CompletedProcess[str]:
@@ -60,8 +77,13 @@ def _deploy(server: dict[str, object], *args: str) -> subprocess.CompletedProces
         "FAKE_DOCKER_LOG": str(server["log"]),
     }
     assert BASH is not None
-    return subprocess.run(
-        [BASH, "infra/deploy/deploy.sh", *args], cwd=clone, env=env, capture_output=True, text=True, check=False
+    return subprocess.run(  # noqa: S603 - the script under test, in a temp clone
+        [BASH, "infra/deploy/deploy.sh", *args],
+        cwd=clone,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -104,4 +126,4 @@ def test_refuses_an_older_commit_unless_rollback_is_allowed(server: dict[str, ob
 
 @pytest.mark.req("B6-R07")
 def test_rejects_a_malformed_sha(server: dict[str, object]) -> None:
-    assert _deploy(server, "main").returncode == 2
+    assert _deploy(server, "main").returncode == USAGE_ERROR
