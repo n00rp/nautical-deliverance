@@ -133,42 +133,6 @@ jobs:
           path: web/test-results
           retention-days: 7
 
-  # req: B6-R08
-  # The full purchase flow in the pinned Playwright image against the dev compose stack (dev seed,
-  # realm-dev.json: test credentials, password = username). The same script runs it against the
-  # pilot after a deploy. Runs in parallel with the other jobs, so it adds no wall time unless it
-  # becomes the slowest; it is in ci-duration's needs to stay in the gate's sight.
-  e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      ND_E2E_BASE_URL: http://localhost:8080
-      ND_E2E_USER: bunker_buyer@acme.test
-      ND_E2E_PASSWORD: bunker_buyer@acme.test
-      ND_E2E_OPERATOR_USER: operator@acme.test
-      ND_E2E_OPERATOR_PASSWORD: operator@acme.test
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Start the stack
-        run: docker compose -f infra/docker-compose.yml up --detach --build --wait --wait-timeout 300
-      - name: E2E purchase flow
-        run: bash web/scripts/e2e-docker.sh
-      - name: Upload traces
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: e2e-traces
-          path: web/test-results/e2e
-          retention-days: 7
-      - name: Stack logs on failure
-        if: failure()
-        run: docker compose -f infra/docker-compose.yml logs --no-color
-      - name: Tear down
-        if: always()
-        run: docker compose -f infra/docker-compose.yml down --volumes
-
   # req: S0-R09
   traceability:
     runs-on: ubuntu-latest
@@ -274,136 +238,6 @@ jobs:
         if: always()
         run: docker compose -f infra/docker-compose.yml down --volumes
 
-  # req: B6-R02
-  # Ruling R1: arm64 builds run under QEMU and are slow, so this job runs on pushes to main and on
-  # PRs that touch a Dockerfile or infra/. On other PRs the steps are skipped and the job is green.
-  # Matrix: the three builds run in parallel. multiarch is in ci-duration's needs, so CHECK the
-  # duration of the first main-run; if it exceeds 900 s, move arm64 to its own workflow (not out of
-  # the gate's sight).
-  multiarch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        context: [infra/postgis, infra/backup, engine, web]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Dockerfiles or infra/ changed?
-        id: changed
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ "$EVENT" = push ] || git diff --name-only "$BASE_SHA" HEAD | grep -Eq '(^|/)Dockerfile|^infra/'; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "No Dockerfile or infra/ change: arm64 build skipped (R1)."
-          fi
-      - if: steps.changed.outputs.run == 'true'
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-      - if: steps.changed.outputs.run == 'true'
-        uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
-      # No --push and no --load: the build proves both architectures compile; nothing is published.
-      - name: Build ${{ matrix.context }} for amd64 and arm64
-        if: steps.changed.outputs.run == 'true'
-        run: docker buildx build --platform linux/amd64,linux/arm64 "${{ matrix.context }}"
-
-  # req: B6-R01
-  # The production overlay on https://localhost: Caddy's internal CA, trusted by curl through its
-  # copied root certificate (tools/prod_smoke.sh). Trivy scans the Caddy image like our own.
-  prod-overlay:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      ND_IMAGE_TAG: ${{ github.sha }}
-      ND_GIT_SHA: ${{ github.sha }}
-      # Trivy 0.76.1
-      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Scan the Caddy image (Trivy, fixable HIGH and CRITICAL fail)
-        run: |
-          image="$(grep -o 'caddy:[^ ]*@sha256:[0-9a-f]*' infra/docker-compose.prod.yml)"
-          docker pull "$image"
-          docker save "$image" -o "$RUNNER_TEMP/caddy.tar"
-          docker run --rm -v "$RUNNER_TEMP:/scan:ro" \
-            -v "$PWD/infra/caddy/.trivyignore:/.trivyignore:ro" "$TRIVY_IMAGE" image \
-            --ignorefile /.trivyignore --input /scan/caddy.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
-      - name: Build the images the overlay uses
-        run: |
-          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
-          docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
-          # The overlay's build arg points the web app at https://localhost/realms/...
-          docker build --build-arg VITE_OIDC_AUTHORITY=https://localhost/realms/nautical-deliverance \
-            -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
-      - name: Prod overlay over local HTTPS
-        env:
-          CLEANUP: "1"
-          NO_BUILD: "1"
-        run: bash tools/prod_smoke.sh
-      - name: Stack logs on failure
-        if: failure()
-        run: docker compose -p nd-prod-smoke logs --no-color
-
-  # req: B6-R05
-  # tools/pilot_user.py against a real Keycloak (pilot realm) started by the test itself.
-  pilot-user:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
-        with:
-          version: ${{ env.UV_VERSION }}
-          enable-cache: true
-          cache-dependency-glob: engine/uv.lock
-      - run: uv sync --locked --project engine
-      - name: Pilot user script against Keycloak
-        env:
-          ND_KC_TESTS: "1"
-          ND_KC_REQUIRED: "1"
-        run: uv run --locked --project engine pytest tools/test_pilot_user.py -v -rs
-
-  # req: B6-R06
-  # Backup -> wipe -> restore against SeaweedFS as the S3 stand-in (tools/test_backup_restore.sh). The
-  # backup image is scanned like our own; the stand-in and aws-cli are Apache-2.0, pinned by digest (R8).
-  backup-restore:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      ND_IMAGE_TAG: ${{ github.sha }}
-      ND_GIT_SHA: ${{ github.sha }}
-      # Trivy 0.76.1
-      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Build the images the test uses
-        run: |
-          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
-          docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
-          docker build -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
-          docker build -t "nautical-deliverance/backup:$ND_IMAGE_TAG" infra/backup
-      - name: Scan the backup image (Trivy, fixable HIGH and CRITICAL fail)
-        run: |
-          docker save "nautical-deliverance/backup:$ND_IMAGE_TAG" -o "$RUNNER_TEMP/backup.tar"
-          docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image \
-            --input /scan/backup.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
-      - name: Backup, wipe, restore, smoke
-        env:
-          NO_BUILD: "1"
-        run: bash tools/test_backup_restore.sh
-
   # req: B6-R07
   # shellcheck (warnings and errors) over every script and actionlint over the workflows. Both images
   # are pinned by digest (shellcheck v0.10.0, actionlint 1.7.7). actionlint also runs shellcheck on
@@ -417,10 +251,13 @@ jobs:
           persist-credentials: false
       - name: shellcheck
         run: |
-          git ls-files '*.sh' | xargs docker run --rm -v "$PWD:/mnt" -w /mnt             koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb             -x --severity=warning
+          git ls-files '*.sh' | xargs docker run --rm -v "$PWD:/mnt" -w /mnt \
+            koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
+            -x --severity=warning
       - name: actionlint
         run: |
-          docker run --rm -v "$PWD:/mnt" -w /mnt             rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+          docker run --rm -v "$PWD:/mnt" -w /mnt \
+            rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
 
   # req: S0-R16
   readme:
@@ -439,10 +276,10 @@ jobs:
         run: docker compose -f infra/docker-compose.yml config --quiet
 
   # req: S0-R14
-  # multiarch is in needs: otherwise the gate could run before the slow QEMU build and report a
-  # wall time that leaves it out. A skipped multiarch run is a fast green job.
+  # The gate covers the fast jobs that run on every push and PR. The heavy jobs (arm64 builds, E2E,
+  # backup/restore, prod overlay, Keycloak) live in heavy.yml with their own duration note.
   ci-duration:
-    needs: [engine, web, visual, e2e, traceability, security, smoke, multiarch, prod-overlay, pilot-user, backup-restore, lint-scripts, readme]
+    needs: [engine, web, visual, traceability, security, smoke, lint-scripts, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

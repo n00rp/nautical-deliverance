@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = ROOT / "infra" / "postgis" / "Dockerfile"
 COMPOSE = ROOT / "infra" / "docker-compose.yml"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
+HEAVY = ROOT / ".github" / "workflows" / "heavy.yml"
 
 
 @pytest.mark.req("B6-R02")
@@ -47,15 +48,42 @@ def test_gosu_is_replaced_by_setpriv_wrapper_in_its_own_layer() -> None:
 
 
 @pytest.mark.req("B6-R02")
-def test_multiarch_job_trigger_paths_and_platforms() -> None:
-    ci = CI.read_text(encoding="utf-8")
-    job = ci.split("\n  multiarch:\n", 1)[1].split("\n  # req: S0-R16", 1)[0]
-    assert '"$EVENT" = push' in job
-    assert "(^|/)Dockerfile|^infra/" in job
+def test_multiarch_job_lives_in_the_heavy_workflow_with_pinned_emulation() -> None:
+    heavy = HEAVY.read_text(encoding="utf-8")
+    job = heavy.split("\n  multiarch:\n", 1)[1].split("\n  # req:", 1)[0]
     assert "context: [infra/postgis, infra/backup, engine, web]" in job
     assert "--platform linux/amd64,linux/arm64" in job
     assert "--push" not in job.split("docker buildx build", 1)[1]
-    assert "multiarch" in ci.split("  ci-duration:", 1)[1]
+    # I9: the privileged binfmt image and BuildKit are pinned by digest, never :latest.
+    assert re.search(r"image: tonistiigi/binfmt@sha256:[0-9a-f]{64}", job)
+    assert re.search(r"image=moby/buildkit@sha256:[0-9a-f]{64}", job)
+    assert "multiarch" not in CI.read_text(encoding="utf-8")
+
+
+@pytest.mark.req("B6-R02")
+def test_web_build_stage_runs_on_the_build_host() -> None:
+    dockerfile = (ROOT / "web" / "Dockerfile").read_text(encoding="utf-8")
+    assert re.search(r"^FROM --platform=\$BUILDPLATFORM node:\S+ AS build$", dockerfile, re.MULTILINE)
+
+
+@pytest.mark.req("B6-R02")
+def test_heavy_workflow_triggers_and_duration_note() -> None:
+    heavy = HEAVY.read_text(encoding="utf-8")
+    head = heavy.split("\njobs:\n", 1)[0]
+    for trigger in ("schedule:", "workflow_dispatch:", "push:", "pull_request:"):
+        assert trigger in head
+    for path in ("infra/**", "**/Dockerfile", "web/e2e/**", "tools/*backup*", "tools/*smoke*", "tools/pilot_*"):
+        assert head.count(f'"{path}"') == 2, path  # push and pull_request
+    jobs = {"e2e", "multiarch", "prod-overlay", "pilot-user", "backup-restore"}
+    ci = CI.read_text(encoding="utf-8")
+    for name in jobs:
+        assert f"\n  {name}:\n" in heavy, name
+        assert f"\n  {name}:\n" not in ci, name
+    duration = heavy.split("  heavy-duration:", 1)[1]
+    assert all(name in duration.split("steps:", 1)[0] for name in jobs)
+    assert "2700" in duration
+    assert "needs: [engine, web, visual, traceability, security, smoke, lint-scripts, readme]" in ci
+
 
 
 @pytest.mark.req("B6-R02")
