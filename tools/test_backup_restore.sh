@@ -164,8 +164,8 @@ oks_after="$(ok_count)"
 
 echo "== 11. the runbook restore drill (tools/restore_drill.sh) into a throw-away database"
 # The same command the owner runs (runbook section 16): own project and database, drill compose file.
-# The S3 stand-in is joined to the drill network as "s3", as the real endpoint is reachable from there.
-if drill="$(ND_DRILL_IDENTITY="$WORK/identity.txt" ND_DRILL_RECIPIENTS="$WORK/recipients.txt" ND_DRILL_IMAGE="$IMG" ND_DRILL_S3_CONTAINER="$("${COMPOSE[@]}" ps -q s3)" \
+# The drill database joins the stack's network so that the S3 stand-in (http://s3:8333) is reachable.
+if drill="$(ND_DRILL_IDENTITY="$WORK/identity.txt" ND_DRILL_RECIPIENTS="$WORK/recipients.txt" ND_DRILL_IMAGE="$IMG" ND_DRILL_JOIN_NETWORK="$NET" \
   ND_BACKUP_BUCKET=$BUCKET ND_BACKUP_S3_ENDPOINT=http://s3:8333 ND_BACKUP_S3_REGION=us-east-1 \
   ND_BACKUP_S3_ACCESS_KEY=ci-s3-user ND_BACKUP_S3_SECRET_KEY=ci-s3-password \
   bash "$ROOT/tools/restore_drill.sh" "$key" 2>&1)"; then

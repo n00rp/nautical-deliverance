@@ -5,8 +5,8 @@
 #   ND_BACKUP_S3_REGION=... ND_BACKUP_S3_ACCESS_KEY=... ND_BACKUP_S3_SECRET_KEY=... \
 #     bash tools/restore_drill.sh <BACKUP_KEY>
 # Optional (CI): ND_DRILL_IMAGE (a built backup image, else built here), ND_DRILL_RECIPIENTS (a
-# recipients file instead of the one baked into the image), ND_DRILL_S3_CONTAINER (a container to
-# join to the drill network under the name "s3").
+# recipients file instead of the one baked into the image), ND_DRILL_JOIN_NETWORK (a docker network
+# to attach the drill database to, as "drill-db", so the restore reaches an S3 server on it).
 # Needs Docker and Git Bash or WSL. Exits non-zero unless the restore reports RESTORED.
 set -euo pipefail
 
@@ -46,13 +46,17 @@ hostwork="$(cygpath -m "$work" 2>/dev/null || echo "$work")" # a path docker can
 
 "${COMPOSE[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true # a leftover of an aborted drill
 "${COMPOSE[@]}" up -d --wait db
-if [[ -n "${ND_DRILL_S3_CONTAINER:-}" ]]; then
-  docker network connect --alias s3 "${PROJECT}_default" "$ND_DRILL_S3_CONTAINER"
+net="${PROJECT}_default"
+pghost=db
+if [[ -n "${ND_DRILL_JOIN_NETWORK:-}" ]]; then
+  docker network connect --alias drill-db "$ND_DRILL_JOIN_NETWORK" "$("${COMPOSE[@]}" ps -q db)"
+  net="$ND_DRILL_JOIN_NETWORK"
+  pghost=drill-db
 fi
 
 # MSYS_NO_PATHCONV: Git Bash must not rewrite /work/... in the docker arguments.
-MSYS_NO_PATHCONV=1 docker run --rm --network "${PROJECT}_default" -v "$hostwork:/work:ro" \
-  "${recipients[@]}" -e PGHOST=db -e PGUSER=postgres -e PGPASSWORD=dev-superuser-password \
+MSYS_NO_PATHCONV=1 docker run --rm --network "$net" -v "$hostwork:/work:ro" \
+  "${recipients[@]}" -e PGHOST="$pghost" -e PGUSER=postgres -e PGPASSWORD=dev-superuser-password \
   -e ND_BACKUP_BUCKET -e ND_BACKUP_S3_ENDPOINT -e ND_BACKUP_S3_REGION \
   -e ND_BACKUP_S3_ACCESS_KEY -e ND_BACKUP_S3_SECRET_KEY \
   "$img" restore.sh --identity /work/identity.txt "$key"
