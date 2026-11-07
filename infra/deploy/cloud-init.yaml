@@ -33,7 +33,8 @@ write_files:
       set -euo pipefail
       install -m 0755 -d /etc/apt/keyrings
       curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-      gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -q 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+      fingerprints="$(gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc)" # not a pipe into grep -q: SIGPIPE under pipefail
+      grep -q 9DC858229FC7DD38854AE2D88D81803C0EBFCD88 <<<"$fingerprints"
       echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
       apt-get update
       apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
@@ -51,7 +52,7 @@ write_files:
       iptables -C INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
       iptables -C INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT
       netfilter-persistent save
-  # Run once by the owner as `deploy` after copying the read-only deploy key to ~/.ssh/id_repo.
+  # Run once by the owner as `deploy` (sudo -iu deploy) after copying the read-only deploy key to ~/.ssh/id_repo.
   - path: /usr/local/bin/nd-clone
     permissions: "0755"
     content: |
@@ -83,7 +84,10 @@ write_files:
       APT::Periodic::Unattended-Upgrade "1";
 
 runcmd:
-  - [bash, /usr/local/sbin/nd-install-docker]
+  # Ports first: the saved rules must not contain the chains Docker adds when it starts.
   - [bash, /usr/local/sbin/nd-open-ports]
+  - [bash, /usr/local/sbin/nd-install-docker]
   - [install, -d, -m, "700", /etc/nd]
+  # deploy.sh records the running commit here (refuses to go back without --allow-rollback).
+  - [install, -d, -o, deploy, -g, deploy, -m, "755", /srv/nd]
   - [systemctl, restart, ssh]

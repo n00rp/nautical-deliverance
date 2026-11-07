@@ -72,12 +72,33 @@ def test_deploy_script_pins_the_sha_and_builds_natively() -> None:
 
 
 @pytest.mark.req("B6-R07")
-def test_backup_staleness_check_is_wired_and_skipped_on_first_deploy() -> None:
+def test_backup_check_runs_on_every_deploy_and_tolerates_only_a_missing_first_backup() -> None:
     wf = _text(WORKFLOW)
-    assert "check_fresh.sh" in wf
-    assert "first_deploy" in wf
+    assert "first_deploy" not in wf
+    assert "--check-backup" in wf
     assert (INFRA / "backup" / "check_fresh.sh").is_file()
     assert "26" in _text(INFRA / "backup" / "check_fresh.sh")
+    script = _text(INFRA / "backup" / "check_fresh.sh")
+    assert "no backup .ok marker" in script  # M-2: warns and passes before the first backup
+    assert 'die "newest backup is' in script  # but a stale newest marker still fails
+
+
+@pytest.mark.req("B6-R07")
+def test_deploy_gate_applies_to_the_automatic_path_only_and_dispatch_needs_main_and_green_ci() -> None:
+    wf = _text(WORKFLOW)
+    condition = re.search(r"\n    if: >-\n((?:      .*\n)+)", wf)
+    assert condition, "the deploy job needs an if"
+    manual, automatic = " ".join(condition.group(1).split()).split(" || ", 1)
+    assert "workflow_dispatch" in manual
+    assert "github.ref == 'refs/heads/main'" in manual
+    assert "ND_DEPLOY_ENABLED" not in manual  # I1: the first manual deploy happens before the switch
+    assert "vars.ND_DEPLOY_ENABLED == 'true'" in automatic
+    assert "workflow_run.conclusion == 'success'" in automatic
+    # I5: a manual deploy needs a green push CI run for that exact commit.
+    assert re.search(r"actions:\s*read", wf)
+    assert "head_sha=$SHA&event=push&status=success" in wf
+    assert "allow_rollback" in wf
+    assert "--allow-rollback" in wf
 
 
 @pytest.mark.req("B6-R09")
@@ -147,6 +168,23 @@ def test_cloud_init_is_key_only_and_opens_three_ports() -> None:
     assert "duckdns.org/update" in ci
     assert "docker" in ci
     assert "deploy" in ci
+    # M-1: the saved iptables rules must be taken before Docker adds its chains.
+    runcmd = ci.split("runcmd:", 1)[1]
+    assert runcmd.index("nd-open-ports") < runcmd.index("nd-install-docker")
+    assert "/srv/nd" in ci  # where deploy.sh records the deployed commit
+
+
+@pytest.mark.req("B6-R09")
+def test_runbook_secrets_are_url_safe_and_commands_use_the_right_user() -> None:
+    book = _runbook_words()
+    assert "-base64" not in book  # C2: '/' and '+' in a password break database URLs
+    assert "openssl rand -hex 24" in book
+    assert "MSYS_NO_PATHCONV=1" in book  # I4: Git Bash rewrites container paths otherwise
+    # I2: `deploy` has no sudo; root steps run as ubuntu, and deploy is reached with sudo -iu deploy.
+    assert not re.search(r"^\s*deploy\$ sudo ", book, re.MULTILINE)
+    assert "sudo -iu deploy" in book
+    assert "--allow-rollback" in book and "allow_rollback" in book
+    assert "--force" in book  # I3: restoring onto a server that already holds data
 
 
 GUIDE_HEADINGS = [
