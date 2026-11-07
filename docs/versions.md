@@ -48,6 +48,19 @@ B6 ruling R2 (2026-11-06): the PostGIS image base `postgres:17.11-trixie` (pushe
 
 B6 ruling R5 (2026-11-06): the Caddy edge image `caddy:2.11.9-alpine` (pushed 2026-11-05, under 14 days; digest `0bbb055b...`) is kept, extending the R2 security exception. The older tags 2.11.6 and 2.11.7 carry 10-13 fixable HIGH/CRITICAL findings (Go stdlib, x/net, go-jose, Alpine libs); 2.11.9 has one left, CVE-2026-78661 (golang.org/x/net v0.60.0, HTTP/2 DoS, fixed in 0.62.0, not yet shipped in a Caddy image). It is ignored in `infra/caddy/.trivyignore` with `exp:2026-12-06` (30 days; CI fails again after that), and the Caddyfile sets `servers { protocols h1 }` so the HTTP/2 path is not exposed. Remove both when a Caddy with x/net >= 0.62.0 ships.
 
+B6 ruling R10 (2026-11-07, Task 7 minor M-5): the web image runs `apk upgrade --no-cache zlib musl musl-utils` on top of the pinned `nginx-unprivileged` digest, under the same security exception: zlib CVE-2026-85091 (fixed in 1.3.2-r1) and musl CVE-2026-107891 (fixed in 1.2.6-r3) are fixed in Alpine but not yet in the pinned base. The upgrade pulls the newest Alpine 3.24 packages at build time. Drop the line from `web/Dockerfile` once the base image ships zlib >= 1.3.2-r1 and musl >= 1.2.6-r3.
+
+## GPL tools and system components (D-080, owner-confirmed 2026-11-07)
+
+D-079 keeps GPL/AGPL out of our code's library dependencies (pip, pnpm; checked by `tools/check_licenses.py`). D-080 allows unmodified tools and system components that we only run, never link into our code or distribute, when they are recorded here.
+
+| Item | Licence | Where it runs | Notes |
+|---|---|---|---|
+| ShellCheck (`koalaman/shellcheck`, v0.10.0, digest-pinned; also inside the actionlint image) | GPL-3.0 | CI only (`lint-scripts`) | Unmodified. |
+| QEMU user-mode emulation via `tonistiigi/binfmt` (digest-pinned) | GPL-2.0 | CI only (`multiarch`, heavy workflow) | Unmodified; registers binfmt handlers for arm64 builds. |
+| PostGIS 3.5.2 (Debian package in the `infra/postgis` image) | GPL-2.0-or-later | Pilot and dev database server | Unmodified, a separate server process. Also the PROJ, GEOS, GDAL and SFCGAL libraries from Debian. |
+| Debian and Alpine OS packages in our images | various (GPL included) | Container base layers | Unmodified distribution packages. |
+
 ## B6 backup tooling (Task 5, B6-R06)
 
 | Item | Pinned version | Published | Licence | Notes |
