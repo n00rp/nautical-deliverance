@@ -15,7 +15,7 @@ FROM nginxinc/nginx-unprivileged:1.31.7-alpine@sha256:b5047b9b76845eac124358373c
 # Static serving needs none of the image-filter/curl stack; removing it drops its vulnerable libs.
 USER root
 RUN apk del --no-cache curl libcurl freetype fontconfig brotli-libs libexpat \
- && apk upgrade --no-cache zlib  # CVE-2026-85091 fixed in 1.3.2-r1; drop once the base image ships it
+ && apk upgrade --no-cache zlib musl musl-utils  # zlib CVE-2026-85091 (1.3.2-r1), musl CVE-2026-107891 (1.2.6-r3); drop once the base image ships them
 USER 101
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html

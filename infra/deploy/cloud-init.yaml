@@ -1,0 +1,89 @@
+#cloud-config
+# Oracle A1.Flex (arm64), Ubuntu 24.04 (B6-D13). Paste this as the instance's cloud-init user data.
+# Holds NO secret: the repo deploy key and the DuckDNS token are put on the server by hand
+# (docs/deploy/oracle-runbook.md). Replace the ssh-ed25519 line below with the public key whose
+# private half is the GitHub secret ND_DEPLOY_SSH_KEY.
+package_update: true
+packages: [ca-certificates, curl, git, iptables-persistent, unattended-upgrades]
+
+# The docker group must exist before the deploy user joins it.
+groups: [docker]
+
+users:
+  - default
+  - name: deploy
+    shell: /bin/bash
+    lock_passwd: true
+    groups: [docker]
+    ssh_authorized_keys:
+      - ssh-ed25519 REPLACE_WITH_THE_DEPLOY_PUBLIC_KEY nd-deploy
+
+write_files:
+  # Key-only SSH, no root login.
+  - path: /etc/ssh/sshd_config.d/10-nd.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+  # Official Docker apt repository (key fingerprint 9DC8 5822 9FC7 DD38 854A E2D8 8D81 803C 0EBF CD88).
+  - path: /usr/local/sbin/nd-install-docker
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+      gpg --show-keys --with-colons /etc/apt/keyrings/docker.asc | grep -q 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+      apt-get update
+      apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      # Pinned to what was installed: upgrades are a deliberate runbook step, never automatic.
+      apt-mark hold docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+      systemctl enable --now docker
+  # Oracle's Ubuntu images ship iptables rules that reject everything but SSH (the cloud security
+  # list is a second, separate layer). Open 22, 80 and 443 only, ahead of the REJECT rule.
+  - path: /usr/local/sbin/nd-open-ports
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      iptables -C INPUT -p tcp --dport 22 -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport 22 -m conntrack --ctstate NEW -j ACCEPT
+      iptables -C INPUT -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport 80 -m conntrack --ctstate NEW -j ACCEPT
+      iptables -C INPUT -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT 2>/dev/null || iptables -I INPUT 1 -p tcp --dport 443 -m conntrack --ctstate NEW -j ACCEPT
+      netfilter-persistent save
+  # Run once by the owner as `deploy` after copying the read-only deploy key to ~/.ssh/id_repo.
+  - path: /usr/local/bin/nd-clone
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      repo="${1:?usage: nd-clone git@github.com:<owner>/<repo>.git}"
+      install -d -m 700 ~/.ssh
+      # GitHub's published ed25519 host key; the fingerprint is checked, never trusted on first use.
+      echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > ~/.ssh/known_hosts_github
+      ssh-keygen -lf ~/.ssh/known_hosts_github | grep -q "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
+      export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/id_repo -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts_github"
+      git clone "$repo" ~/nd
+      git -C ~/nd config core.sshCommand "$GIT_SSH_COMMAND"
+  # DuckDNS keeps the name pointed at this VM. The token is in /etc/nd/duckdns.env (mode 600, by hand):
+  #   DUCKDNS_DOMAIN=<subdomain without .duckdns.org>   DUCKDNS_TOKEN=<token>
+  - path: /usr/local/sbin/nd-duckdns
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      . /etc/nd/duckdns.env
+      curl -fsS --max-time 30 "https://www.duckdns.org/update?domains=$DUCKDNS_DOMAIN&token=$DUCKDNS_TOKEN&ip=" | grep -q '^OK'
+  - path: /etc/cron.d/nd-duckdns
+    content: |
+      */5 * * * * root test -r /etc/nd/duckdns.env && /usr/local/sbin/nd-duckdns
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+runcmd:
+  - [bash, /usr/local/sbin/nd-install-docker]
+  - [bash, /usr/local/sbin/nd-open-ports]
+  - [install, -d, -m, "700", /etc/nd]
+  - [systemctl, restart, ssh]

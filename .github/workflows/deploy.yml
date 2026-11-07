@@ -1,0 +1,92 @@
+# Pilot deploy (B6-D3, B6-R07). Runs only after CI finished green for a push to main, or when the
+# owner dispatches a known-good commit by hand. Secrets come from GitHub secrets only.
+# req: B6-R07
+name: Deploy pilot
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full 40-character commit SHA to deploy (a commit whose CI was green)"
+        required: true
+        type: string
+      first_deploy:
+        description: "First deploy ever (no backup exists yet): skip the backup freshness check"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# One deploy at a time; a running deploy is never cancelled halfway.
+concurrency:
+  group: deploy-pilot
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Review Focus #1: never a commit whose CI failed, and never a CI run for a pull request.
+    # ND_DEPLOY_ENABLED (a repository variable) stays unset until the owner has finished the runbook.
+    if: >-
+      vars.ND_DEPLOY_ENABLED == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha || inputs.sha }}
+      ND_DEPLOY_HOST: ${{ secrets.ND_DEPLOY_HOST }}
+      ND_PUBLIC_HOST: ${{ secrets.ND_PUBLIC_HOST }}
+    steps:
+      - name: The commit is a full SHA
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "not a 40-character SHA: $SHA"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+      - name: SSH key and pinned host key
+        env:
+          SSH_KEY: ${{ secrets.ND_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.ND_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host pilot\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n  StrictHostKeyChecking=yes\n' \
+            "$ND_DEPLOY_HOST" > ~/.ssh/config
+      - name: Deploy on the server
+        run: ssh -o StrictHostKeyChecking=yes pilot "nd/infra/deploy/deploy.sh $SHA"
+      - name: Wait for health on the new commit
+        run: |
+          for _ in $(seq 1 60); do
+            v="$(curl -fsS --max-time 10 "https://$ND_PUBLIC_HOST/api/v1/health" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' || true)"
+            [ "$v" = "$SHA" ] && { echo "healthy on $v"; exit 0; }
+            sleep 5
+          done
+          echo "health did not report $SHA in 5 minutes (last: '$v')"; exit 1
+      - name: Smoke test the pilot
+        env:
+          ND_SMOKE_BASE_URL: https://${{ secrets.ND_PUBLIC_HOST }}
+          ND_SMOKE_SHA: ${{ env.SHA }}
+        run: bash tools/pilot_smoke.sh
+      # infra/backup/check_fresh.sh: the newest .ok marker must be under 26 h old (the nightly job runs at 02:15 UTC). It reads the
+      # bucket from inside the backup container, so no bucket credentials live in GitHub. A first
+      # deploy has no backup yet, so the owner skips it with first_deploy.
+      - name: Backup is fresh
+        if: ${{ !inputs.first_deploy }}
+        run: ssh -o StrictHostKeyChecking=yes pilot "nd/infra/deploy/deploy.sh --check-backup"
+      - name: E2E purchase flow against the pilot
+        env:
+          ND_E2E_BASE_URL: https://${{ secrets.ND_PUBLIC_HOST }}
+          ND_E2E_USER: ${{ secrets.ND_E2E_USER }}
+          ND_E2E_PASSWORD: ${{ secrets.ND_E2E_PASSWORD }}
+          ND_E2E_OPERATOR_USER: ${{ secrets.ND_E2E_OPERATOR_USER }}
+          ND_E2E_OPERATOR_PASSWORD: ${{ secrets.ND_E2E_OPERATOR_PASSWORD }}
+        run: bash web/scripts/e2e-docker.sh

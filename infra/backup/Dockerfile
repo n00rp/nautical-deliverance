@@ -51,7 +51,7 @@ FROM postgres:17.11-trixie@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca9
 RUN rm -f /usr/local/bin/gosu
 COPY --from=gobuild /out/age /out/age-keygen /out/rclone /usr/local/bin/
 COPY --from=fetch /usr/local/bin/supercronic /usr/local/bin/
-COPY --chmod=0755 common.sh backup.sh restore.sh /usr/local/bin/
+COPY --chmod=0755 common.sh backup.sh restore.sh check_fresh.sh /usr/local/bin/
 COPY crontab age-recipients.txt /etc/nd-backup/
 ENV TZ=UTC
 USER postgres

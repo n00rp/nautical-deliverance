@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # req: B6-R06
-# Backup -> wipe -> restore, end to end, against the S3 stand-in as the S3 stand-in (B6-D4, D11).
+# Backup -> wipe -> restore, end to end, against the S3 stand-in (B6-D4, D11).
 # Stack: dev compose + infra/docker-compose.backup-test.yml (Keycloak on Postgres, the S3 stand-in).
 # Uses the images present locally (CI builds them first, tagged via ND_IMAGE_TAG; set NO_BUILD=1).
 # Needs Git Bash on Windows. Exits non-zero listing failures; tears everything down on exit.
@@ -40,7 +40,9 @@ runb() {
     -v "$HOSTWORK:/work" -e ND_AGE_RECIPIENTS=/work/recipients.txt "$IMG" "$@"
 }
 aws() {
-  MSYS_NO_PATHCONV=1 docker run --rm --network "$NET" -e AWS_ACCESS_KEY_ID=ci-s3-user     -e AWS_SECRET_ACCESS_KEY=ci-s3-password -e AWS_DEFAULT_REGION=us-east-1     "$AWS_IMG" --endpoint-url http://s3:8333 "$@"
+  MSYS_NO_PATHCONV=1 docker run --rm --network "$NET" -e AWS_ACCESS_KEY_ID=ci-s3-user \
+    -e AWS_SECRET_ACCESS_KEY=ci-s3-password -e AWS_DEFAULT_REGION=us-east-1 \
+    "$AWS_IMG" --endpoint-url http://s3:8333 "$@"
 }
 ok_count() { # number of .ok objects in the bucket
   aws s3api list-objects-v2 --bucket "$BUCKET" --output json |
@@ -82,7 +84,8 @@ before_rls="$(rls_state)"
 
 echo "== 3. bucket with a 14-day lifecycle rule"
 aws s3api create-bucket --bucket "$BUCKET" >/dev/null
-aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" --lifecycle-configuration   '{"Rules":[{"ID":"expire-14-days","Status":"Enabled","Filter":{"Prefix":""},"Expiration":{"Days":14}}]}'
+aws s3api put-bucket-lifecycle-configuration --bucket "$BUCKET" --lifecycle-configuration \
+  '{"Rules":[{"ID":"expire-14-days","Status":"Enabled","Filter":{"Prefix":""},"Expiration":{"Days":14}}]}'
 lifecycle_days() { aws s3api get-bucket-lifecycle-configuration --bucket "$BUCKET" |
   json "[r['Expiration']['Days'] for r in d['Rules'] if r['Status']=='Enabled']"; }
 [[ "$(lifecycle_days)" == "[14]" ]] && ok "lifecycle rule: expire after 14 days" || fail "lifecycle rule missing or not 14 days"
@@ -103,6 +106,9 @@ key="$(echo "$out" | sed -n 's/^BACKUP_KEY=//p' | tail -1)"
 aws s3api head-object --bucket "$BUCKET" --key "$key.ok" >/dev/null 2>&1 && ok ".ok marker exists" || fail ".ok marker missing"
 header="$(aws s3 cp "s3://$BUCKET/$key" - | head -c 30 || true)" # head closes the pipe early
 [[ "$header" == age-encryption.org/* ]] && ok "object is age-encrypted" || fail "object is not age output"
+runb check_fresh.sh >/dev/null 2>&1 && ok "check_fresh.sh: the new backup counts as fresh" || fail "check_fresh.sh rejects a fresh backup"
+if runb env ND_BACKUP_MAX_AGE_HOURS=0 check_fresh.sh >/dev/null 2>&1; then fail "check_fresh.sh accepted a backup older than the limit"
+else ok "check_fresh.sh fails when the newest backup is older than the limit"; fi
 
 echo "== 6. stop the stack and wipe its volumes; start an empty database"
 "${COMPOSE[@]}" rm -sf -v engine web keycloak db >/dev/null

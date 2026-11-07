@@ -17,7 +17,7 @@ env:
   UV_LOCKED: "1"
 
 jobs:
-  # req: S0-R06 S0-R07 S0-R08 S0-R15 B1-R16 B2-R15 B3-R15 B4-R14 B5-R13
+  # req: S0-R06 S0-R07 S0-R08 S0-R15 B1-R16 B2-R15 B3-R15 B4-R14 B5-R13 B6-R11
   engine:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -404,6 +404,24 @@ jobs:
           NO_BUILD: "1"
         run: bash tools/test_backup_restore.sh
 
+  # req: B6-R07
+  # shellcheck (warnings and errors) over every script and actionlint over the workflows. Both images
+  # are pinned by digest (shellcheck v0.10.0, actionlint 1.7.7). actionlint also runs shellcheck on
+  # the `run:` blocks.
+  lint-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: |
+          git ls-files '*.sh' | xargs docker run --rm -v "$PWD:/mnt" -w /mnt             koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb             -x --severity=warning
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt             rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+
   # req: S0-R16
   readme:
     runs-on: ubuntu-latest
@@ -424,7 +442,7 @@ jobs:
   # multiarch is in needs: otherwise the gate could run before the slow QEMU build and report a
   # wall time that leaves it out. A skipped multiarch run is a fast green job.
   ci-duration:
-    needs: [engine, web, visual, e2e, traceability, security, smoke, multiarch, prod-overlay, backup-restore, readme]
+    needs: [engine, web, visual, e2e, traceability, security, smoke, multiarch, prod-overlay, pilot-user, backup-restore, lint-scripts, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
