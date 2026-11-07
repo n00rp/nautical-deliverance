@@ -30,13 +30,19 @@ def collect_refs(root: Path) -> dict[str, set[str]]:
     refs: dict[str, set[str]] = defaultdict(set)
     sources = [
         (_files(root, "engine/tests/**/*.py") + _files(root, "tools/test_*.py"), PY_REF),
-        (_files(root, "web/src/**/*.test.ts") + _files(root, "web/src/**/*.test.tsx"), TS_REF),
+        (
+            _files(root, "web/src/**/*.test.ts")
+            + _files(root, "web/src/**/*.test.tsx")
+            + _files(root, "web/e2e/**/*.spec.ts"),
+            TS_REF,
+        ),
     ]
     for paths, rx in sources:
         for path in paths:
             for found in rx.findall(path.read_text(encoding="utf-8")):
                 refs[found].add(path.relative_to(root).as_posix())
-    for path in _files(root, ".github/workflows/*.yml"):
+    # CI workflows and the test scripts (`# req: ...` comment) that run in them.
+    for path in _files(root, ".github/workflows/*.yml") + _files(root, "tools/test_*.sh"):
         for line in YAML_REF.findall(path.read_text(encoding="utf-8")):
             for found in line.split():
                 refs[found].add(path.relative_to(root).as_posix())
