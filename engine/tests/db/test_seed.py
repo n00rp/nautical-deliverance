@@ -15,7 +15,7 @@ def test_seed_is_idempotent(owner_engine: Engine, monkeypatch: pytest.MonkeyPatc
     url = owner_engine.url.render_as_string(hide_password=False)
     monkeypatch.setenv("ND_MIGRATION_DATABASE_URL", url)
     seed.main()
-    seed.seed_dev_orgs(owner_engine)  # second run must not fail
+    seed.seed_orgs(owner_engine)  # second run must not fail
     for org_id, name in seed.DEV_ORGS.items():
         with owner_engine.begin() as conn:
             conn.execute(

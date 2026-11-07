@@ -1,0 +1,66 @@
+# Production edge (B6-D7): the only public service. For a real hostname Caddy gets a Let's Encrypt
+# certificate by itself; for `localhost` (local and CI checks) it uses its own internal CA.
+{
+	# HTTP/2 DoS in Caddy 2.11.9's bundled golang.org/x/net (CVE-2026-78661, see .trivyignore).
+	# Remove this block once a Caddy with x/net >= 0.62.0 ships (same condition as the ignore entry).
+	servers {
+		protocols h1
+	}
+}
+
+# CSP and X-Frame-Options only on the app (web and API). Keycloak's login pages need inline
+# scripts and styles, so /realms/* and /resources/* keep Keycloak's own CSP and framing rules.
+(app_headers) {
+	header {
+		>X-Frame-Options "DENY"
+		# Keycloak is on this same host, so 'self' covers the OIDC endpoints.
+		>Content-Security-Policy "default-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'"
+	}
+}
+
+{$ND_PUBLIC_HOST} {
+	encode zstd gzip
+
+	# `>` defers the write so these replace what the upstreams (nginx) set.
+	header {
+		>Strict-Transport-Security "max-age=31536000"
+		>X-Content-Type-Options "nosniff"
+		>Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# The Keycloak admin console and the master realm are reachable by SSH tunnel only (Keycloak
+	# publishes 127.0.0.1:8081 on the host; KC_HOSTNAME_ADMIN points the console there).
+	handle /admin* {
+		respond 404
+	}
+	handle /realms/master* {
+		respond 404
+	}
+
+	handle /api/* {
+		import app_headers
+		reverse_proxy engine:8000
+	}
+
+	# Client-supplied forwarding headers Caddy does not replace itself are dropped.
+	handle /realms/* {
+		reverse_proxy keycloak:8080 {
+			header_up -X-Forwarded-Port
+			header_up -X-Forwarded-Prefix
+			header_up -Forwarded
+		}
+	}
+	handle /resources/* {
+		reverse_proxy keycloak:8080 {
+			header_up -X-Forwarded-Port
+			header_up -X-Forwarded-Prefix
+			header_up -Forwarded
+		}
+	}
+
+	handle {
+		import app_headers
+		reverse_proxy web:8080
+	}
+}

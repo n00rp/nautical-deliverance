@@ -1,6 +1,8 @@
-"""Dev-only seed: the two demo organizations and their demo master data (B1-R10, D-066).
+"""Demo seed and demo master data (B1-R10, D-066, B6-R04).
 
-Run as nd_owner (ND_SEED_DEV_DATA=true). Everything is idempotent (natural-key
+ND_SEED=dev seeds the two dev organizations, ND_SEED=pilot seeds Pilot Demo Shipping.
+
+Run as nd_owner (ND_SEED=dev|pilot). Everything is idempotent (natural-key
 ``ON CONFLICT DO NOTHING`` / ``WHERE NOT EXISTS``): a second run changes no row.
 
 Demo data only: ports are real public data; companies, vessels and people are invented and
@@ -45,19 +47,34 @@ DEV_ORGS = {
     uuid.UUID("22222222-2222-4222-8222-222222222222"): "Borealis Tankers",
 }
 
+ACME = uuid.UUID("11111111-1111-4111-8111-111111111111")
+BOREALIS = uuid.UUID("22222222-2222-4222-8222-222222222222")
+# The pilot organization (B6-R04). The pilot realm has no users, so the demo inquiries are owned
+# by PILOT_USERS, demo directory rows that are not in Keycloak (R3); real users arrive via /me.
+PILOT_ORGS = {uuid.UUID("33333333-3333-4333-8333-333333333333"): "Pilot Demo Shipping"}
+
+
+def _users(prefix: str, org: uuid.UUID, domain: str, people: tuple[str, ...]) -> tuple[Any, ...]:
+    """(id, org, name, e-mail, role) per person; ids are ``prefix`` x8 + a running number."""
+    return tuple(
+        (uuid.UUID(f"{prefix * 8}-0000-4000-8000-{n:012d}"), org, name, f"{role}@{domain}", role)
+        for n, (role, name) in enumerate(
+            zip(("admin", "bunker_buyer", "operator", "viewer"), people, strict=True), 1
+        )
+    )
+
+
 # Must match `id`, `org_id`, names, e-mails and roles of infra/keycloak/realm-dev.json (the id is
 # the Keycloak `sub`, so a user's first login upserts onto the seeded row).
-DEV_USERS = tuple(
-    (uuid.UUID(f"{c * 8}-0000-4000-8000-{n:012d}"), org, name, f"{role}@{dom}", role)
-    for c, org, dom, people in (
-        ("a", uuid.UUID("11111111-1111-4111-8111-111111111111"), "acme.test",
-         ("Ada Admin", "Bea Buyer", "Olle Operator", "Vera Viewer")),
-        ("b", uuid.UUID("22222222-2222-4222-8222-222222222222"), "borealis.test",
-         ("Alma Admin", "Bo Buyer", "Otto Operator", "Vide Viewer")),
-    )
-    for n, (role, name) in enumerate(
-        zip(("admin", "bunker_buyer", "operator", "viewer"), people, strict=True), 1
-    )
+DEV_USERS = (
+    *_users("a", ACME, "acme.test", ("Ada Admin", "Bea Buyer", "Olle Operator", "Vera Viewer")),
+    *_users(
+        "b", BOREALIS, "borealis.test", ("Alma Admin", "Bo Buyer", "Otto Operator", "Vide Viewer")
+    ),
+)
+PILOT_USERS = _users(
+    "c", next(iter(PILOT_ORGS)), "pilot-demo.example",
+    ("Pia Pilot (demo)", "Bruno Buyer (demo)", "Ola Operator (demo)", "Vilma Viewer (demo)"),
 )  # fmt: skip
 
 PRODUCTS = (  # name, default unit (spec §3.1, per the brief)
@@ -272,10 +289,38 @@ ORG_DATA: dict[uuid.UUID, dict[str, Any]] = {
 }
 
 
-def seed_dev_orgs(engine: Engine) -> None:
-    """Insert the demo organizations; safe to re-run."""
+def _imo(base: int) -> str:
+    """Return a synthetic IMO number: six digits plus the check digit (weights 7..2)."""
+    return f"{base}{sum(int(d) * w for d, w in zip(str(base), range(7, 1, -1), strict=True)) % 10}"
+
+
+def _pilot_data() -> dict[str, Any]:
+    """Acme's counterparties and fleet shape under the pilot's own invented names (B6-D6)."""
+    acme = ORG_DATA[ACME]
+    entities = (("PDL", "Pilot Demo Shipping Ltd"), ("PDS", "Pilot Demo Singapore Pte"))
+    codes = {old: new for (old, _), (new, _) in zip(acme["entities"], entities, strict=True)}
+    names = (
+        "Demo Aurora",
+        "Demo Meridian",
+        "Demo Polaris",
+        "Demo Horizon",
+        "Demo Tern",
+        "Demo Vega",
+    )
+    vessels = tuple(
+        (name, _imo(947300 + i), *v[2:5], codes[v[5]], v[6])
+        for i, (name, v) in enumerate(zip(names, acme["vessels"], strict=True))
+    )
+    return {**acme, "entities": entities, "vessels": vessels}
+
+
+ORG_DATA[next(iter(PILOT_ORGS))] = _pilot_data()
+
+
+def seed_orgs(engine: Engine, orgs: dict[uuid.UUID, str] = DEV_ORGS) -> None:
+    """Insert the demo organizations (the dev ones by default); safe to re-run."""
     with engine.begin() as conn:
-        for org_id, name in DEV_ORGS.items():
+        for org_id, name in orgs.items():
             # FORCE RLS binds the owner too, so scope each insert to its organization.
             conn.execute(
                 text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org_id)}
@@ -401,14 +446,12 @@ def _seed_counterparties(db: _Org, d: dict[str, Any]) -> None:
                 )
 
 
-def seed_demo_master(engine: Engine) -> None:
-    """Insert each dev organization's own demo master data; safe to re-run."""
+def seed_demo_master(engine: Engine, orgs: tuple[uuid.UUID, ...] = tuple(DEV_ORGS)) -> None:
+    """Insert each organization's own demo master data; safe to re-run."""
     with engine.begin() as conn:
-        for org, data in ORG_DATA.items():
-            conn.execute(
-                text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)}
-            )
-            db = _Org(conn, org)
+        for org in orgs:
+            data = ORG_DATA[org]
+            db = _scope(conn, org)
             _seed_reference(db, data)
             _seed_vessels(db, data)
             _seed_counterparties(db, data)
@@ -419,11 +462,13 @@ def _scope(conn: Connection, org: uuid.UUID) -> _Org:
     return _Org(conn, org)
 
 
-def seed_demo_users(engine: Engine, now: datetime | None = None) -> None:
-    """Insert the realm users, refreshing name, e-mail and roles; safe to re-run."""
+def seed_demo_users(
+    engine: Engine, now: datetime | None = None, users: tuple[Any, ...] = DEV_USERS
+) -> None:
+    """Insert the realm (or pilot demo) users, refreshing name, e-mail, roles; safe to re-run."""
     now = now or datetime.now(UTC)
     with engine.begin() as conn:
-        for uid, org, name, email, role in DEV_USERS:
+        for uid, org, name, email, role in users:
             _scope(conn, org).put(
                 "INSERT INTO app_user (id, organization_id, last_seen_at, name, email, roles)"
                 " VALUES (:i, :o, :t, :n, :e, :r) ON CONFLICT (id) DO UPDATE"
@@ -507,18 +552,20 @@ def _seed_inquiry(  # noqa: PLR0913, PLR0917
         )  # fmt: skip
 
 
-def seed_demo_inquiries(engine: Engine, now: datetime | None = None) -> None:
+def seed_demo_inquiries(engine: Engine, now: datetime | None = None, mode: str = "dev") -> None:
     """Insert demo users, inquiries and RFQs per organization (ETAs relative to ``now``).
 
     Needs seed_demo_master first. Non-draft statuses are written directly (no transition API
     yet). Like the master seed this writes no audit entries (B1-D12); safe to re-run.
     """
     now = now or datetime.now(UTC)
-    seed_demo_users(engine, now)
+    people = PILOT_USERS if mode == "pilot" else DEV_USERS
+    seed_demo_users(engine, now, people)
     with engine.begin() as conn:
-        for org, data in ORG_DATA.items():
+        for org in dict.fromkeys(o for _i, o, *_r in people):
+            data = ORG_DATA[org]
             db = _scope(conn, org)
-            users = {role: uid for uid, o, _n, _e, role in DEV_USERS if o == org}
+            users = {role: uid for uid, o, _n, _e, role in people if o == org}
             s = Session(conn)
             for n, spec in enumerate(_INQUIRIES, 1):
                 _seed_inquiry(db, s, now, n, spec, data["vessels"], users)
@@ -685,12 +732,22 @@ def _seed_nominations(db: _Org, s: Session, now: datetime, users: dict[str, uuid
         s.flush()
 
 
+def seed(engine: Engine, mode: str | None, now: datetime | None = None) -> None:
+    """Seed ``dev`` (Acme, Borealis) or ``pilot`` (Pilot Demo Shipping); unset or empty: nothing."""
+    if not mode:
+        return
+    if mode not in ("dev", "pilot"):
+        msg = f"unknown seed mode {mode!r}: expected dev or pilot"
+        raise ValueError(msg)
+    orgs = PILOT_ORGS if mode == "pilot" else DEV_ORGS
+    seed_orgs(engine, orgs)
+    seed_demo_master(engine, tuple(orgs))
+    seed_demo_inquiries(engine, now, mode)
+
+
 def main() -> None:
-    """Seed using the owner URL from the environment."""
-    engine = create_engine(os.environ["ND_MIGRATION_DATABASE_URL"])
-    seed_dev_orgs(engine)
-    seed_demo_master(engine)
-    seed_demo_inquiries(engine)
+    """Seed the mode in ND_SEED using the owner URL from the environment."""
+    seed(create_engine(os.environ["ND_MIGRATION_DATABASE_URL"]), os.environ.get("ND_SEED"))
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -34,7 +34,7 @@ Local UI development goes through the compose stack on http://localhost:8080: si
 
 ## Run all checks
 
-CI (`.github/workflows/ci.yml`) is the authority; these are the same commands. Run them in Git Bash or WSL (they use `export` and `bash`).
+CI (`.github/workflows/ci.yml`) is the authority; these are the same commands. Run them in Git Bash or WSL (they use `export` and `bash`). The slow gates (arm64 builds, E2E, backup/restore, prod overlay) live in `.github/workflows/heavy.yml` and run nightly, on demand and when `infra/`, a Dockerfile or those scripts change.
 
 Engine, from `engine/`:
 
@@ -115,3 +115,8 @@ The realm user ids are pinned (they match the seeded `app_user` rows), so a dev 
 | `bunker_buyer@borealis.test` | Borealis | bunker_buyer |
 | `operator@borealis.test` | Borealis | operator |
 | `viewer@borealis.test` | Borealis | viewer |
+
+## Pilot deployment and user guide
+
+- Owner runbook (Oracle Cloud Always Free, deploy, backups, restore drill): [docs/deploy/oracle-runbook.md](docs/deploy/oracle-runbook.md). Every green merge to `main` redeploys the pilot through `.github/workflows/deploy.yml`.
+- User guide for pilot users (sign in, roles, the purchase flow, confidentiality): [docs/user-guide.md](docs/user-guide.md).

@@ -130,3 +130,20 @@ def test_manual_traceability_spec_is_skipped(tmp_path: Path) -> None:
     _write(tmp_path, design, manual)
     _write(tmp_path, "web/src/b.test.ts", "it('[B0-R01] y', () => {});\n")
     assert "B0-R01: unknown requirement" in _run(tmp_path).stderr
+
+
+@pytest.mark.req("S0-R09")
+def test_e2e_specs_and_test_scripts_reference_ids(tmp_path: Path) -> None:
+    _repo(
+        tmp_path,
+        ["B6-R06", "B6-R08"],
+        {
+            "web/e2e/flow.spec.ts": "test('[B6-R08] flow', () => {});\n",
+            "tools/test_backup.sh": "#!/usr/bin/env bash\n# req: B6-R06\n",
+        },
+    )
+    result = _run(tmp_path)
+    assert result.returncode == 0, result.stderr
+    matrix = (tmp_path / "docs/traceability.md").read_text(encoding="utf-8")
+    assert "B6-R08 | web/e2e/flow.spec.ts" in matrix
+    assert "B6-R06 | tools/test_backup.sh" in matrix

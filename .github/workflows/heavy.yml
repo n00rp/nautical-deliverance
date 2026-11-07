@@ -1,0 +1,227 @@
+# Heavy gates: arm64 builds under QEMU, the browser E2E, backup/restore, the production overlay and
+# the Keycloak user script. They are minutes-hungry (owner decision 2026-11-07), so they run only
+#   - nightly on main (schedule) and on demand (workflow_dispatch), and
+#   - on pushes to main and pull requests that touch infra/, a Dockerfile, the E2E, a backup, smoke
+#     or pilot script (the paths below).
+# The fast gates (CI, ci.yml) run on every push and PR. The deploy workflow waits for CI only; the
+# E2E also runs against the pilot after every deploy. A red nightly run is a reason to look, not a
+# reason to block: see docs/deploy/oracle-runbook.md, "What runs when".
+name: Heavy
+
+on:
+  schedule:
+    - cron: "40 3 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "**/Dockerfile"
+      - "web/e2e/**"
+      - "web/scripts/e2e-docker.sh"
+      - "web/playwright.e2e.config.ts"
+      - "tools/*backup*"
+      - "tools/restore_drill.sh"
+      - "engine/docker-entrypoint.sh"
+      - "tools/*smoke*"
+      - "tools/pilot_*"
+      - ".github/workflows/heavy.yml"
+  pull_request:
+    paths:
+      - "infra/**"
+      - "**/Dockerfile"
+      - "web/e2e/**"
+      - "web/scripts/e2e-docker.sh"
+      - "web/playwright.e2e.config.ts"
+      - "tools/*backup*"
+      - "tools/restore_drill.sh"
+      - "engine/docker-entrypoint.sh"
+      - "tools/*smoke*"
+      - "tools/pilot_*"
+      - ".github/workflows/heavy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: heavy-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.13.4"
+  UV_LOCKED: "1"
+
+jobs:
+  # req: B6-R08
+  # The full purchase flow in the pinned Playwright image against the dev compose stack (dev seed,
+  # realm-dev.json: test credentials, password = username). The same script runs it against the
+  # pilot after a deploy.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ND_E2E_BASE_URL: http://localhost:8080
+      ND_E2E_USER: bunker_buyer@acme.test
+      ND_E2E_PASSWORD: bunker_buyer@acme.test
+      ND_E2E_OPERATOR_USER: operator@acme.test
+      ND_E2E_OPERATOR_PASSWORD: operator@acme.test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Start the stack
+        run: docker compose -f infra/docker-compose.yml up --detach --build --wait --wait-timeout 300
+      - name: E2E purchase flow
+        run: bash web/scripts/e2e-docker.sh
+      - name: Upload traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-traces
+          path: web/test-results/e2e
+          retention-days: 7
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down --volumes
+
+  # req: B6-R02
+  # Every image builds for amd64 and arm64. The web build stage runs on the build host
+  # (--platform=$BUILDPLATFORM), so only the runtime stages run under QEMU. The QEMU (binfmt) and
+  # BuildKit images are pinned by digest. Nothing is published.
+  multiarch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        context: [infra/postgis, infra/backup, engine, web]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+        with:
+          driver-opts: image=moby/buildkit@sha256:c5f8862f52499773af85bc07695b2379ef08e8002352b0df2c4864c91d78dabe
+      # No --push and no --load: the build proves both architectures compile; nothing is published.
+      - name: Build ${{ matrix.context }} for amd64 and arm64
+        run: docker buildx build --platform linux/amd64,linux/arm64 "${{ matrix.context }}"
+
+  # req: B6-R01
+  # The production overlay on https://localhost: Caddy's internal CA, trusted by curl through its
+  # copied root certificate (tools/prod_smoke.sh). Trivy scans the Caddy image like our own.
+  prod-overlay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ND_IMAGE_TAG: ${{ github.sha }}
+      ND_GIT_SHA: ${{ github.sha }}
+      # Trivy 0.76.1
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scan the Caddy image (Trivy, fixable HIGH and CRITICAL fail)
+        run: |
+          image="$(grep -o 'caddy:[^ ]*@sha256:[0-9a-f]*' infra/docker-compose.prod.yml)"
+          docker pull "$image"
+          docker save "$image" -o "$RUNNER_TEMP/caddy.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan:ro" \
+            -v "$PWD/infra/caddy/.trivyignore:/.trivyignore:ro" "$TRIVY_IMAGE" image \
+            --ignorefile /.trivyignore --input /scan/caddy.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+      - name: Build the images the overlay uses
+        run: |
+          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
+          docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
+          # The overlay's build arg points the web app at https://localhost/realms/...
+          docker build --build-arg VITE_OIDC_AUTHORITY=https://localhost/realms/nautical-deliverance \
+            -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
+          docker build -t "nautical-deliverance/backup:$ND_IMAGE_TAG" infra/backup
+      - name: Prod overlay over local HTTPS
+        env:
+          CLEANUP: "1"
+          NO_BUILD: "1"
+        run: bash tools/prod_smoke.sh
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -p nd-prod-smoke logs --no-color
+
+  # req: B6-R05
+  # tools/pilot_user.py against a real Keycloak (pilot realm) started by the test itself.
+  pilot-user:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@18d369b23da25a81e9458561248e1aafff6a70fa # v10.3.1
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - run: uv sync --locked --project engine
+      - name: Pilot user script against Keycloak
+        env:
+          ND_KC_TESTS: "1"
+          ND_KC_REQUIRED: "1"
+        run: uv run --locked --project engine pytest tools/test_pilot_user.py -v -rs
+
+  # req: B6-R06
+  # Backup -> wipe -> restore -> runbook restore drill against SeaweedFS as the S3 stand-in
+  # (tools/test_backup_restore.sh). The backup image is scanned like our own; the stand-in and
+  # aws-cli are Apache-2.0, pinned by digest (R8).
+  backup-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ND_IMAGE_TAG: ${{ github.sha }}
+      ND_GIT_SHA: ${{ github.sha }}
+      # Trivy 0.76.1
+      TRIVY_IMAGE: ghcr.io/aquasecurity/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the images the test uses
+        run: |
+          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
+          docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
+          docker build -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
+          docker build -t "nautical-deliverance/backup:$ND_IMAGE_TAG" infra/backup
+      - name: Scan the backup image (Trivy, fixable HIGH and CRITICAL fail)
+        run: |
+          docker save "nautical-deliverance/backup:$ND_IMAGE_TAG" -o "$RUNNER_TEMP/backup.tar"
+          docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image \
+            --input /scan/backup.tar --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+      - name: Backup, wipe, restore, restore drill, smoke
+        env:
+          NO_BUILD: "1"
+        run: bash tools/test_backup_restore.sh
+
+  # The heavy jobs' duration note. Their sum is what a nightly run costs; the longest one sets the
+  # wall time. The slow part is the arm64 builds under QEMU (only runtime stages, I6). Generous
+  # limit on purpose: 45 minutes for the whole run, and every job has its own timeout-minutes.
+  heavy-duration:
+    needs: [e2e, multiarch, prod-overlay, pilot-user, backup-restore]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Fail if the heavy run took more than 45 minutes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          started="$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}" --jq .run_started_at)"
+          elapsed=$(( $(date +%s) - $(date -d "$started" +%s) ))
+          echo "Heavy wall time so far: ${elapsed}s (limit 2700s)"
+          [ "$elapsed" -le 2700 ]

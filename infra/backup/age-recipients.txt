@@ -1,0 +1,5 @@
+# NOT-FOR-PRODUCTION-PLACEHOLDER: throwaway age public key. Its private key was discarded when it was
+# generated, so nothing encrypted to it can ever be decrypted. backup.sh and restore.sh refuse to run
+# while this marker is present. Replace this file with the owner's age public key (one per line,
+# age-keygen prints it) before the first real deploy: see the runbook (B6 Task 7).
+age1g8g2jfnfkkaau7sltpmk76eudyjl9dqdv39cf25rrxujqqu0w5ksx4j5a0

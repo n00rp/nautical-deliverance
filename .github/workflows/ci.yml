@@ -17,7 +17,7 @@ env:
   UV_LOCKED: "1"
 
 jobs:
-  # req: S0-R06 S0-R07 S0-R08 S0-R15 B1-R16 B2-R15 B3-R15 B4-R14 B5-R13
+  # req: S0-R06 S0-R07 S0-R08 S0-R15 B1-R16 B2-R15 B3-R15 B4-R14 B5-R13 B6-R11
   engine:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -39,7 +39,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-      # Same digest-pinned image and role script as local dev (compose mounts infra/db/init).
+      # Same own PostGIS image (infra/postgis, built by compose on first `up`) and role script as
+      # local dev (compose mounts infra/db/init). A `services:` container cannot build an image.
       - name: Start database
         run: docker compose -f infra/docker-compose.yml up --detach --wait --wait-timeout 180 db
       - name: Install
@@ -212,11 +213,12 @@ jobs:
           persist-credentials: false
       - name: Build images tagged with the commit
         run: |
+          docker build -t "nautical-deliverance/postgis:$ND_IMAGE_TAG" infra/postgis
           docker build -t "nautical-deliverance/engine:$ND_IMAGE_TAG" engine
           docker build -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
       - name: Scan images (Trivy, fixable HIGH and CRITICAL fail; D-046)
         run: |
-          for name in engine web; do
+          for name in postgis engine web; do
             docker save "nautical-deliverance/$name:$ND_IMAGE_TAG" -o "$RUNNER_TEMP/$name.tar"
             docker run --rm -v "$RUNNER_TEMP:/scan:ro" "$TRIVY_IMAGE" image \
               --input "/scan/$name.tar" --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
@@ -236,6 +238,27 @@ jobs:
         if: always()
         run: docker compose -f infra/docker-compose.yml down --volumes
 
+  # req: B6-R07
+  # shellcheck (warnings and errors) over every script and actionlint over the workflows. Both images
+  # are pinned by digest (shellcheck v0.10.0, actionlint 1.7.7). actionlint also runs shellcheck on
+  # the `run:` blocks.
+  lint-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: |
+          git ls-files '*.sh' | xargs docker run --rm -v "$PWD:/mnt" -w /mnt \
+            koalaman/shellcheck@sha256:2097951f02e735b613f4a34de20c40f937a6c8f18ecb170612c88c34517221fb \
+            -x --severity=warning
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt \
+            rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+
   # req: S0-R16
   readme:
     runs-on: ubuntu-latest
@@ -253,8 +276,10 @@ jobs:
         run: docker compose -f infra/docker-compose.yml config --quiet
 
   # req: S0-R14
+  # The gate covers the fast jobs that run on every push and PR. The heavy jobs (arm64 builds, E2E,
+  # backup/restore, prod overlay, Keycloak) live in heavy.yml with their own duration note.
   ci-duration:
-    needs: [engine, web, visual, traceability, security, smoke, readme]
+    needs: [engine, web, visual, traceability, security, smoke, lint-scripts, readme]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

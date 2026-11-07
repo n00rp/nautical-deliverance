@@ -1,0 +1,2 @@
+# Nightly at 02:15 UTC (B6-D4). supercronic logs each run to stdout (docker compose logs backup).
+15 2 * * * /usr/local/bin/backup.sh

@@ -3,7 +3,9 @@
 # optional and overrides them (see infra/.env.example).
 services:
   db:
-    image: postgis/postgis:17-3.5@sha256:01a6a70e41e6c4467c8f55f6063555ed72db2d6662cd0d571040d42eadaeb6f6
+    image: nautical-deliverance/postgis:${ND_IMAGE_TAG:-dev}
+    build:
+      context: ./postgis
     environment:
       POSTGRES_DB: nd
       POSTGRES_USER: postgres
@@ -61,7 +63,7 @@ services:
       ND_GIT_SHA: ${ND_GIT_SHA:-dev}
       ND_DATABASE_URL: postgresql+psycopg://nd_app:${ND_DB_APP_PASSWORD:-dev-app-password}@db:5432/nd
       ND_MIGRATION_DATABASE_URL: postgresql+psycopg://nd_owner:${ND_DB_OWNER_PASSWORD:-dev-owner-password}@db:5432/nd
-      ND_SEED_DEV_DATA: ${ND_SEED_DEV_DATA:-true}
+      ND_SEED: ${ND_SEED:-dev}
       ND_OIDC_ISSUER: http://localhost:8081/realms/nautical-deliverance
       ND_OIDC_AUDIENCE: nd-api
       ND_OIDC_JWKS_URL: http://keycloak:8080/realms/nautical-deliverance/protocol/openid-connect/certs

@@ -31,7 +31,7 @@ DENY = (
 @pytest.fixture(scope="module")
 def seeded(owner_engine: Engine) -> Engine:
     """Engine with both dev organizations and their master data seeded."""
-    seed.seed_dev_orgs(owner_engine)
+    seed.seed_orgs(owner_engine)
     seed.seed_demo_master(owner_engine)
     return owner_engine
 
@@ -154,8 +154,11 @@ def test_no_real_company_names(seeded: Engine) -> None:
             assert not [d for d in DENY if d in blob], t
 
 
-@pytest.mark.req("B1-R10")
+@pytest.mark.req("B6-R04")
 def test_seed_gate_defaults_to_off() -> None:
-    """The entrypoint seeds only when ND_SEED_DEV_DATA is exactly "true"; unset means off."""
+    """The entrypoint seeds only when ND_SEED is set (dev|pilot); unset means off."""
     script = (Path(__file__).parents[2] / "docker-entrypoint.sh").read_text(encoding="utf-8")
-    assert 'if [ "${ND_SEED_DEV_DATA:-false}" = "true" ]; then' in script
+    assert 'case "${ND_SEED:-}" in' in script
+    assert "dev|pilot)" in script
+    assert "exit 1" in script
+    assert "ND_SEED_DEV_DATA" not in script
