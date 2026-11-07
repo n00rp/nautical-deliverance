@@ -1,12 +1,28 @@
 # Pilot runbook: Oracle Cloud Always Free (B6-D13)
 
 Owner's manual. Every step that needs an account, a secret or a click in a cloud console is here, in
-order. Nothing in the repository calls Oracle, DuckDNS or GitHub secrets for you. Commands starting
-with `$` run on your own computer (Git Bash or WSL); commands starting with `deploy$` run on the
-server as the `deploy` user.
+order. Nothing in the repository calls Oracle, DuckDNS or GitHub secrets for you.
+
+Where a command runs (the prompt in front of it tells you):
+
+| Prompt | Where | How to get there |
+|---|---|---|
+| `$` | your own computer (Git Bash or WSL) | |
+| `ubuntu$` | the server, as the admin user `ubuntu` (has `sudo`) | `ssh ubuntu@<server-ip>` with the admin key you gave Oracle in section 2 |
+| `deploy$` | the server, as the `deploy` user (no `sudo`) | from `ubuntu$`: `sudo -iu deploy` (leave with `exit`) |
+
+The `deploy` user's own key (`nd-deploy`) belongs to GitHub only. You never log in with it, so you can
+delete your local copy once it is stored as a GitHub secret, and everything you do by hand goes
+through `ubuntu`. Never delete the admin key: it is your way in (and the SSH tunnel in section 11).
+
+On Windows in **Git Bash**, `docker run` arguments that start with `/` are rewritten to Windows
+paths. Put `MSYS_NO_PATHCONV=1` in front of such a command (the scripts in `tools/` already do).
 
 After the one-time setup the deploy is automatic: every green merge to `main` redeploys
 (`.github/workflows/deploy.yml`).
+
+Passwords and tokens you generate yourself always use `openssl rand -hex 24`: hexadecimal is safe in
+URLs and in `.env` files (base64 can contain `/`, `+` and `=`).
 
 Placeholders: `<pilot-host>` is your DuckDNS name (for example `nd-pilot.duckdns.org`),
 `<server-ip>` the VM's public IP, `<owner>/<repo>` the GitHub repository.
@@ -23,7 +39,14 @@ Placeholders: `<pilot-host>` is your DuckDNS name (for example `nd-pilot.duckdns
 8. First deploy (10)
 9. Keycloak admin, pilot users, e2e users (11 to 13)
 10. After the first backup: test-decrypt, staleness check, restore drill (14 to 16)
-11. Operations: password rotation, reboots, teardown (17 to 19)
+11. Operations: password rotation, reboots, rollback, rebuild and restore (17 to 19)
+
+What runs when: CI (`.github/workflows/ci.yml`, the fast gates) runs on every push and pull request.
+The heavy gates (`.github/workflows/heavy.yml`: arm64 builds, browser E2E, backup/restore, prod overlay,
+Keycloak user script) run nightly on `main`, on demand (Actions > Heavy > Run workflow), and on pushes
+and pull requests that change `infra/`, a Dockerfile, the E2E, a backup, smoke or pilot script. The
+deploy workflow waits for **CI only**, not for the heavy run; its own E2E step tests the pilot after
+every deploy. A red nightly heavy run is a reason to look before the next merge.
 
 ## 1. Oracle account
 
@@ -69,7 +92,7 @@ Two firewalls apply and both must allow the traffic.
    (script `nd-open-ports`) inserts ACCEPT rules for 22, 80 and 443 ahead of that REJECT rule and
    saves them with `netfilter-persistent`. Check on the server:
    ```
-   deploy$ sudo iptables -S INPUT | grep -E 'dport (22|80|443)'
+   ubuntu$ sudo iptables -S INPUT | grep -E 'dport (22|80|443)'
    ```
    Nothing else is opened. Postgres, Keycloak and the engine are not published; only Caddy is. The
    Keycloak admin console listens on `127.0.0.1:8081` and is reached by SSH tunnel only.
@@ -81,10 +104,10 @@ Two firewalls apply and both must allow the traffic.
 2. **Update cron (on the server).** cloud-init installed `/etc/cron.d/nd-duckdns`, which calls
    `https://www.duckdns.org/update` every five minutes. It needs the token file (mode 600):
    ```
-   deploy$ sudo install -d -m 700 /etc/nd
-   deploy$ printf 'DUCKDNS_DOMAIN=nd-pilot\nDUCKDNS_TOKEN=<token>\n' | sudo tee /etc/nd/duckdns.env >/dev/null
-   deploy$ sudo chmod 600 /etc/nd/duckdns.env
-   deploy$ sudo /usr/local/sbin/nd-duckdns && echo updated
+   ubuntu$ sudo install -d -m 700 /etc/nd
+   ubuntu$ printf 'DUCKDNS_DOMAIN=nd-pilot\nDUCKDNS_TOKEN=<token>\n' | sudo tee /etc/nd/duckdns.env >/dev/null
+   ubuntu$ sudo chmod 600 /etc/nd/duckdns.env
+   ubuntu$ sudo /usr/local/sbin/nd-duckdns && echo updated
    ```
    `DUCKDNS_DOMAIN` is the subdomain without `.duckdns.org`. With a reserved IP the cron is only a
    safety net; keep it.
@@ -139,7 +162,7 @@ Two ed25519 key pairs, both made on your own computer:
 | Key | Private half | Public half |
 |---|---|---|
 | SSH login of the deploy workflow | GitHub secret `ND_DEPLOY_SSH_KEY` | authorized key of the `deploy` user (cloud-init) |
-| Read-only repo **deploy key** (the server pulls the code) | `~/.ssh/id_repo` of `deploy` on the server | GitHub: repository Settings > Deploy keys > Add deploy key; leave "Allow write access" **off** |
+| Read-only repo **deploy key** (the server pulls the code) | `~deploy/.ssh/id_repo` on the server | GitHub: repository Settings > Deploy keys > Add deploy key; leave "Allow write access" **off** |
 
 ```
 $ ssh-keygen -t ed25519 -N '' -C nd-deploy -f nd-deploy       # login key
@@ -149,16 +172,18 @@ $ ssh-keygen -t ed25519 -N '' -C nd-repo-read -f nd-repo      # repo deploy key
 Once the VM is up (`cloud-init status --wait` shows `done`):
 
 ```
-$ scp -i nd-deploy nd-repo deploy@<server-ip>:.ssh/id_repo
-$ ssh -i nd-deploy deploy@<server-ip>
-deploy$ chmod 600 ~/.ssh/id_repo && nd-clone git@github.com:<owner>/<repo>.git
+$ scp nd-repo ubuntu@<server-ip>:/tmp/id_repo
+$ ssh ubuntu@<server-ip>
+ubuntu$ sudo install -m 600 -o deploy -g deploy /tmp/id_repo ~deploy/.ssh/id_repo && rm /tmp/id_repo
+ubuntu$ sudo -iu deploy nd-clone git@github.com:<owner>/<repo>.git
 ```
 
 On the first connection compare the host key fingerprint with the one in the Oracle console
 (instance > console connection) before you accept it. `nd-clone` pins GitHub's published SSH host
 key (fingerprint `SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU`; if the check fails, compare it
-with docs.github.com, "GitHub's SSH key fingerprints") and clones into `~/nd`. Afterwards delete
-`nd-repo` on your computer; keep `nd-deploy` only until it is stored as the GitHub secret.
+with docs.github.com, "GitHub's SSH key fingerprints") and clones into `~deploy/nd`. Afterwards delete
+`nd-repo` on your computer, and `nd-deploy` as soon as it is stored as the GitHub secret (section 8).
+Keep your admin key: every later step uses it.
 
 ## 8. GitHub secrets and variable
 
@@ -174,7 +199,8 @@ Settings > Secrets and variables > Actions. Nothing else is read by `.github/wor
 | `ND_E2E_PASSWORD` | secret | that user's permanent password |
 | `ND_E2E_OPERATOR_USER` | secret | e-mail of the e2e operator (optional: the Operator check is skipped without it) |
 | `ND_E2E_OPERATOR_PASSWORD` | secret | that user's permanent password |
-| `ND_DEPLOY_ENABLED` | variable (Variables tab) | `true`. Leave it unset until sections 1 to 13 are done: until then the deploy workflow is skipped instead of failing on every merge |
+| `ND_DEPLOY_ENABLED` | variable (Variables tab) | `true`, set **after** the first manual deploy and sections 11 to 13 (section 10). It switches on only the automatic deploy after each green merge; a manual "Run workflow" deploy never needs it |
+| `ND_E2E_OPERATOR_NAME` | variable (optional) | display name of the e2e operator as shown in the inquiry form's Operator list (section 13). Unset: the demo operator |
 
 Strict host checking stays on: the workflow connects only to the key in `ND_DEPLOY_KNOWN_HOSTS`.
 After a rebuild the host key changes, so update that secret.
@@ -182,10 +208,15 @@ After a rebuild the host key changes, so update that secret.
 ## 9. `infra/.env.prod` (on the server, mode 600, never in git)
 
 ```
+ubuntu$ sudo -iu deploy
 deploy$ cd ~/nd && cp infra/.env.prod.example infra/.env.prod && chmod 600 infra/.env.prod
-deploy$ openssl rand -base64 24        # run once per secret below, one different value each
+deploy$ openssl rand -hex 24        # run once per secret below, one different value each
 deploy$ nano infra/.env.prod
 ```
+
+Use `openssl rand -hex 24` for every password. The engine also encodes its database passwords before
+it builds the connection URLs, so a password you chose yourself with `/`, `@` or `:` works, but
+generate them anyway: a `.env` value with spaces, quotes, `#` or `$` is still misread.
 
 | Variable | Meaning / value |
 |---|---|
@@ -208,8 +239,8 @@ file in your password manager: the DB passwords are needed again after a rebuild
 
 ## 10. First deploy
 
-Preconditions: DNS resolves (4), `age-recipients.txt` replaced and merged (6), secrets and variable
-set (8), `.env.prod` written (9).
+Preconditions: DNS resolves (4), `age-recipients.txt` replaced and merged (6), secrets set (8),
+`.env.prod` written (9). `ND_DEPLOY_ENABLED` stays **unset** for now.
 
 **The Keycloak database is created only on an empty volume.** `infra/db/init/02-keycloak.sh` runs
 when Postgres initialises a new data directory, and never again. The first deploy must therefore
@@ -217,13 +248,22 @@ start on a **fresh volume**: a server where the stack was never started. If it w
 wrong passwords, tear down as in section 19 (this deletes the data: acceptable only before the pilot
 has data).
 
-Run it from GitHub: Actions > "Deploy pilot" > Run workflow, `sha` = the full 40-character hash of
-the commit on `main` whose CI is green, **`first_deploy` ticked** (there is no backup yet, so the
-backup freshness check is skipped). Later deploys run by themselves after every green CI run on
-`main` (never for a pull request, never for a failed CI) and need no input.
+Run it from GitHub: Actions > "Deploy pilot" > Run workflow (branch `main`), `sha` = the full
+40-character hash of a commit on `main` whose push CI run is green. The workflow checks that run,
+the server checks that the commit is on `main`, and neither needs `ND_DEPLOY_ENABLED`.
+`allow_rollback` stays off. Later deploys run by themselves after every green CI run on `main` once
+you set `ND_DEPLOY_ENABLED` (never for a pull request, never for a failed CI). The workflow waits for
+CI only, not for the heavy workflow.
 
-The first deploy takes 10 to 20 minutes (native arm64 builds). To watch on the server:
-`docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file infra/.env.prod logs -f caddy`.
+Two things are expected to be red or yellow on this first run:
+
+- the **E2E step fails** because the e2e users do not exist yet (section 13);
+- the **backup freshness step only warns** ("no backup .ok marker yet"): the first nightly backup has
+  not happened. From the first backup on, an old or missing newest backup fails the step (section 15).
+
+The first deploy takes 10 to 20 minutes (native arm64 builds). To watch on the server (as `deploy`,
+after the `nd` helper from section 14 is defined):
+`nd logs -f caddy`.
 
 **The first Let's Encrypt issuance is the first live test of `protocols h1`.** Caddy runs with
 HTTP/1.1 only (`protocols h1` in `infra/caddy/Caddyfile`, a workaround for an HTTP/2 vulnerability
@@ -233,19 +273,24 @@ the Caddy log (ACME errors), check DNS and the security list, and report it; do 
 setting without a decision.
 
 Then open `https://<pilot-host>`: the sign-in page must appear. The workflow's smoke step
-(`tools/pilot_smoke.sh`) should pass; the E2E step is expected to fail on this first run because the
-e2e users do not exist yet (section 13). Re-run the workflow after sections 11 to 13.
+(`tools/pilot_smoke.sh`) should pass. Re-run the workflow after sections 11 to 13, then set
+`ND_DEPLOY_ENABLED=true` (section 8) so that every green merge deploys.
+
+A change to `deploy.sh` itself takes effect one deploy late: the server runs the copy that was
+checked out by the previous deploy, and replaces it only while checking out the new commit.
 
 ## 11. Keycloak admin console and a named permanent admin
 
-The admin console is **not** on the internet (`/admin` returns 404). Reach it by SSH tunnel:
+The admin console is **not** on the internet (`/admin` returns 404). Reach it by SSH tunnel through
+the admin user:
 
 ```
-$ ssh -L 8081:127.0.0.1:8081 deploy@<server-ip>
+$ ssh -L 8081:127.0.0.1:8081 ubuntu@<server-ip>
 ```
 
 Keep that session open and browse to `http://localhost:8081/admin/master/console/`. Sign in as
-`admin` with `ND_KEYCLOAK_ADMIN_PASSWORD`: the **bootstrap admin**, meant to be temporary.
+`admin` with `ND_KEYCLOAK_ADMIN_PASSWORD`: the **bootstrap admin**, meant to be temporary. (The host
+port 8081 must be free on your computer: stop a local dev stack first.)
 
 1. Master realm > Users > Add user: your name, username = your e-mail, e-mail verified on.
 2. Credentials > Set password with "Temporary" off; use a long unique password.
@@ -254,7 +299,12 @@ Keep that session open and browse to `http://localhost:8081/admin/master/console
 5. **Delete the bootstrap admin:** Users > `admin` > Delete. Keycloak creates a bootstrap admin only
    while the master realm has no admin, so it stays gone. `ND_KEYCLOAK_ADMIN_PASSWORD` stays in
    `.env.prod` because compose requires it, but it no longer opens anything.
-6. Optional: add OTP to your admin account (Credentials > Configure OTP).
+6. Optional: add OTP to your named admin (Credentials > Configure OTP). **OTP breaks
+   `tools/pilot_user.py`:** the script signs in with a password grant that sends no one-time code,
+   so it fails for an account with OTP. Either skip OTP on the account that runs the script, or keep
+   OTP on your named admin and create a second admin `pilot-script` (same steps 1 to 3, a long
+   `openssl rand -hex 24` password, **no OTP**) that you use only for `pilot_user.py` and disable in
+   between (Users > pilot-script > Enabled off).
 
 ## 12. Pilot users (`tools/pilot_user.py`)
 
@@ -262,8 +312,8 @@ The pilot realm has **no users**. Create each one with the script, through the t
 11 (Keycloak's loopback port is the script's default `--url`):
 
 ```
-$ ND_KC_ADMIN_PASSWORD='<your named admin password>' \
-  uv run --project engine python tools/pilot_user.py --admin-user <your admin username> \
+$ ND_KC_ADMIN_PASSWORD='<password of the admin that has no OTP>' \
+  uv run --project engine python tools/pilot_user.py --admin-user <that admin's username> \
   --email buyer1@example.org --first Ada --last Buyer --role bunker_buyer
 ```
 
@@ -282,17 +332,30 @@ Create them like any pilot user (section 12), for example `e2e-buyer@<your domai
 **Each one must sign in once in a browser and set a permanent password before E2E can use them.**
 The temporary password forces an "update password" screen that the test cannot pass. After setting
 the permanent password, store the e-mail and password as `ND_E2E_USER`/`ND_E2E_PASSWORD` and
-`ND_E2E_OPERATOR_USER`/`ND_E2E_OPERATOR_PASSWORD` (section 8). The inquiries the test creates have a
-voyage starting with `E2E-` and are cancelled at the end, even when the test aborts.
+`ND_E2E_OPERATOR_USER`/`ND_E2E_OPERATOR_PASSWORD` (section 8). The inquiry form lists operators by
+name, and the pilot also has real colleagues in that list: set the variable `ND_E2E_OPERATOR_NAME`
+to the e2e operator's first and last name so the test picks exactly that one (unset, it picks the
+demo operator). The inquiries the test creates have a voyage starting with `E2E-` and are cancelled
+at the end, even when the test aborts.
 
-Re-run the deploy workflow (`first_deploy` still ticked): smoke and E2E must now pass.
+Re-run the deploy workflow (a new manual run of a commit on `main`): smoke and E2E must now pass.
+Then set `ND_DEPLOY_ENABLED` (section 8).
 
 ## 14. Test-decrypt the first real backup
 
-The backup runs nightly at 02:15 UTC. To get the first one at once (on the server):
+Server commands in sections 14 to 19 run as `deploy` (`ssh ubuntu@<server-ip>`, then
+`sudo -iu deploy`). Define the `nd` helper once per session; it is the compose command for the
+production stack:
 
 ```
-deploy$ cd ~/nd && docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file infra/.env.prod exec backup backup.sh
+deploy$ cd ~/nd
+deploy$ nd() { docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file infra/.env.prod "$@"; }
+```
+
+The backup runs nightly at 02:15 UTC. To get the first one at once:
+
+```
+deploy$ nd exec backup backup.sh
 BACKUP_KEY=nd/2026/11/07/nd-20261107T101500Z.tar.age
 ```
 
@@ -307,22 +370,24 @@ keycloak.dump
 
 Both names listed means the key pair works. "no identity matched" means the recipients file holds a
 different public key than your private key: fix `age-recipients.txt`, redeploy, repeat. A backup you
-cannot decrypt is not a backup. From now on deploys run without `first_deploy`.
+cannot decrypt is not a backup.
 
 ## 15. Backup staleness check
 
-Every deploy except a `first_deploy` one ends with `infra/backup/check_fresh.sh`, run inside the
-running backup container through `infra/deploy/deploy.sh --check-backup`. It fails the workflow when
-the newest `.ok` marker in the bucket is **26 hours old or older** (the nightly run plus margin), or
-when there is none. By hand, any time:
+Every deploy ends with `infra/backup/check_fresh.sh`, run inside the running backup container
+through `infra/deploy/deploy.sh --check-backup`. It fails the workflow when the newest `.ok`
+marker in the bucket is **26 hours old or older** (the nightly run plus margin). **Before the first
+backup exists it only prints a warning and passes**, so a deploy between the first deploy and the
+first nightly backup stays green. A failed listing (credentials, network) always fails. By hand,
+any time:
 
 ```
 deploy$ ~/nd/infra/deploy/deploy.sh --check-backup
 newest backup marker: 2026/11/07/nd-20261107T021500Z.tar.age.ok (3 h old, limit 26 h)
 ```
 
-A red check means the nightly job failed: read `docker compose ... logs backup`. A green check does
-not prove that a backup can be restored; only the drill (section 16) does.
+A red check means the nightly job failed: read `nd logs backup`. A green check does not prove that a
+backup can be restored; only the drill (section 16) does.
 
 ## 16. Restore drill (P4)
 
@@ -330,31 +395,32 @@ Do it once before the pilot starts and after any change to the backup scripts. I
 throw-away database on **your own computer** (Docker Desktop), never over the live server. You need
 the private key, the five `ND_BACKUP_*` values and this repository.
 
+Export the values first, in the same shell (do not write them into files):
+
 ```
 $ git clone git@github.com:<owner>/<repo>.git && cd <repo>
-$ docker build -t nd-backup infra/backup
-$ docker compose -p nd-drill -f infra/docker-compose.yml up -d --wait db
-$ cp /path/to/nd-backup-identity.txt ./drill-identity.txt && chmod a+r drill-identity.txt
-$ docker run --rm --network nd-drill_default -v "$PWD/drill-identity.txt:/work/identity.txt:ro" \
-    -e PGHOST=db -e PGUSER=postgres -e PGPASSWORD=dev-superuser-password \
-    -e ND_BACKUP_BUCKET -e ND_BACKUP_S3_ENDPOINT -e ND_BACKUP_S3_REGION \
-    -e ND_BACKUP_S3_ACCESS_KEY -e ND_BACKUP_S3_SECRET_KEY \
-    nd-backup restore.sh --identity /work/identity.txt <BACKUP_KEY>
+$ export ND_BACKUP_BUCKET=... ND_BACKUP_S3_ENDPOINT=... ND_BACKUP_S3_REGION=...
+$ export ND_BACKUP_S3_ACCESS_KEY=... ND_BACKUP_S3_SECRET_KEY=...
+$ export ND_DRILL_IDENTITY=/path/to/nd-backup-identity.txt
+$ bash tools/restore_drill.sh <BACKUP_KEY>
 RESTORED <BACKUP_KEY>
-$ docker compose -p nd-drill -f infra/docker-compose.yml exec db psql -U postgres -d nd -c "select count(*) from inquiry"
-$ docker compose -p nd-drill -f infra/docker-compose.yml exec db psql -U postgres -d keycloak -c "select username from user_entity order by 1"
-$ rm drill-identity.txt
-$ docker compose -p nd-drill -f infra/docker-compose.yml down --volumes     # the throw-away stack only
+inquiries in the restored database:
+12
+Keycloak users in the restored database:
+...
 ```
 
-Export the five `ND_BACKUP_*` values in your shell first (do not write them into files). The restore
-refuses a non-empty target without `--force`, refuses a key without an `.ok` marker, and verifies the
-sha256 before decrypting. The inquiry count and the Keycloak user list must match the live pilot
-(compare with its dashboard and Keycloak's Users page).
+The script builds the backup image, starts a database of its own (project `nd-drill`, with the
+production role layout from `infra/docker-compose.drill.yml`, so the `keycloak` role and database
+exist, and **no published port**, so it cannot collide with a dev stack), runs `restore.sh` in the
+backup image with a temporary copy of your key, prints the inquiry count and the Keycloak users, and
+removes the temporary copy and the throw-away stack when it ends, even on an error. It sets
+`MSYS_NO_PATHCONV=1` itself for Git Bash. Run by hand, any `docker run` with `-v ...:/work/...` needs
+`MSYS_NO_PATHCONV=1` in front.
 
-Restoring the real server uses the same script with the stack's database up and engine, Keycloak, web
-and Caddy stopped (`docker compose ... stop engine keycloak web caddy`), then `up -d`. The
-`.env.prod` DB passwords must be the ones the dump's roles expect.
+The restore refuses a non-empty target without `--force`, refuses a key without an `.ok` marker, and
+verifies the sha256 before decrypting. The inquiry count and the Keycloak user list must match the
+live pilot (compare with its dashboard and Keycloak's Users page).
 
 ### Drill log (copy, fill in, keep with your records)
 
@@ -377,10 +443,9 @@ Result:                        [ ] PASS   [ ] FAIL (open an issue)
 
 Changing `ND_DB_*_PASSWORD` in `.env.prod` alone **does not change the role in Postgres**: the roles
 are created once, on an empty volume, so the stack would fail to log in. Do both, in this order (on
-the server):
+the server, as `deploy`, with `nd` defined as in section 14):
 
 ```
-deploy$ cd ~/nd && alias nd='docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file infra/.env.prod'
 deploy$ nd exec db psql -U postgres -d nd -c '\password nd_app'      # typed twice, not echoed, not in history
 deploy$ nano infra/.env.prod                                          # the same new value in ND_DB_APP_PASSWORD
 deploy$ nd up -d                                                      # recreates the engine with the new URL
@@ -399,9 +464,9 @@ the nightly backup runs inside a container (supercronic), so it survives the sam
 runs `systemctl enable --now docker`; verify once, and after any VM rebuild:
 
 ```
-deploy$ systemctl is-enabled docker
+ubuntu$ systemctl is-enabled docker
 enabled
-deploy$ sudo reboot
+ubuntu$ sudo reboot
 $ curl -fsS https://<pilot-host>/api/v1/health            # after a minute or two
 ```
 
@@ -409,21 +474,61 @@ If it says `disabled`: `sudo systemctl enable docker.service containerd.service`
 would have run while the VM was down is not made up afterwards; the staleness check (section 15)
 shows it.
 
-## 19. Tear down and rebuild
+## 19. Rollback, restore onto the server, rebuild, tear down
 
-Redeploy a known-good commit: Actions > Deploy pilot > Run workflow with that `sha` (no
-`first_deploy`).
+### Roll back to a known-good commit
 
-Rebuild from scratch (free-tier termination, a broken VM, a new region):
+A deploy is a checkout of one commit, so going back is deploying an older one. The server refuses an
+older commit than the one running (recorded in `/srv/nd/DEPLOYED_SHA`) and any commit that is not on
+`main`, unless you say so on purpose: Actions > Deploy pilot > Run workflow, `sha` = the known-good
+commit, **`allow_rollback` ticked** (this passes `--allow-rollback` to `deploy.sh`). The workflow still wants a green push CI run for that commit.
+A rollback does not undo database migrations: only go back to a commit whose schema the current
+database still satisfies; otherwise restore a backup as below.
+
+### Restore a backup onto the real server
+
+Use this to recover from data loss or after a rebuild (the database is then not empty: the first
+deploy ran the migrations, the pilot seed and the realm import, so `--force` is required). It needs the
+**private key on the server for a few minutes**, a deliberate, time-boxed exception to section 6: the
+key goes into RAM-backed `/dev/shm`, is never written to disk, and is shredded afterwards. Stop at any
+failure and keep the key off the server.
+
+```
+$ ssh ubuntu@<server-ip> 'cat > /dev/shm/nd-id && chmod 644 /dev/shm/nd-id' < nd-backup-identity.txt
+$ ssh ubuntu@<server-ip>
+ubuntu$ sudo -iu deploy
+deploy$ cd ~/nd
+deploy$ nd() { docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file infra/.env.prod "$@"; }
+deploy$ nd stop engine keycloak web caddy
+deploy$ nd run --rm --no-deps -v /dev/shm/nd-id:/work/identity.txt:ro backup restore.sh --identity /work/identity.txt --force <BACKUP_KEY>
+RESTORED <BACKUP_KEY>
+deploy$ exit
+ubuntu$ shred -u /dev/shm/nd-id && ls /dev/shm/nd-id
+ls: cannot access '/dev/shm/nd-id': No such file or directory
+ubuntu$ sudo -iu deploy
+deploy$ cd ~/nd && nd up -d --wait
+```
+
+`<BACKUP_KEY>` is the object key from the bucket (or from `BACKUP_KEY=` in the backup log). `--force`
+replaces the existing tables with the backup's (`pg_restore --clean`), so it destroys whatever the
+database holds now: take a backup first unless the data is already lost. The restore refuses while the
+engine or Keycloak is connected, which is why they are stopped. The `.env.prod` DB passwords must be
+the ones the dump's roles expect (a rebuild: your saved copy of `.env.prod`). Check afterwards:
+`nd ps` healthy, sign in, the dashboard counts match, and run the deploy workflow again.
+
+### Rebuild from scratch (free-tier termination, a broken VM, a new region)
 
 1. Create the VM from `infra/deploy/cloud-init.yaml` and repeat sections 2 to 4, 7 and 9 (restore
    `.env.prod` from your copy). Update `ND_DEPLOY_HOST` and `ND_DEPLOY_KNOWN_HOSTS`.
-2. Deploy once with `first_deploy` (fresh volume, empty database).
-3. Restore the latest backup as in section 16 (stop engine and Keycloak first), then `up -d`.
-4. Run the deploy workflow again without `first_deploy`.
+2. Deploy once by hand (section 10; a fresh volume and an empty database; the freshness check warns
+   until a backup exists, or passes if the bucket still holds the old ones).
+3. Restore the latest backup onto the server as above.
+4. Run the deploy workflow again; E2E must pass (the e2e users come back with the Keycloak restore).
 
-Tear down a stack on purpose (this **deletes all data**: take a backup first and run the drill).
-The workflow and `deploy.sh` never do this; only you, by hand:
+### Tear down a stack on purpose
+
+This **deletes all data**: take a backup first and run the drill. The workflow and `deploy.sh` never
+do this; only you, by hand:
 
 ```
 deploy$ cd ~/nd && docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file infra/.env.prod down --volumes
@@ -439,4 +544,6 @@ deploy$ cd ~/nd && docker compose -f infra/docker-compose.yml -f infra/docker-co
 | Production compose overlay | `infra/docker-compose.prod.yml`, variables in `infra/.env.prod.example` |
 | Backup, restore, staleness check | `infra/backup/` |
 | Pilot user script | `tools/pilot_user.py` |
+| Restore drill | `tools/restore_drill.sh`, `infra/docker-compose.drill.yml` |
+| Heavy CI gates | `.github/workflows/heavy.yml` |
 | User guide | `docs/user-guide.md` |

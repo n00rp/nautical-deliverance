@@ -34,7 +34,7 @@ Local UI development goes through the compose stack on http://localhost:8080: si
 
 ## Run all checks
 
-CI (`.github/workflows/ci.yml`) is the authority; these are the same commands. Run them in Git Bash or WSL (they use `export` and `bash`).
+CI (`.github/workflows/ci.yml`) is the authority; these are the same commands. Run them in Git Bash or WSL (they use `export` and `bash`). The slow gates (arm64 builds, E2E, backup/restore, prod overlay) live in `.github/workflows/heavy.yml` and run nightly, on demand and when `infra/`, a Dockerfile or those scripts change.
 
 Engine, from `engine/`:
 
