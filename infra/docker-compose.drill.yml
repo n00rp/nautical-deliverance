@@ -1,0 +1,8 @@
+# Restore drill (runbook section 16, tools/restore_drill.sh): the dev database with the production
+# role layout, so the `keycloak` role and database exist for restore.sh, and no published port, so
+# the drill never collides with a dev stack on 127.0.0.1:5432. Throw-away; test password only.
+services:
+  db:
+    environment:
+      ND_DB_KEYCLOAK_PASSWORD: drill-keycloak-password
+    ports: !reset []

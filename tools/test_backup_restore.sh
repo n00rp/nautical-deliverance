@@ -100,6 +100,8 @@ echo "== 5. backup with a throwaway age key"
 docker run --rm --entrypoint age-keygen "$IMG" >"$WORK/identity.txt" 2>"$WORK/keygen.err"
 sed -n 's/^# public key: //p' "$WORK/identity.txt" >"$WORK/recipients.txt"
 chmod a+r "$WORK/identity.txt" "$WORK/recipients.txt" # the image runs as a non-root user
+if fresh="$(runb check_fresh.sh 2>&1)" && grep -q "no backup .ok marker" <<<"$fresh"; then ok "check_fresh.sh: no marker yet is a warning, not a failure"
+else echo "$fresh"; fail "check_fresh.sh must pass with a warning before the first backup"; fi
 if out="$(runb backup.sh 2>&1)"; then ok "backup.sh exit 0"; else echo "$out"; fail "backup.sh failed"; fi
 key="$(echo "$out" | sed -n 's/^BACKUP_KEY=//p' | tail -1)"
 [[ "$key" =~ ^nd/[0-9]{4}/[0-9]{2}/[0-9]{2}/nd-[0-9]{8}T[0-9]{6}Z\.tar\.age$ ]] && ok "key $key" || fail "unexpected key '$key'"
@@ -159,6 +161,23 @@ if runb backup.sh >"$WORK/fail.log" 2>&1; then fail "backup.sh exited 0 with the
 "${COMPOSE[@]}" up --detach --wait --wait-timeout 60 s3 >/dev/null
 oks_after="$(ok_count)"
 [[ "$oks_before" == 1 && "$oks_after" == 1 ]] && ok "no new .ok marker after the failed upload" || fail ".ok markers: $oks_before -> $oks_after"
+
+echo "== 11. the runbook restore drill (tools/restore_drill.sh) into a throw-away database"
+# The same command the owner runs (runbook section 16): own project and database, drill compose file.
+# The S3 stand-in is joined to the drill network as "s3", as the real endpoint is reachable from there.
+if drill="$(ND_DRILL_IDENTITY="$WORK/identity.txt" ND_DRILL_RECIPIENTS="$WORK/recipients.txt" ND_DRILL_IMAGE="$IMG" ND_DRILL_S3_CONTAINER="$("${COMPOSE[@]}" ps -q s3)" \
+  ND_BACKUP_BUCKET=$BUCKET ND_BACKUP_S3_ENDPOINT=http://s3:8333 ND_BACKUP_S3_REGION=us-east-1 \
+  ND_BACKUP_S3_ACCESS_KEY=ci-s3-user ND_BACKUP_S3_SECRET_KEY=ci-s3-password \
+  bash "$ROOT/tools/restore_drill.sh" "$key" 2>&1)"; then
+  echo "$drill"
+  grep -q "^RESTORED $key" <<<"$drill" && ok "drill: RESTORED $key" || fail "drill did not print RESTORED"
+  [[ "$(sed -n '/^inquiries in the restored/{n;p;}' <<<"$drill")" == "$before_n" ]] \
+    && ok "drill: inquiry count equals the live count ($before_n)" || fail "drill: inquiry count differs"
+  grep -q "^restore-probe@acme.test$" <<<"$drill" && ok "drill: Keycloak user list restored" || fail "drill: probe user missing"
+else
+  echo "$drill"
+  fail "restore drill failed"
+fi
 
 if ((${#failures[@]})); then
   printf '\nBACKUP/RESTORE TEST FAILED (%d):\n' "${#failures[@]}"
