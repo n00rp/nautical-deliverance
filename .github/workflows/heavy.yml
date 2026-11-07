@@ -142,6 +142,7 @@ jobs:
           # The overlay's build arg points the web app at https://localhost/realms/...
           docker build --build-arg VITE_OIDC_AUTHORITY=https://localhost/realms/nautical-deliverance \
             -t "nautical-deliverance/web:$ND_IMAGE_TAG" web
+          docker build -t "nautical-deliverance/backup:$ND_IMAGE_TAG" infra/backup
       - name: Prod overlay over local HTTPS
         env:
           CLEANUP: "1"

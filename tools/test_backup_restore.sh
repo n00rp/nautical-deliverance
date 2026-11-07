@@ -16,6 +16,7 @@ COMPOSE=(docker compose -f "$ROOT/infra/docker-compose.yml" -f "$ND_COMPOSE_OVER
 NET="${COMPOSE_PROJECT_NAME}_default"
 BUCKET=nd-backups
 WORK="$(mktemp -d)"
+chmod 711 "$WORK" # mktemp -d is 0700 on Linux; the image's non-root user must traverse it (no listing)
 ISSUER=http://localhost:8081/realms/nautical-deliverance
 failures=()
 fail() { failures+=("$1"); echo "FAIL: $1"; }

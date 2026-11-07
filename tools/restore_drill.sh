@@ -28,6 +28,7 @@ fi
 
 # The identity is copied next to nothing else, readable by the image's non-root user, and removed.
 work="$(mktemp -d)"
+chmod 711 "$work" # mktemp -d is 0700 on Linux; the image's non-root user must traverse it (no listing)
 # shellcheck disable=SC2329 # runs through the EXIT trap
 cleanup() {
   rm -rf "$work"
