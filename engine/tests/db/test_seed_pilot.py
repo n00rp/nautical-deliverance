@@ -107,7 +107,7 @@ def test_pilot_is_idempotent_and_clean(seeded: Engine) -> None:
 def test_modes(owner_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
     """Pilot seeds only the pilot org, dev the dev orgs; unset seeds nothing, unknown raises."""
     orgs: list[Any] = []
-    monkeypatch.setattr(seed, "seed_dev_orgs", lambda _e, o: orgs.append(set(o)))
+    monkeypatch.setattr(seed, "seed_orgs", lambda _e, o: orgs.append(set(o)))
     monkeypatch.setattr(seed, "seed_demo_master", lambda *_a: None)
     monkeypatch.setattr(seed, "seed_demo_inquiries", lambda *_a: None)
     for mode in (None, "", "pilot", "dev"):

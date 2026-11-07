@@ -317,7 +317,7 @@ def _pilot_data() -> dict[str, Any]:
 ORG_DATA[next(iter(PILOT_ORGS))] = _pilot_data()
 
 
-def seed_dev_orgs(engine: Engine, orgs: dict[uuid.UUID, str] = DEV_ORGS) -> None:
+def seed_orgs(engine: Engine, orgs: dict[uuid.UUID, str] = DEV_ORGS) -> None:
     """Insert the demo organizations (the dev ones by default); safe to re-run."""
     with engine.begin() as conn:
         for org_id, name in orgs.items():
@@ -740,7 +740,7 @@ def seed(engine: Engine, mode: str | None, now: datetime | None = None) -> None:
         msg = f"unknown seed mode {mode!r}: expected dev or pilot"
         raise ValueError(msg)
     orgs = PILOT_ORGS if mode == "pilot" else DEV_ORGS
-    seed_dev_orgs(engine, orgs)
+    seed_orgs(engine, orgs)
     seed_demo_master(engine, tuple(orgs))
     seed_demo_inquiries(engine, now, mode)
 

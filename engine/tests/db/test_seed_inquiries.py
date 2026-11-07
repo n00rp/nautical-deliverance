@@ -30,7 +30,7 @@ NOW = datetime.now(UTC)
 @pytest.fixture(scope="module")
 def seeded(owner_engine: Engine) -> Engine:
     """Engine with orgs, master data, users and inquiries seeded at NOW."""
-    seed.seed_dev_orgs(owner_engine)
+    seed.seed_orgs(owner_engine)
     seed.seed_demo_master(owner_engine)
     seed.seed_demo_inquiries(owner_engine, NOW)
     return owner_engine

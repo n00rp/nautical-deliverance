@@ -31,7 +31,7 @@ DENY = (
 @pytest.fixture(scope="module")
 def seeded(owner_engine: Engine) -> Engine:
     """Engine with both dev organizations and their master data seeded."""
-    seed.seed_dev_orgs(owner_engine)
+    seed.seed_orgs(owner_engine)
     seed.seed_demo_master(owner_engine)
     return owner_engine
 
