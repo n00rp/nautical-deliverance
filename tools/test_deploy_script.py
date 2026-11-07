@@ -62,6 +62,7 @@ def server(tmp_path: Path) -> dict[str, object]:
         "shas": shas,
         "side": side,
         "state": tmp_path / "DEPLOYED_SHA",
+        "first": tmp_path / "nd-state" / "FIRST_DEPLOYED",
         "bin": bin_dir,
         "log": tmp_path / "docker.log",
     }
@@ -74,6 +75,7 @@ def _deploy(server: dict[str, object], *args: str) -> subprocess.CompletedProces
         **os.environ,
         "PATH": f"{server['bin']}{os.pathsep}{os.environ['PATH']}",
         "ND_DEPLOYED_SHA_FILE": str(server["state"]),
+        "ND_FIRST_DEPLOYED_FILE": str(server["first"]),
         "FAKE_DOCKER_LOG": str(server["log"]),
     }
     assert BASH is not None
@@ -127,3 +129,16 @@ def test_refuses_an_older_commit_unless_rollback_is_allowed(server: dict[str, ob
 @pytest.mark.req("B6-R07")
 def test_rejects_a_malformed_sha(server: dict[str, object]) -> None:
     assert _deploy(server, "main").returncode == USAGE_ERROR
+
+
+@pytest.mark.req("B6-R07")
+def test_first_deployed_is_written_once_and_never_overwritten(server: dict[str, object]) -> None:
+    shas = server["shas"]
+    assert isinstance(shas, list)
+    first = Path(str(server["first"]))  # its directory does not exist yet: deploy.sh creates it
+    assert _deploy(server, shas[0]).returncode == 0
+    stamp = first.read_text(encoding="utf-8")
+    assert stamp.strip().endswith("Z")
+    first.write_text("keep", encoding="utf-8")
+    assert _deploy(server, shas[1]).returncode == 0
+    assert first.read_text(encoding="utf-8") == "keep"

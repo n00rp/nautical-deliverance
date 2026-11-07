@@ -80,7 +80,7 @@
 | B6-R03 | engine/tests/unit/test_dburl.py, tools/test_prod_config.py |
 | B6-R04 | engine/tests/db/test_seed_master.py, engine/tests/db/test_seed_pilot.py |
 | B6-R05 | .github/workflows/heavy.yml, tools/test_pilot_user.py |
-| B6-R06 | .github/workflows/heavy.yml, tools/test_backup_restore.sh, tools/test_prod_config.py |
+| B6-R06 | .github/workflows/heavy.yml, tools/test_backup_restore.sh, tools/test_check_fresh.py, tools/test_prod_config.py |
 | B6-R07 | .github/workflows/ci.yml, .github/workflows/deploy.yml, tools/test_deploy_docs.py, tools/test_deploy_script.py |
 | B6-R08 | .github/workflows/heavy.yml, web/e2e/flow.spec.ts |
 | B6-R09 | tools/test_deploy_docs.py |

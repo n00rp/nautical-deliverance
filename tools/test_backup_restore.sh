@@ -100,8 +100,11 @@ echo "== 5. backup with a throwaway age key"
 docker run --rm --entrypoint age-keygen "$IMG" >"$WORK/identity.txt" 2>"$WORK/keygen.err"
 sed -n 's/^# public key: //p' "$WORK/identity.txt" >"$WORK/recipients.txt"
 chmod a+r "$WORK/identity.txt" "$WORK/recipients.txt" # the image runs as a non-root user
-if fresh="$(runb check_fresh.sh 2>&1)" && grep -q "no backup .ok marker" <<<"$fresh"; then ok "check_fresh.sh: no marker yet is a warning, not a failure"
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if fresh="$(runb env "ND_FIRST_DEPLOYED=$now" check_fresh.sh 2>&1)" && grep -q "no backup .ok marker" <<<"$fresh"; then ok "check_fresh.sh: no marker right after the first deploy is a warning, not a failure"
 else echo "$fresh"; fail "check_fresh.sh must pass with a warning before the first backup"; fi
+runb check_fresh.sh >/dev/null 2>&1 && fail "check_fresh.sh passed with no marker and no FIRST_DEPLOYED" || ok "check_fresh.sh fails with no marker and no FIRST_DEPLOYED"
+runb env "ND_FIRST_DEPLOYED=$now" ND_BACKUP_BUCKET=no-such-bucket check_fresh.sh >/dev/null 2>&1 && fail "check_fresh.sh passed for a missing bucket" || ok "check_fresh.sh fails for a missing bucket"
 if out="$(runb backup.sh 2>&1)"; then ok "backup.sh exit 0"; else echo "$out"; fail "backup.sh failed"; fi
 key="$(echo "$out" | sed -n 's/^BACKUP_KEY=//p' | tail -1)"
 [[ "$key" =~ ^nd/[0-9]{4}/[0-9]{2}/[0-9]{2}/nd-[0-9]{8}T[0-9]{6}Z\.tar\.age$ ]] && ok "key $key" || fail "unexpected key '$key'"

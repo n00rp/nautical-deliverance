@@ -259,7 +259,8 @@ Two things are expected to be red or yellow on this first run:
 
 - the **E2E step fails** because the e2e users do not exist yet (section 13);
 - the **backup freshness step only warns** ("no backup .ok marker yet"): the first nightly backup has
-  not happened. From the first backup on, an old or missing newest backup fails the step (section 15).
+  not happened. A missing backup is allowed for the first 26 h after the first deploy; after that a
+  missing backup fails the deploy, and from the first backup on an old newest backup fails too (section 15).
 
 The first deploy takes 10 to 20 minutes (native arm64 builds). To watch on the server (as `deploy`,
 after the `nd` helper from section 14 is defined):
@@ -376,9 +377,11 @@ cannot decrypt is not a backup.
 
 Every deploy ends with `infra/backup/check_fresh.sh`, run inside the running backup container
 through `infra/deploy/deploy.sh --check-backup`. It fails the workflow when the newest `.ok`
-marker in the bucket is **26 hours old or older** (the nightly run plus margin). **Before the first
-backup exists it only prints a warning and passes**, so a deploy between the first deploy and the
-first nightly backup stays green. A failed listing (credentials, network) always fails. By hand,
+marker in the bucket is **26 hours old or older** (the nightly run plus margin). **A missing backup
+is allowed for the first 26 h after the first deploy** (`deploy.sh` records the time once in
+`/srv/nd/FIRST_DEPLOYED`; the check prints a warning and passes); after that a missing backup fails
+the deploy, as does a missing `FIRST_DEPLOYED`. A missing or inaccessible bucket (for example a typo
+in `ND_BACKUP_BUCKET`) and a failed listing (credentials, network) always fail. By hand,
 any time:
 
 ```
@@ -482,6 +485,8 @@ A deploy is a checkout of one commit, so going back is deploying an older one. T
 older commit than the one running (recorded in `/srv/nd/DEPLOYED_SHA`) and any commit that is not on
 `main`, unless you say so on purpose: Actions > Deploy pilot > Run workflow, `sha` = the known-good
 commit, **`allow_rollback` ticked** (this passes `--allow-rollback` to `deploy.sh`). The workflow still wants a green push CI run for that commit.
+Before rolling back, set the variable `ND_DEPLOY_ENABLED=false`, so that a green merge (or a re-run of
+the bad commit's CI) cannot deploy forward again past the rollback; set it back to `true` once the fix is on `main`.
 A rollback does not undo database migrations: only go back to a commit whose schema the current
 database still satisfies; otherwise restore a backup as below.
 
@@ -490,12 +495,15 @@ database still satisfies; otherwise restore a backup as below.
 Use this to recover from data loss or after a rebuild (the database is then not empty: the first
 deploy ran the migrations, the pilot seed and the realm import, so `--force` is required). It needs the
 **private key on the server for a few minutes**, a deliberate, time-boxed exception to section 6: the
-key goes into RAM-backed `/dev/shm`, is never written to disk, and is shredded afterwards. Stop at any
-failure and keep the key off the server.
+key goes into RAM-backed `/dev/shm`, is never written to disk, and is shredded afterwards. The key
+is created with `umask 077` (mode 600), then made readable (644) only because the container user
+must read it. On **any failure**, the commands below shred it (the `trap` on the second line covers a dropped session); if the session dies, run
+`shred -u /dev/shm/nd-id` yourself before doing anything else.
 
 ```
-$ ssh ubuntu@<server-ip> 'cat > /dev/shm/nd-id && chmod 644 /dev/shm/nd-id' < nd-backup-identity.txt
+$ ssh ubuntu@<server-ip> 'umask 077; cat > /dev/shm/nd-id && chmod 644 /dev/shm/nd-id || { shred -u /dev/shm/nd-id; exit 1; }' < nd-backup-identity.txt
 $ ssh ubuntu@<server-ip>
+ubuntu$ trap 'shred -u /dev/shm/nd-id 2>/dev/null' EXIT
 ubuntu$ sudo -iu deploy
 deploy$ cd ~/nd
 deploy$ nd() { docker compose -f infra/docker-compose.yml -f infra/docker-compose.prod.yml --env-file infra/.env.prod "$@"; }

@@ -19,7 +19,10 @@ main() {
   }
 
   if [[ "${1:-}" == "--check-backup" ]]; then
-    compose exec -T backup /usr/local/bin/check_fresh.sh
+    # The container cannot see /srv/nd, so the first-deploy time is passed in.
+    local first="${ND_FIRST_DEPLOYED_FILE:-/srv/nd/FIRST_DEPLOYED}" stamp=""
+    [[ -s "$first" ]] && stamp="$(<"$first")"
+    compose exec -T -e "ND_FIRST_DEPLOYED=$stamp" backup /usr/local/bin/check_fresh.sh
     return
   fi
 
@@ -46,6 +49,13 @@ main() {
   export ND_GIT_SHA="$sha"
   compose build
   compose up -d --remove-orphans --wait --wait-timeout 600
+  # Written once, after the first successful up --wait: bounds the first-backup grace (check_fresh.sh).
+  local first="${ND_FIRST_DEPLOYED_FILE:-/srv/nd/FIRST_DEPLOYED}"
+  if [[ ! -e "$first" ]]; then
+    mkdir -p "$(dirname "$first")"
+    date -u +%Y-%m-%dT%H:%M:%SZ >"$first"
+  fi
+  mkdir -p "$(dirname "$state")"
   printf '%s\n' "$sha" >"$state"
   docker image prune -f >/dev/null
   echo "deployed $sha"
