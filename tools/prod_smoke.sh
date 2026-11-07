@@ -9,13 +9,17 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 ENV_FILE="$WORK/env"
 secret() { openssl rand -hex 16; }
+# C2: the application passwords contain '/', '@' and ':', which break a raw database URL; the engine
+# entrypoint must encode them (a plain hex secret would never catch that).
+nasty() { echo "$(secret)/@:$(secret)"; }
+KC_ADMIN_PASSWORD="$(secret)"
 cat > "$ENV_FILE" <<ENV
 ND_PUBLIC_HOST=localhost
 ND_DB_SUPERUSER_PASSWORD=$(secret)
-ND_DB_OWNER_PASSWORD=$(secret)
-ND_DB_APP_PASSWORD=$(secret)
+ND_DB_OWNER_PASSWORD=$(nasty)
+ND_DB_APP_PASSWORD=$(nasty)
 ND_DB_KEYCLOAK_PASSWORD=$(secret)
-ND_KEYCLOAK_ADMIN_PASSWORD=$(secret)
+ND_KEYCLOAK_ADMIN_PASSWORD=$KC_ADMIN_PASSWORD
 ND_BACKUP_BUCKET=unused
 ND_BACKUP_S3_ENDPOINT=http://127.0.0.1:9
 ND_BACKUP_S3_REGION=unused
@@ -60,6 +64,15 @@ done
 out="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' --max-time 20 \
   http://127.0.0.1:8081/admin/master/console/ || true)"
 [[ "$out" == "200 " ]] && ok "admin console on 127.0.0.1:8081 = 200, no redirect" || fail "admin console: '$out'"
+
+# The runbook path (sections 11 and 12): a master-realm token and one admin GET on the tunnel
+# target, which is what tools/pilot_user.py does.
+adm="$(curl -s --max-time 20 http://127.0.0.1:8081/realms/master/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=admin-cli -d username=admin --data-urlencode "password=$KC_ADMIN_PASSWORD" \
+  | python -c "import json,sys; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || true)"
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "Authorization: Bearer $adm" \
+  "http://127.0.0.1:8081/admin/realms/nautical-deliverance/users?max=1" || true)"
+[[ -n "$adm" && "$code" == 200 ]] && ok "master token and admin GET on 127.0.0.1:8081 = 200" || fail "admin API on the tunnel port: token '${adm:+set}', GET '$code'"
 
 headers="$("${CURL[@]}" -D - -o /dev/null "$URL/" | tr -d '\r')"
 for h in "strict-transport-security: max-age=31536000" "x-content-type-options: nosniff" \

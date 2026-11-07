@@ -1,6 +1,11 @@
 #!/bin/sh
 # Migrate (and optionally seed) as nd_owner, then serve as nd_app.
 set -eu
+# Compose puts the raw passwords into the URLs: encode them so a '/', '@' or ':' cannot end the
+# userinfo early for libpq or SQLAlchemy (C2).
+ND_DATABASE_URL="$(python -m nautical_deliverance.persistence.dburl ND_DATABASE_URL)"
+ND_MIGRATION_DATABASE_URL="$(python -m nautical_deliverance.persistence.dburl ND_MIGRATION_DATABASE_URL)"
+export ND_DATABASE_URL ND_MIGRATION_DATABASE_URL
 # Bounded wait for the database (works without compose depends_on).
 i=0
 until python -c "import os,psycopg; psycopg.connect(os.environ['ND_MIGRATION_DATABASE_URL'].replace('+psycopg',''), connect_timeout=2).close()" 2>/dev/null; do
