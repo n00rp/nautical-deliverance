@@ -102,6 +102,8 @@ issuer="$("${CURL[@]}" "$URL/realms/nautical-deliverance/.well-known/openid-conf
 
 if ((${#failures[@]})); then
   printf 'FAILED: %s\n' "${failures[@]}"
+  # Logs here, while the stack still runs: the CLEANUP trap removes it on exit.
+  "${COMPOSE[@]}" logs --no-color --tail 300 keycloak caddy engine || true
   exit 1
 fi
 echo "prod overlay OK"
