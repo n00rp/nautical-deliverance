@@ -11,6 +11,10 @@ Where a command runs (the prompt in front of it tells you):
 | `ubuntu$` | the server, as the admin user `ubuntu` (has `sudo`) | `ssh ubuntu@<server-ip>` with the admin key you gave Oracle in section 2 |
 | `deploy$` | the server, as the `deploy` user (no `sudo`) | from `ubuntu$`: `sudo -iu deploy` (leave with `exit`) |
 
+To run several `deploy$` lines from `ubuntu$` in one paste, use a heredoc:
+`sudo -u deploy -H bash <<'EOF'`, the lines, then `EOF`. `sudo -iu deploy bash -c '...'` joins the
+lines into one, so a multi-line command breaks.
+
 The `deploy` user's own key (`nd-deploy`) belongs to GitHub only. You never log in with it, so you can
 delete your local copy once it is stored as a GitHub secret, and everything you do by hand goes
 through `ubuntu`. Never delete the admin key: it is your way in (and the SSH tunnel in section 11).
@@ -41,6 +45,13 @@ Placeholders: `<pilot-host>` is your DuckDNS name (for example `nd-pilot.duckdns
 10. After the first backup: test-decrypt, staleness check, restore drill (14 to 16)
 11. Operations: password rotation, reboots, rollback, rebuild and restore (17 to 19)
 
+**Fast path for a demo with invented data only.** Sections 1 to 4, 7 (the repo deploy key and the
+clone), 9 with the five `ND_BACKUP_*` values set to `not-configured-yet`, then the first deploy by hand
+on the server (section 10, "By hand on the server") and the pilot users (section 12). This skips the
+backups (5, 6, 14 to 16), GitHub secrets and automatic deploys (8, 13), and the named Keycloak admin
+(11). Nothing is backed up and every update is a manual deploy. Do all the skipped sections before
+the pilot holds real data.
+
 What runs when: CI (`.github/workflows/ci.yml`, the fast gates) runs on every push and pull request.
 The heavy gates (`.github/workflows/heavy.yml`: arm64 builds, browser E2E, backup/restore, prod overlay,
 Keycloak user script) run nightly on `main`, on demand (Actions > Heavy > Run workflow), and on pushes
@@ -52,11 +63,19 @@ every deploy. A red nightly heavy run is a reason to look before the next merge.
 
 1. Sign up at oracle.com/cloud/free. **Card verification:** Oracle asks for a credit or debit card to
    verify identity (a small authorization is made and released). Always Free resources are not
-   charged. Stay on the Always Free tier and do not upgrade to Pay As You Go.
-2. **Region choice:** pick the home region when you register; it cannot be changed later. Choose one
+   charged.
+2. **Upgrade to Pay As You Go (D-081).** On a free-trial account, A1 capacity is often unavailable
+   ("Out of capacity"). Pay As You Go accounts get capacity first and are still not charged for Always
+   Free resources. Upgrade under Billing > Upgrade and Manage Payment. If that page fails to load, try a
+   private window or later. Then set a **budget alert**: Billing > Budgets > Create budget, amount 1
+   (in your billing currency), alert at 100 % of actual spend to your e-mail. Create only resources
+   marked "Always Free eligible".
+3. **Region choice:** pick the home region when you register; it cannot be changed later. Choose one
    close to the users, and check that the Ampere A1 shape is offered there (Frankfurt, Amsterdam
    and Stockholm usually are). If "Out of capacity" appears, retry later or in another availability
    domain.
+4. **Network:** Networking > Virtual cloud networks > Start VCN Wizard > "Create VCN with Internet
+   Connectivity", name for example `nd-pilot-vcn`. It creates the public subnet that section 2 uses.
 
 ## 2. The VM (A1.Flex, 2 OCPU / 12 GB)
 
@@ -64,10 +83,10 @@ Console: Compute > Instances > Create instance.
 
 | Setting | Value |
 |---|---|
-| Image | Canonical Ubuntu 24.04 (aarch64) |
-| Shape | Ampere, `VM.Standard.A1.Flex`, **2 OCPU, 12 GB** memory (inside the free 4 OCPU / 24 GB, with headroom) |
+| Image | Canonical Ubuntu 24.04 Minimal (aarch64); the full image works too. `cloud-init.yaml` installs `gnupg`, which Minimal lacks |
+| Shape | Ampere, `VM.Standard.A1.Flex`, **2 OCPU, 12 GB** memory (the Always Free A1 allowance) |
 | Boot volume | 100 GB (the free allowance is 200 GB) |
-| Network | a public subnet, "Assign a public IPv4 address" on |
+| Network | the VCN's public subnet (section 1), "Assign a public IPv4 address" on |
 | SSH keys | paste your own admin public key here, so you can log in as `ubuntu`; the deploy key goes into cloud-init |
 | Advanced options > Management > Cloud-init script | the whole of `infra/deploy/cloud-init.yaml`, after replacing `ssh-ed25519 REPLACE_WITH_THE_DEPLOY_PUBLIC_KEY` with the public key from section 7 |
 
@@ -169,6 +188,9 @@ $ ssh-keygen -t ed25519 -N '' -C nd-deploy -f nd-deploy       # login key
 $ ssh-keygen -t ed25519 -N '' -C nd-repo-read -f nd-repo      # repo deploy key
 ```
 
+In Windows PowerShell 5.1 an empty passphrase is written `-N '""'`. Keep the keys outside the
+repository, for example in `~/.ssh/nd/`.
+
 Once the VM is up (`cloud-init status --wait` shows `done`):
 
 ```
@@ -248,7 +270,7 @@ start on a **fresh volume**: a server where the stack was never started. If it w
 wrong passwords, tear down as in section 19 (this deletes the data: acceptable only before the pilot
 has data).
 
-Run it from GitHub: Actions > "Deploy pilot" > Run workflow (branch `main`), `sha` = the full
+**From GitHub (needs section 8).** Run it from GitHub: Actions > "Deploy pilot" > Run workflow (branch `main`), `sha` = the full
 40-character hash of a commit on `main` whose push CI run is green. The workflow checks that run,
 the server checks that the commit is on `main`, and neither needs `ND_DEPLOY_ENABLED`.
 `allow_rollback` stays off. Later deploys run by themselves after every green CI run on `main` once
@@ -276,6 +298,18 @@ setting without a decision.
 Then open `https://<pilot-host>`: the sign-in page must appear. The workflow's smoke step
 (`tools/pilot_smoke.sh`) should pass. Re-run the workflow after sections 11 to 13, then set
 `ND_DEPLOY_ENABLED=true` (section 8) so that every green merge deploys.
+
+**By hand on the server (fast path, no GitHub secrets).** Use the full 40-character hash of a
+commit on `main`:
+
+```
+ubuntu$ sudo -u deploy -H bash -c 'cd ~/nd && nohup infra/deploy/deploy.sh <sha> > ~/deploy.log 2>&1 &'
+ubuntu$ sudo tail -f /home/deploy/deploy.log
+```
+
+It is done when the log ends with `deployed <sha>`. Ctrl+C stops only the `tail`. If the build stops
+on a network error while downloading a package (for example `stream error` from `proxy.golang.org`),
+run the same command again: the finished layers are cached.
 
 A change to `deploy.sh` itself takes effect one deploy late: the server runs the copy that was
 checked out by the previous deploy, and replaces it only while checking out the new commit.
@@ -317,6 +351,22 @@ $ ND_KC_ADMIN_PASSWORD='<password of the admin that has no OTP>' \
   uv run --project engine python tools/pilot_user.py --admin-user <that admin's username> \
   --email buyer1@example.org --first Ada --last Buyer --role bunker_buyer
 ```
+
+The script uses the Python standard library only, so it also runs **on the server** with no tunnel
+and no `uv`. This form reads the password of the bootstrap `admin` (fast path) from `.env.prod`
+without showing it:
+
+```
+ubuntu$ sudo -u deploy -H bash <<'EOF'
+cd ~/nd
+export ND_KC_ADMIN_PASSWORD="$(grep '^ND_KEYCLOAK_ADMIN_PASSWORD=' infra/.env.prod | cut -d= -f2-)"
+python3 tools/pilot_user.py --admin-user admin --email buyer@pilot.test --first Bea --last Buyer --role bunker_buyer
+EOF
+```
+
+After section 11 has removed the bootstrap admin, use the named admin and its password instead.
+The pilot sends no e-mail, so the address is only the sign-in name: an invented address under
+`.test` works.
 
 Roles: `admin`, `bunker_buyer`, `operator`, `viewer`. The organisation is Pilot Demo Shipping by
 default. The script prints a **temporary password once** (on stdout, nowhere else): send it to the

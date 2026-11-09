@@ -4,7 +4,7 @@
 # (docs/deploy/oracle-runbook.md). Replace the ssh-ed25519 line below with the public key whose
 # private half is the GitHub secret ND_DEPLOY_SSH_KEY.
 package_update: true
-packages: [ca-certificates, curl, git, iptables-persistent, unattended-upgrades]
+packages: [ca-certificates, curl, git, gnupg, iptables-persistent, unattended-upgrades]
 
 # The docker group must exist before the deploy user joins it.
 groups: [docker]
