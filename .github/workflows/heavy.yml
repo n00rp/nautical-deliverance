@@ -148,9 +148,6 @@ jobs:
           CLEANUP: "1"
           NO_BUILD: "1"
         run: bash tools/prod_smoke.sh
-      - name: Stack logs on failure
-        if: failure()
-        run: docker compose -p nd-prod-smoke logs --no-color
 
   # req: B6-R05
   # tools/pilot_user.py against a real Keycloak (pilot realm) started by the test itself.

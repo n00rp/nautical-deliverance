@@ -29,6 +29,7 @@ Build an internal web application for bunker (marine fuel) procurement that supp
 | D-078 | The build proceeds on our own judgment without waiting for the brief author's feedback; her feedback is input to whichever sub-project it affects, not a gate (amends B0-R08). Assumptions recorded in sub-project specs hold until she says otherwise. |
 | D-079 | License allow-list extended with CC-BY-4.0 (build-time data packages such as caniuse-lite), with attribution in THIRD_PARTY_NOTICES.md. D-061 (0BSD, Zlib) applies on main too. GPL/AGPL remain blocked. |
 | D-080 | Clarifies D-079 (confirmed by the owner 2026-11-07): the GPL/AGPL block applies to our code's library dependencies (pip, pnpm), which the licence check covers. Unmodified tools and system components that we only run, never link or distribute (CI tools such as ShellCheck and QEMU, PostGIS, OS packages), are allowed when they are recorded in docs/versions.md. |
+| D-081 | The pilot's Oracle account is upgraded to Pay As You Go (owner's choice 2026-11-07, confirmed by the owner 2026-11-09), because free-trial accounts rarely get Ampere A1 capacity. Only Always Free eligible resources are created, and a budget alert at actual spend above 1 (billing currency) warns of any charge. Rejected: Hetzner CAX11 (about 5 EUR a month) and home hosting through Cloudflare Tunnel. Replaces the runbook's "do not upgrade to Pay As You Go"; the resources stay free, only the account type changes. |
 
 ## 3. Evaluation criteria
 
