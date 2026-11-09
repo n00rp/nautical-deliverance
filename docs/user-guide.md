@@ -19,6 +19,7 @@ in your own mail program. This is a planning tool, not for navigation.
    Keep it private: it is yours alone.
 4. After sign-in you see the **Dashboard** and the **Inquiries** list in the top navigation.
 
+If sign-in was cancelled or failed, the pilot shows the reason; click **Sign in** to try again.
 If you cannot sign in, contact the pilot owner who created your account.
 
 ## Roles
