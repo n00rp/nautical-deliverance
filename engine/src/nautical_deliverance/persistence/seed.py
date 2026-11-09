@@ -588,7 +588,12 @@ def _seed_rfqs(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID])
     """Add the demo RFQs; recipients are covering counterparties first, with a primary contact."""
     for voyage, statuses in _RFQS.items():
         row = db.conn.execute(
-            text("SELECT id, port_id, version, eta FROM inquiry WHERE voyage = :v"), {"v": voyage}
+            text(
+                # The oldest inquiry with the marker is the seeded one: Duplicate copies the voyage.
+                "SELECT id, port_id, version, eta FROM inquiry WHERE voyage = :v"
+                " ORDER BY created_at, reference LIMIT 1"
+            ),
+            {"v": voyage},
         ).one()
         if db.conn.execute(text("SELECT 1 FROM rfq WHERE inquiry_id = :i"), {"i": row.id}).first():
             continue
@@ -640,7 +645,8 @@ def _seed_offers(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID
     buyer = users["bunker_buyer"]
     for voyage, specs in _OFFERS.items():
         inq = db.conn.execute(
-            text("SELECT id FROM inquiry WHERE voyage = :v"), {"v": voyage}
+            text("SELECT id FROM inquiry WHERE voyage = :v ORDER BY created_at, reference LIMIT 1"),
+            {"v": voyage},
         ).scalar_one()
         if db.conn.execute(text("SELECT 1 FROM offer WHERE inquiry_id = :i"), {"i": inq}).first():
             continue
@@ -704,7 +710,12 @@ def _seed_nominations(db: _Org, s: Session, now: datetime, users: dict[str, uuid
     Frozen exactly as mark-sent does: the first send bumps the inquiry (winner_selected ->
     nominated), the ETA edit bumps it again, and the amendment is sent against that version.
     """
-    inq = s.scalars(select(Inquiry).where(Inquiry.voyage == "DEMO-6")).one()
+    inq = s.scalars(
+        select(Inquiry)
+        .where(Inquiry.voyage == "DEMO-6")
+        .order_by(Inquiry.created_at, Inquiry.reference)
+        .limit(1)
+    ).one()
     if s.scalar(select(Nomination.id).where(Nomination.inquiry_id == inq.id)):
         return
     offer_id = inq.winner_offer_id

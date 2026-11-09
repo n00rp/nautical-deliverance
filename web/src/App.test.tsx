@@ -65,16 +65,23 @@ afterEach(() => {
 });
 
 describe("App", () => {
-  it("[S0-R03] shows sign-in button when signed out", async () => {
+  it("[S0-R03] sends a signed-out user straight to the sign-in page", async () => {
     auth.getUser.mockResolvedValue(null);
     render(<App />);
 
     expect(screen.getByText("Loading…")).toBeTruthy();
-    const button = await screen.findByRole("button", { name: "Sign in" });
+    expect(await screen.findByText("Redirecting to sign-in…")).toBeTruthy();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(PRODUCT_NAME);
     expect(document.title).toBe(PRODUCT_NAME);
+    expect(auth.signinRedirect).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+  });
 
-    await userEvent.click(button);
+  it("[S0-R03] the sign-in button retries after an error", async () => {
+    window.history.replaceState({}, "", "/?error=access_denied&state=xyz");
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Sign in" }));
     expect(auth.signinRedirect).toHaveBeenCalledOnce();
   });
 
@@ -124,7 +131,9 @@ describe("App", () => {
     auth.getUser.mockResolvedValue({ ...user, expired: true });
     render(<App />);
 
-    expect(await screen.findByRole("button", { name: "Sign in" })).toBeTruthy();
+    await waitFor(() => {
+      expect(auth.signinRedirect).toHaveBeenCalledOnce();
+    });
     expect(fetchMe).not.toHaveBeenCalled();
   });
 

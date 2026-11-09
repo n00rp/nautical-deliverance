@@ -112,6 +112,18 @@ describe("RfqLog", () => {
     expect(screen.queryByRole("link", { name: /offer$/ })).toBeNull();
   });
 
+  it("[B3-R13] switching rows shows one preview, never the previous one beside it", async () => {
+    const errors = vi.spyOn(console, "error");
+    setup(["bunker_buyer"], [draftRfq, sentRfq]);
+    const panel = await openRow("Beta Marine");
+    await within(panel).findByText("Open in e-mail");
+    await openRow("Alpha Marine");
+    await within(panel).findByText("Mark sent");
+    expect(screen.getAllByRole("link", { name: "Open in e-mail" })).toHaveLength(1);
+    // Two siblings with the same key make React duplicate or drop children.
+    expect(errors.mock.calls.flat().join(" ")).not.toContain("same key");
+  });
+
   it("[B4-R12] a viewer gets no offer link", async () => {
     setup(["viewer"]);
     await openRow("Beta Marine");
