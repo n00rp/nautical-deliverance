@@ -13,7 +13,7 @@ in your own mail program. This is a planning tool, not for navigation.
 ## Sign in
 
 1. Open the pilot address you were given (it starts with `https://`).
-2. Click **Sign in**. The sign-in page asks for **Username or email** and **Password**; then click
+2. The sign-in page opens by itself and asks for **Username or email** and **Password**; then click
    **Sign In**.
 3. The first time, you use the temporary password you received and are asked to choose a new one.
    Keep it private: it is yours alone.

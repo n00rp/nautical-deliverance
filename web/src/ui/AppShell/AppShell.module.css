@@ -108,6 +108,11 @@
   text-transform: uppercase;
 }
 
+/* Without nav (signed out) the content takes the whole width. */
+.solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .main {
   min-width: 0;
 }

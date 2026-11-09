@@ -21,6 +21,7 @@ import { WorkList } from "./inquiries/WorkList";
 import { createInquiryApi } from "./inquiryApi";
 import { createMasterApi } from "./masterApi";
 import { PRODUCT_NAME } from "./productName";
+import { SignIn } from "./SignIn";
 import { AppShell } from "./ui/AppShell/AppShell";
 import type { Role } from "./ui/RoleGate/RoleGate";
 import { ToastHost, ToastProvider } from "./ui/Toast/Toast";
@@ -31,7 +32,7 @@ const isRole = (r: string): r is Role => WEB_ROLES.includes(r);
 
 type State =
   | { kind: "loading" }
-  | { kind: "signedOut" }
+  | { kind: "redirecting" }
   | { kind: "signedIn"; me: Me }
   | { kind: "error"; message: string };
 
@@ -65,7 +66,11 @@ async function load(): Promise<State> {
     }
   }
   const user = await userManager.getUser();
-  if (!user || user.expired) return { kind: "signedOut" };
+  if (!user || user.expired) {
+    // Straight to the identity provider's sign-in page; our own card only shows errors.
+    await userManager.signinRedirect();
+    return { kind: "redirecting" };
+  }
   return { kind: "signedIn", me: await fetchMe(user.access_token) };
 }
 
@@ -136,11 +141,9 @@ export function App() {
       >
         <ErrorBoundary>
           {state.kind === "loading" && <p role="status">Loading…</p>}
-          {state.kind === "error" && <p role="alert">{state.message}</p>}
-          {(state.kind === "signedOut" || state.kind === "error") && (
-            <button type="button" onClick={() => void userManager.signinRedirect()}>
-              Sign in
-            </button>
+          {state.kind === "redirecting" && <p role="status">Redirecting to sign-in…</p>}
+          {state.kind === "error" && (
+            <SignIn error={state.message} onSignIn={() => void userManager.signinRedirect()} />
           )}
           {user && api && route && (
             <MasterDataPage

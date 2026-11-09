@@ -65,7 +65,7 @@ export function AppShell({ productName, user, nav, current, banner, children }: 
           </button>
         )}
       </header>
-      <div className={styles.body}>
+      <div className={nav.length > 0 ? styles.body : `${styles.body} ${styles.solo}`}>
         {nav.length > 0 && (
           <nav
             ref={navRef}

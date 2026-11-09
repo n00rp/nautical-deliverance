@@ -17,8 +17,7 @@ const inDays = (d: number) => new Date(Date.now() + d * DAY_MS).toISOString().sl
 type Creds = typeof BUYER;
 
 async function signIn(page: Page, who: Creds) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.goto("/"); // a signed-out visit goes straight to the sign-in page
   await page.getByLabel("Username or email").fill(who.user);
   await page.getByLabel("Password", { exact: true }).fill(who.password);
   await page.getByRole("button", { name: "Sign In" }).click();
