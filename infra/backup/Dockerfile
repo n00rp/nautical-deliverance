@@ -49,6 +49,11 @@ RUN set -eu; \
 FROM postgres:17.11-trixie@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3
 # gosu is a Go binary with fixable stdlib CVEs and this image never needs it (no entrypoint switch).
 RUN rm -f /usr/local/bin/gosu
+# zlib1g: CVE-2026-85091 / CVE-2026-76844 fixed in 1:1.3.dfsg+really1.3.1-1+deb13u1; remove once the
+# postgres base digest ships it.
+RUN apt-get update \
+    && apt-get install -y --only-upgrade --no-install-recommends zlib1g \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=gobuild /out/age /out/age-keygen /out/rclone /usr/local/bin/
 COPY --from=fetch /usr/local/bin/supercronic /usr/local/bin/
 COPY --chmod=0755 common.sh backup.sh restore.sh check_fresh.sh /usr/local/bin/

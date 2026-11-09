@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { describe } from "../admin/errors";
 import { useReload } from "../admin/useReload";
@@ -259,8 +259,9 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
           }}
         >
           {open && (
-            <>
-              <RfqPreview key={open.id} item={open} load={api.getPreview} />
+            // One key on the whole group: the preview and the actions remount per RFQ.
+            <Fragment key={open.id}>
+              <RfqPreview item={open} load={api.getPreview} />
               {canWrite && open.status === "sent" && (
                 <a className={css.mail} href={`#/inquiries/${inquiryId}/rfqs/${open.id}/offer`}>
                   {open.offer_received ? "Edit offer" : "Enter offer"}
@@ -268,7 +269,6 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
               )}
               {canWrite && (
                 <RfqActions
-                  key={open.id}
                   rfq={open}
                   api={api}
                   timeZone={zone}
@@ -279,7 +279,7 @@ export function RfqLog({ inquiryId, api, roles }: RfqLogProps) {
                   }}
                 />
               )}
-            </>
+            </Fragment>
           )}
         </DetailPanel>
       </div>

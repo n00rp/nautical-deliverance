@@ -131,6 +131,36 @@ def test_idempotent_and_unaudited(seeded: Engine) -> None:
     assert all(not q(seeded, o, "SELECT 1 FROM audit_entry") for o in seed.DEV_ORGS)
 
 
+@pytest.mark.req("B2-R14")
+def test_reseed_survives_a_duplicated_demo_inquiry(seeded: Engine) -> None:
+    """Duplicate copies the voyage marker; a later seed run must still find the seeded inquiries."""
+    org = next(iter(seed.DEV_ORGS))
+    with seeded.begin() as conn:
+        conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)})
+        for v in ("DEMO-2", "DEMO-6", "DEMO-8"):
+            for sql in (
+                "CREATE TEMP TABLE dup AS SELECT * FROM inquiry WHERE voyage = :v",
+                (  # what Duplicate makes: a new draft that keeps the voyage
+                    "UPDATE dup SET id = gen_random_uuid(), status = 'draft',"
+                    " reference = 'INQ-9912-' || right(:v, 3),"
+                    " created_at = created_at + interval '1d',"
+                    " winner_offer_id = NULL, decided_at = NULL, decided_by = NULL,"
+                    " decided_total = NULL, decision_reason = NULL, decision_note = NULL"
+                ),
+                "INSERT INTO inquiry SELECT * FROM dup",
+                "DROP TABLE dup",
+            ):
+                conn.execute(text(sql), {"v": v})
+    try:
+        seed.seed_demo_inquiries(seeded, NOW + timedelta(days=1))
+    finally:
+        with seeded.begin() as conn:
+            conn.execute(
+                text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(org)}
+            )
+            conn.execute(text("DELETE FROM inquiry WHERE reference LIKE 'INQ-9912-%'"))
+
+
 @pytest.mark.req("B3-R14")
 @pytest.mark.parametrize("org", list(seed.DEV_ORGS))
 def test_demo_rfqs(seeded: Engine, org: uuid.UUID) -> None:
