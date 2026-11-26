@@ -40,7 +40,6 @@ from nautical_deliverance.domain.inquiry import (
 from nautical_deliverance.persistence.audit import history, record_change
 from nautical_deliverance.persistence.inquiry_repo import (
     DECISION_COLUMNS,
-    dec,
     detail,
     line_rows,
     line_text,
@@ -78,18 +77,6 @@ MASTER: dict[str, tuple[Any, str]] = {
     "port_id": (Port, "port"),
     "bunkering_reason_id": (BunkeringReason, "bunkering reason"),
 }
-
-DUPLICATED = (
-    "vessel_id",
-    "legal_entity_id",
-    "voyage",
-    "operator_name",
-    "requester_id",
-    "port_id",
-    "agent_name",
-    "agent_email",
-    "bunkering_reason_id",
-)  # fmt: skip  (B2-D10)
 
 
 def get_now() -> datetime:
@@ -329,13 +316,11 @@ def get_inquiry(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object
         return _out(s, _load(s, inquiry_id), principal)
 
 
-def _create(  # noqa: PLR0913, PLR0917
+def _create(
     s: Session,
     principal: Principal,
     now: datetime,
     body: InquiryIn,
-    action: Literal["create", "duplicate"] = "create",
-    extra: dict[str, Any] | None = None,
 ) -> InquiryOut:
     """Validate and insert a Draft with its lines and one audit entry."""
     _check_lines(body.lines)
@@ -375,14 +360,13 @@ def _create(  # noqa: PLR0913, PLR0917
         actor=principal.user_id,
         entity_type="inquiry",
         entity_id=inq.id,
-        action=action,
+        action="create",
         before=None,
         after={
             **values,
             "reference": inq.reference,
             "status": inq.status,
             "lines": texts,
-            **(extra or {}),
         },
     )
     return _out(s, inq, principal)
@@ -494,31 +478,6 @@ def cancel_inquiry(
         inq = _lock_open(s, inquiry_id, body.version)
         values = {**_transition(inq, Status.CANCELLED), "cancel_reason": body.reason}
         return _change(s, principal, now, inq, "cancel", values)
-
-
-@router.post("/{inquiry_id}/duplicate", response_model=InquiryOut, status_code=201)
-def duplicate_inquiry(
-    inquiry_id: uuid.UUID, body: VersionIn, principal: Editor, engine: Eng, now: Now
-) -> object:
-    """Create a Draft from the B2-D10 fields; ETA/ETD start empty (R5)."""
-    with scope(principal, engine) as s:
-        src = _load(s, inquiry_id)
-        if src.version != body.version:
-            raise conflict()
-        lines = [
-            LineIn(
-                product_id=r.InquiryLine.product_id,
-                quantity=cast("str", dec(r.InquiryLine.quantity)),
-                unit=r.InquiryLine.unit,
-                density=dec(r.InquiryLine.density),
-                spec_notes=r.InquiryLine.spec_notes,
-                iso_spec_version_id=r.InquiryLine.iso_spec_version_id,
-            )
-            for r in line_rows(s, src.id)
-        ]
-        copied = {k: getattr(src, k) for k in DUPLICATED}
-        new = InquiryIn.model_construct(**copied, eta=None, etd=None, lines=lines)
-        return _create(s, principal, now, new, "duplicate", {"duplicate_of": src.reference})
 
 
 @router.get("/{inquiry_id}/history", response_model=list[HistoryOut])

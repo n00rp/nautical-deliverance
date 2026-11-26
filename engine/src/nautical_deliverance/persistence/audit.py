@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.orm import Session
 
+# historic: Duplicate was removed in B7 (B7-D5)
 Action = Literal[
     "create", "update", "deactivate", "reactivate", "take", "cancel", "duplicate",
     "send", "withdraw", "decline", "select_winner",

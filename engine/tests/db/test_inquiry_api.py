@@ -476,7 +476,6 @@ ALLOWED = {
     "patch": {Role.ADMIN, Role.BUNKER_BUYER},
     "take": {Role.ADMIN, Role.BUNKER_BUYER},
     "cancel": {Role.ADMIN, Role.BUNKER_BUYER},
-    "duplicate": {Role.ADMIN, Role.BUNKER_BUYER},
     "history": set(Role),
 }
 
@@ -505,13 +504,11 @@ def test_role_matrix(
         "cancel": lambda: c.http.post(
             f"{URL}/{inq['id']}/cancel", json={"version": live(), "reason": "r"}
         ),
-        "duplicate": lambda: c.http.post(f"{URL}/{inq['id']}/duplicate", json={"version": live()}),
         "history": lambda: c.http.get(f"{URL}/{inq['id']}/history"),
     }
     for name, call in calls.items():
         r = call()
-        created = name in {"create", "duplicate"}
-        want = (CREATED if created else OK) if role in ALLOWED[name] else FORBIDDEN
+        want = (CREATED if name == "create" else OK) if role in ALLOWED[name] else FORBIDDEN
         assert r.status_code == want, (name, role, r.text)
 
 
@@ -964,10 +961,9 @@ def test_other_organizations_ids_are_422_on_their_field_and_404_as_inquiry(
         admin.http.patch(path, json={"version": 1, "voyage": "x"}),
         admin.http.post(f"{path}/take", json={"version": 1}),
         admin.http.post(f"{path}/cancel", json={"version": 1, "reason": "r"}),
-        admin.http.post(f"{path}/duplicate", json={"version": 1}),
         admin.http.get(f"{path}/history"),
     ]
-    assert [r.status_code for r in calls] == [NOT_FOUND] * 6
+    assert [r.status_code for r in calls] == [NOT_FOUND] * 5
 
 
 # --- B7a-R01/R02: work-list phases and phase counts ---------------------------------------------

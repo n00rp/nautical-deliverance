@@ -47,7 +47,7 @@ export type Decision = {
   currency: string;
 };
 
-/** A work-list row. `eta` is null on a duplicated draft that has none yet. */
+/** A work-list row. `eta` is null on a draft that has none yet. */
 export type InquiryListItem = {
   id: string;
   reference: string;
@@ -85,7 +85,7 @@ export type InquiryBody = {
   vessel_id: string;
   legal_entity_id?: string | null;
   voyage?: string | null;
-  operator_id?: string | null;
+  operator_name?: string | null;
   buyer_id?: string | null;
   requester_id?: string | null;
   port_id: string;
@@ -129,8 +129,7 @@ export type Inquiry = {
   legal_entity_name: string;
   legal_entity_inactive: boolean;
   voyage: string | null;
-  operator_id: string;
-  operator_name: string;
+  operator_name: string | null;
   buyer_id: string | null;
   buyer_name: string | null;
   requester_id: string;
@@ -205,7 +204,6 @@ export function createInquiryApi(auth: TokenSource) {
     takeInquiry: (id: string, version: number) => post(id, "/take", { version }),
     cancelInquiry: (id: string, version: number, reason: string) =>
       post(id, "/cancel", { version, reason }),
-    duplicateInquiry: (id: string, version: number) => post(id, "/duplicate", { version }),
     inquiryHistory: async (id: string) =>
       toHistory(await call<RawHistory[]>("GET", path(id, "/history"))),
     listUsers: (role?: Role) => call<DirectoryUser[]>("GET", role ? `users?role=${role}` : "users"),

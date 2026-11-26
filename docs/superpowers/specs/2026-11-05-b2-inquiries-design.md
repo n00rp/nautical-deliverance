@@ -15,7 +15,7 @@ Confirmed by the owner in the B2 interview:
 | B2-D2 | The port **agent** is free text on the inquiry (name, optional e-mail); not master data in pilot 1. |
 | B2-D3 | Inquiry reference is `INQ-YYMM-NNN`, sequential per organization and calendar month (UTC) of creation, starting at 001; `NNN` widens to four digits after 999. Never reused, also not after cancellation. |
 | B2-D4 | A product line for a product not in the vessel's **approved fuels** shows a warning and may still be saved. |
-| B2-D5 | After **Draft**, the core fields lock: vessel, legal entity, port, bunkering reason and all product lines. ETA, ETD, agent, buyer and internal comments stay editable (audited). A changed scope is handled by cancelling and duplicating. |
+| B2-D5 | After **Draft**, the core fields lock: vessel, legal entity, port, bunkering reason and all product lines. ETA, ETD, agent, buyer and internal comments stay editable (audited). A changed scope is handled by cancelling and creating a new inquiry. |
 | B2-D6 | **Cancel** requires a free-text reason (stored internally, shown in history) and goes through InlineConfirm. Cancelled inquiries are read-only. |
 | B2-D7 | The buyer is **optional** at creation; an inquiry without one shows "Unassigned". An Admin or Bunker Buyer can **Take** it (become buyer). |
 | B2-D8 | The **inquiry work list** (B0-D7) is the start page from B2, with the data available now; RFQ and offer warnings are added by B3/B4. |
@@ -25,7 +25,7 @@ Proposed — confirmed by the owner's approval of this spec:
 | ID | Decision | Rationale |
 |---|---|---|
 | B2-D9 | Statuses are the full B0-D5 set (`draft`, `rfq_sent`, `offers_received`, `winner_selected`, `nominated`, `cancelled`); transitions are defined in **one pure function** in the domain layer. B2 exposes only create (→ draft) and cancel (any non-cancelled → cancelled); later steps add their transitions through the same function. | One place to test the whole flow; no ad-hoc status writes. |
-| B2-D10 | **Duplicate** creates a new Draft with the same vessel, legal entity, voyage, operator, requester, port, agent, bunkering reason and product lines; ETA/ETD, buyer, internal comments and cancel reason are not copied. Allowed from any status. | Supports B2-D5's "cancel and duplicate" with one click. |
+| B2-D10 | **Withdrawn by B7-D5 (2026-11-26).** **Duplicate** creates a new Draft with the same vessel, legal entity, voyage, operator, requester, port, agent, bunkering reason and product lines; ETA/ETD, buyer, internal comments and cancel reason are not copied. Allowed from any status. | Supports B2-D5's "cancel and duplicate" with one click. |
 | B2-D11 | An **m³ line** takes an optional density (kg/m³ at 15 °C, 600–1100). Without density it is flagged "not in total" (B1-D3); the total is computed in B4. | Density belongs to the line (B1-D3); no cost calculation exists yet. |
 | B2-D12 | Permissions: create — Admin, Bunker Buyer, Operator; edit, take, cancel, duplicate — Admin, Bunker Buyer; read — all four roles. Internal comments are a commercially sensitive field (D-067), readable by the same roles as the inquiry in pilot 1. | Program spec §4; Operator never sees prices, none exist in B2. |
 

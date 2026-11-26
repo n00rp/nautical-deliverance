@@ -36,7 +36,6 @@ function setup(
     patchInquiry: vi.fn(base.patchInquiry),
     takeInquiry: vi.fn(base.takeInquiry),
     cancelInquiry: vi.fn(base.cancelInquiry),
-    duplicateInquiry: vi.fn(base.duplicateInquiry),
     ...over,
   };
   render(
@@ -48,6 +47,7 @@ function setup(
   return api;
 }
 
+const operator = () => screen.getByLabelText<HTMLInputElement>("Operator");
 const form = () => screen.findByRole("form", { name: "Inquiry" });
 const combo = (name: string, scope: Pick<typeof screen, "getByRole"> = screen) =>
   scope.getByRole<HTMLButtonElement>("combobox", { name });
@@ -78,17 +78,42 @@ describe("InquiryPage vessel selection", () => {
     await pick("Vessel", "Northern Star");
     expect(screen.getByText("IMO 9000001 · Product tanker · 50000 DWT")).toBeTruthy();
     expect(combo("Legal entity").textContent).toContain("Alpha Marine");
-    expect(combo("Operator").textContent).toContain("Olga Operator");
+    expect(operator().value).toBe("Olga Operator");
+  });
+
+  it("[B7a-R04] the operator is a text field prefilled from the vessel", async () => {
+    const api = setup("new", ["operator"]);
+    await form();
+    expect(screen.queryByRole("combobox", { name: "Operator" })).toBeNull();
+    expect(operator().maxLength).toBe(120);
+    await pick("Vessel", "Northern Star");
+    expect(operator().value).toBe("Olga Operator"); // default_operator_name of vessel 1
+    await userEvent.clear(operator());
+    await userEvent.type(operator(), "Charterer Ops");
+    await pick("Port", "Rotterdam");
+    fireEvent.change(screen.getByLabelText(/^ETA/), { target: { value: "2026-11-12T06:00" } });
+    fireEvent.change(screen.getByLabelText(/^ETD/), { target: { value: "2026-11-13T06:00" } });
+    await pick("Bunkering reason", "Regular bunkering");
+    await pick("Product", "LNG", line(1));
+    await userEvent.type(line(1).getByLabelText(/^Quantity/), "1");
+    await pick("ISO spec version", "ISO 8217:2024", line(1));
+    await userEvent.click(screen.getByRole("button", { name: "Create inquiry" }));
+    await waitFor(() => {
+      expect(api.createInquiry).toHaveBeenCalledWith(
+        expect.objectContaining({ operator_name: "Charterer Ops" }),
+      );
+    });
   });
 
   it("[B2-R13] Review Focus 4: a changed vessel refills only values that still hold the old defaults", async () => {
     setup("new", ["bunker_buyer"]);
     await form();
     await pick("Vessel", "Northern Star");
-    await pick("Operator", "Oskar Operator"); // the user's own choice, not the vessel default
+    await userEvent.clear(operator());
+    await userEvent.type(operator(), "Own Choice"); // not the vessel default
     await pick("Vessel", "Harbour Light");
     expect(combo("Legal entity").textContent).toContain("Beta Shipping"); // still the default: refilled
-    expect(combo("Operator").textContent).toContain("Oskar Operator"); // user's choice: kept
+    expect(operator().value).toBe("Own Choice"); // user's choice: kept
   });
 });
 
@@ -96,7 +121,9 @@ describe("InquiryPage roles and locking", () => {
   it("[B2-R13] after Draft the scope fields are disabled with a locked note, the rest stays editable", async () => {
     setup(inquiry({ status: "rfq_sent" }));
     await form();
-    expect(screen.getByText("Locked after Draft — duplicate to change scope")).toBeTruthy();
+    expect(
+      screen.getByText("Locked after Draft — create a new inquiry to change scope"),
+    ).toBeTruthy();
     expect(combo("Vessel").disabled).toBe(true);
     expect(combo("Port").disabled).toBe(true);
     expect(line(1).getByRole("combobox", { name: "Product" })).toHaveProperty("disabled", true);
@@ -237,39 +264,17 @@ describe("InquiryPage actions", () => {
     });
   });
 
-  it("[B2-R13] Duplicate opens the new Draft", async () => {
-    const api = setup(inquiry({ version: 4 }), ["bunker_buyer"], {
-      duplicateInquiry: vi.fn().mockResolvedValue(inquiry({ id: "i2" })),
-    });
-    await form();
-    await userEvent.click(screen.getByRole("button", { name: "Duplicate" }));
-    await waitFor(() => {
-      expect(window.location.hash).toBe("#/inquiries/i2");
-    });
-    expect(api.duplicateInquiry).toHaveBeenCalledWith("i1", 4);
-  });
-
-  it("[B2-R13] a double click on Duplicate sends one request and disables the actions", async () => {
-    let finish: (i: Inquiry) => void = () => undefined;
-    const api = setup(inquiry({ buyer_id: null, buyer_name: null }), ["bunker_buyer"], {
-      duplicateInquiry: vi.fn(
-        () =>
-          new Promise<Inquiry>((resolve) => {
-            finish = resolve;
-          }),
-      ),
-    });
-    await form();
-    const dup = screen.getByRole("button", { name: "Duplicate" });
-    await userEvent.dblClick(dup);
-    expect(api.duplicateInquiry).toHaveBeenCalledTimes(1);
-    for (const name of ["Take", "Duplicate", "Cancel inquiry"]) {
-      expect(screen.getByRole("button", { name }).hasAttribute("disabled")).toBe(true);
+  it("[B7a-R03] the inquiry page has no Duplicate action", async () => {
+    const statuses = ["draft", "rfq_sent", "nominated", "cancelled"] as const;
+    const roles: Role[] = ["admin", "bunker_buyer", "operator", "viewer"];
+    for (const status of statuses) {
+      for (const role of roles) {
+        setup(inquiry({ status }), [role]);
+        await form();
+        expect(screen.queryByRole("button", { name: "Duplicate" })).toBeNull();
+        cleanup();
+      }
     }
-    finish(inquiry({ id: "i2" }));
-    await waitFor(() => {
-      expect(window.location.hash).toBe("#/inquiries/i2");
-    });
   });
 
   it("[B2-R11] an admin's history entry shows the admin's name, and pickers include admins", async () => {
@@ -282,11 +287,9 @@ describe("InquiryPage actions", () => {
     await form();
     const history = within(screen.getByRole("region", { name: "History" }));
     expect(await history.findByText("Ada Admin")).toBeTruthy();
-    for (const name of ["Operator", "Buyer"]) {
-      await userEvent.click(combo(name));
-      expect(await screen.findByRole("option", { name: "Ada Admin" })).toBeTruthy();
-      await userEvent.keyboard("{Escape}");
-    }
+    await userEvent.click(combo("Buyer"));
+    expect(await screen.findByRole("option", { name: "Ada Admin" })).toBeTruthy();
+    await userEvent.keyboard("{Escape}");
   });
 
   it("[B2-R13] Take is shown without a buyer, for admins and buyers only", async () => {
@@ -480,7 +483,7 @@ describe("InquiryPage actions", () => {
     expect(api.createInquiry).toHaveBeenCalledWith({
       vessel_id: "v1",
       legal_entity_id: "le1",
-      operator_id: "op1",
+      operator_name: "Olga Operator",
       port_id: "p1",
       eta: "2026-11-12T06:00:00.000Z",
       etd: "2026-11-13T06:00:00.000Z",

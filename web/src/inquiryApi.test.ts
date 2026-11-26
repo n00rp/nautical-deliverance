@@ -64,13 +64,6 @@ describe("inquiry API client", () => {
       `${B}/inquiries/i1/cancel`,
       { version: 2, reason: "Changed plan" },
     ],
-    [
-      "duplicate",
-      () => api.duplicateInquiry("i1", 2),
-      "POST",
-      `${B}/inquiries/i1/duplicate`,
-      { version: 2 },
-    ],
     ["users", () => api.listUsers(), "GET", `${B}/users`, undefined],
     [
       "users by role",

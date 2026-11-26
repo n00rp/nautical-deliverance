@@ -12,6 +12,7 @@ export type TextFieldProps = {
   disabled?: boolean;
   /** Draws a text area of this many rows instead of a one-line input. */
   rows?: number;
+  maxLength?: number;
 };
 
 export function TextField({
@@ -21,6 +22,7 @@ export function TextField({
   onChange,
   disabled,
   rows,
+  maxLength,
   ...field
 }: TextFieldProps) {
   return (
@@ -40,6 +42,7 @@ export function TextField({
           <input
             {...a11y}
             type="text"
+            maxLength={maxLength}
             className={styles.input}
             value={value}
             disabled={disabled}

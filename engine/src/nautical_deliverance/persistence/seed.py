@@ -594,7 +594,7 @@ def _seed_rfqs(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID])
     for voyage, statuses in _RFQS.items():
         row = db.conn.execute(
             text(
-                # The oldest inquiry with the marker is the seeded one: Duplicate copies the voyage.
+                # The oldest inquiry with the marker is the seeded one (old Duplicates kept it).
                 "SELECT id, port_id, version, eta FROM inquiry WHERE voyage = :v"
                 " ORDER BY created_at, reference LIMIT 1"
             ),

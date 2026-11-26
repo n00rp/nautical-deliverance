@@ -28,6 +28,7 @@ const seed = () => ({
       vessel_type: "Tanker",
       dwt: 50000,
       flag: "Malta",
+      default_operator_name: "Seed Operator",
       legal_entity_id: "le1",
     }),
   ],
@@ -275,6 +276,27 @@ describe("master-data pages", () => {
     await userEvent.click(form().getByRole("button", { name: "Save contact" }));
     expect(await contacts.findByRole("cell", { name: "Changed elsewhere!" })).toBeTruthy();
     expect(spy).toHaveBeenLastCalledWith("cp1", "k1", 2, expect.anything());
+  });
+
+  it("[B7a-R04] vessel admin edits Default operator", async () => {
+    const api = setup("vessels");
+    const update = vi.spyOn(api, "update");
+    await userEvent.click(await screen.findByRole("cell", { name: "Seed Vessel" }));
+    const field = await waitFor(() =>
+      details().getByLabelText<HTMLInputElement>(label("Default operator")),
+    );
+    expect(field.value).toBe("Seed Operator");
+    await userEvent.clear(field);
+    await userEvent.type(field, "New Ops Ltd");
+    await userEvent.click(details().getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith(
+        "vessels",
+        "v1",
+        1,
+        expect.objectContaining({ default_operator_name: "New Ops Ltd" }),
+      );
+    });
   });
 
   it("[B1-R11] a 422 on a set save shows the server's message", async () => {

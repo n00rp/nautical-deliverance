@@ -18,7 +18,7 @@ const DATA: Partial<Record<MasterType, Rec[]>> = {
       vessel_type: "Product tanker",
       dwt: 50000,
       legal_entity_id: "le1",
-      default_operator: "op1",
+      default_operator_name: "Olga Operator",
     }),
     r("v2", {
       name: "Harbour Light",
@@ -26,7 +26,7 @@ const DATA: Partial<Record<MasterType, Rec[]>> = {
       vessel_type: "Bulk carrier",
       dwt: 80000,
       legal_entity_id: "le2",
-      default_operator: "op2",
+      default_operator_name: "Oskar Operator",
     }),
   ],
   ports: [
@@ -71,7 +71,6 @@ export const inquiry = (fields: Partial<Inquiry> = {}): Inquiry => ({
   legal_entity_name: "Alpha Marine",
   legal_entity_inactive: false,
   voyage: null,
-  operator_id: "op1",
   operator_name: "Olga Operator",
   buyer_id: "b1",
   buyer_name: "Bea Buyer",
@@ -134,7 +133,6 @@ export function inquiryApi(
     patchInquiry: same,
     takeInquiry: same,
     cancelInquiry: same,
-    duplicateInquiry: same,
     listNominations: () => Promise.resolve([]),
     createNomination: () => Promise.reject(new Error("createNomination is not stubbed")),
     inquiryHistory: () =>

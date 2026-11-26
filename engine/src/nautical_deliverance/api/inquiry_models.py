@@ -112,7 +112,7 @@ InquiryPatch = _patch_model()
 
 
 class VersionIn(Strict):
-    """Body of take and duplicate."""
+    """Body of take."""
 
     version: int = Field(ge=1)
 

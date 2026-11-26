@@ -73,6 +73,7 @@ export const MASTER_CONFIGS: MasterConfig[] = [
       { key: "vessel_type", label: "Vessel type", kind: "text", required: true },
       { key: "dwt", label: "Deadweight tonnes", kind: "int", required: true },
       { key: "flag", label: "Flag", kind: "text", required: true },
+      { key: "default_operator_name", label: "Default operator", kind: "text", required: false },
       {
         key: "legal_entity_id",
         label: "Legal entity",
