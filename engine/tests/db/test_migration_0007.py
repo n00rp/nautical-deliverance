@@ -107,6 +107,11 @@ def test_0007_copies_operator_names(owner_engine: Engine) -> None:
         assert names == {olga: "Olga Operator", ops: "ops@x.example"}
         assert default == "Olga Operator"
         with owner_engine.connect() as conn:
+            forced = conn.execute(
+                text("SELECT relname, relforcerowsecurity FROM pg_class WHERE relname IN"
+                     " ('inquiry', 'vessel', 'app_user') AND relkind = 'r'")
+            ).all()  # fmt: skip
+            assert dict(forced) == {"inquiry": True, "vessel": True, "app_user": True}
             assert _column(conn, "inquiry", "operator_id") is None
             assert _column(conn, "vessel", "default_operator") is None
         command.downgrade(cfg, "0006")
@@ -114,5 +119,13 @@ def test_0007_copies_operator_names(owner_engine: Engine) -> None:
             assert _column(conn, "inquiry", "operator_id") == "YES"
             assert _column(conn, "vessel", "default_operator") == "YES"
             assert _column(conn, "inquiry", "operator_name") is None
+            fk = conn.execute(
+                text("SELECT pg_get_constraintdef(oid) FROM pg_constraint"
+                     " WHERE conname = 'inquiry_operator_fk'")
+            ).scalar()  # fmt: skip
+            assert fk == (
+                "FOREIGN KEY (organization_id, operator_id)"
+                " REFERENCES app_user(organization_id, id)"
+            )
     finally:
         command.upgrade(cfg, "head")

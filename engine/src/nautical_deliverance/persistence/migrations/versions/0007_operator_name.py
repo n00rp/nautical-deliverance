@@ -51,7 +51,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Bring back the id columns (nullable, empty) and drop the name columns."""
     op.execute(
-        "ALTER TABLE inquiry ADD COLUMN operator_id uuid REFERENCES app_user (id),"
+        "ALTER TABLE inquiry ADD COLUMN operator_id uuid,"
+        " ADD CONSTRAINT inquiry_operator_fk FOREIGN KEY (organization_id, operator_id)"
+        " REFERENCES app_user (organization_id, id),"  # as in 0003, but nullable
         " DROP COLUMN operator_name"
     )
     op.execute(
