@@ -147,3 +147,28 @@ def test_e2e_specs_and_test_scripts_reference_ids(tmp_path: Path) -> None:
     matrix = (tmp_path / "docs/traceability.md").read_text(encoding="utf-8")
     assert "B6-R08 | web/e2e/flow.spec.ts" in matrix
     assert "B6-R06 | tools/test_backup.sh" in matrix
+
+
+def _planned_repo(root: Path, *, planned: bool) -> None:
+    head = "- **Planned:** B9b\n\n" if planned else ""
+    rows = "| B9a-R01 | n | t |\n| B9b-R01 | n | t |\n"
+    _write(root, SPEC, head + rows)
+    _write(root, "engine/tests/x.py", _test_file("B9a-R01"))
+
+
+@pytest.mark.req("B7a-R06")
+def test_planned_requirement_needs_no_test(tmp_path: Path) -> None:
+    _planned_repo(tmp_path, planned=True)
+    result = _run(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "| B9b-R01 | planned |" in (tmp_path / "docs/traceability.md").read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.req("B7a-R06")
+def test_unplanned_requirement_still_needs_a_test(tmp_path: Path) -> None:
+    _planned_repo(tmp_path, planned=False)
+    result = _run(tmp_path)
+    assert result.returncode == 1
+    assert "B9b-R01: no test" in result.stderr

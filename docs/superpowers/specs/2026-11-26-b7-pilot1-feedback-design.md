@@ -1,6 +1,8 @@
 # B7 Pilot 1 Feedback Round — Specification
 
 - **Status:** Approved by owner 2026-11-26 (including proposed decisions B7-D10–B7-D22); D-082 confirmed by the owner 2026-11-26
+- **Planned:** B7b, B7c
+- **Traceability:** per part (B7a, B7b, B7c), each with its own ids
 - **Date:** 2026-11-26
 - **Parent:** [Bunker procurement program spec](2026-11-05-bunker-procurement-program-design.md); D-069 and D-076 as amended by D-082 (§1); D-070 (RFQ by `mailto:`, unchanged), D-072, D-074, D-078; builds on [B2](2026-11-05-b2-inquiries-design.md), [B3](2026-11-05-b3-supplier-selection-rfq-design.md), [B4](2026-11-06-b4-offers-decision-design.md) and [B5](2026-11-06-b5-nomination-dashboard-design.md).
 - **Goal:** Make pilot 1 fit how the bunker desk actually works, based on the brief author's first week in the live pilot. Fewer clicks between sending RFQs and comparing prices, a work list split into the desk's own three phases, and a first simple report.
@@ -120,21 +122,37 @@ Send (B7-D1, B7-D11) needs **no new endpoint**. The web calls the existing `mark
 
 ## 6. Requirements
 
+### B7a
+
 | ID | Requirement | Acceptance criterion |
 |---|---|---|
-| B7-R01 | Phase tabs (B7-D4, B7-D18, B7-D20, B7-D21) | `phase` returns exactly the statuses of §1, and `phase_counts` match per `q`. The UI shows three tabs with counts, *In the market* as default, and Show cancelled. Dashboard links open the right tab. Each phase is tested with every status. |
-| B7-R02 | Search prominent | The search field is first in the filter row with its hint. Search combined with each phase filters within the phase, and counts follow the search (tested). |
-| B7-R03 | Duplicate removed (B7-D5) | The endpoint returns 404/405, no UI shows Duplicate, B2-D10 is marked withdrawn in the B2 spec, and the seed still works. |
-| B7-R04 | Operator as name (B7-D10) | Migration up/down is tested on a seeded database. The inquiry and vessel APIs accept and return names (≤ 120, trimmed, optional). The vessel prefill works. No endpoint references `operator_id` any more. The Operator role's B2–B5 permission and confidentiality tests (E4) still pass. |
-| B7-R05 | One-click Send (B7-D1, B7-D11) | One click on Send calls mark-sent, then opens the `mailto:` only on success; on failure there is no mail and an error is shown. This holds for RFQs and nominations. B3-R05/R06/R12 and the B5 nomination confidentiality tests pass unchanged. |
-| B7-R06 | Offer on a draft RFQ (B7-D2) | Creating an offer on a draft RFQ freezes its text exactly as Mark sent would, sets `sent_at`, moves the inquiry Draft → RFQ sent → Offers received through `can_transition`, and writes the audit entries in one transaction. Missing ETA/ETD or a passed deadline gives 422 and stores nothing. Withdrawn and declined RFQs give 409. |
-| B7-R07 | Price table (B7-D3, B7-D13, B7-D14, B7-D19, B7-D22) | Columns are every draft and sent RFQ. The selected-winner column is read-only, and so are draft columns once a winner is selected. The density cells appear exactly for m³ lines without inquiry density. Live totals equal the engine's for the shared vectors. The valid-until prefill follows B7-D13 (tested across time zones and the "already passed" case). Save sends one request per changed column. A version conflict or 422 in one column keeps that column's edits and shows the error while the others are saved. The unsaved-changes prompt works. |
-| B7-R08 | Step budgets (E10) | Send five RFQs in ≤ 5 interactions from the RFQ log. Enter prices for 3 suppliers × 2 lines + 1 barging cost each, and save, in ≤ 13 interactions. Asserted by scripted tests, alongside the B4 budgets. |
-| B7-R09 | Stems report (B7-D15, B7-D17) | Exact figures for a seeded set covering several entities and months, an inquiry nominated twice (counted once, by first send), an m³ line without density (excluded and counted in `mt_excluded_lines`), and month boundaries in UTC. Figures equal the dashboard's for the current month. Operator gets 403. RLS isolates organizations. |
-| B7-R10 | CSV export (B7-D16, B7-D17) | Columns, BOM, quoting (commas, quotes, line breaks, non-ASCII), decimals and timestamps exactly as specified. Phase and search filters apply. Operator gets 403. No field outside the listed columns appears, so internal comments and rationale never do (marker test). |
-| B7-R11 | Pilot users with two roles (§5) | `pilot_user.py` creates a user with two roles and adds a role to an existing user. Tested in the existing `pilot-user` CI job. The runbook is updated. |
-| B7-R12 | Screens and accessibility | New and changed screens have Storybook stories with visual baselines and axe checks, light and dark, as B1-R13. The price table is keyboard-navigable, and every cell has a label naming its supplier and row. |
-| B7-R13 | Gates inherited | All S0–B6 gates are green, coverage ≥ 90 % line and branch, and `tools/trace.py --check` is green with every B7 requirement covered. |
+| B7a-R01 | Phase tabs (B7-D4, B7-D18, B7-D20, B7-D21) | `phase` returns exactly the statuses of §1, and `phase_counts` match per `q`. The UI shows three tabs with counts, *In the market* as default, and Show cancelled. Dashboard links open the right tab. Each phase is tested with every status. |
+| B7a-R02 | Search prominent | The search field is first in the filter row with its hint. Search combined with each phase filters within the phase, and counts follow the search (tested). |
+| B7a-R03 | Duplicate removed (B7-D5) | The endpoint returns 404/405, no UI shows Duplicate, B2-D10 is marked withdrawn in the B2 spec, and the seed still works. |
+| B7a-R04 | Operator as name (B7-D10) | Migration up/down is tested on a seeded database. The inquiry and vessel APIs accept and return names (≤ 120, trimmed, optional). The vessel prefill works. No endpoint references `operator_id` any more. The Operator role's B2–B5 permission and confidentiality tests (E4) still pass. |
+| B7a-R05 | Pilot users with two roles (§5) | `pilot_user.py` creates a user with two roles and adds a role to an existing user. Tested in the existing `pilot-user` CI job. The runbook is updated. |
+| B7a-R06 | Screens and accessibility | New and changed screens have Storybook stories with visual baselines and axe checks, light and dark, as B1-R13. The price table is keyboard-navigable, and every cell has a label naming its supplier and row. |
+| B7a-R07 | Gates inherited | All S0–B6 gates are green, coverage ≥ 90 % line and branch, and `tools/trace.py --check` is green with every B7 requirement covered. |
+
+### B7b
+
+| ID | Requirement | Acceptance criterion |
+|---|---|---|
+| B7b-R01 | One-click Send (B7-D1, B7-D11) | One click on Send calls mark-sent, then opens the `mailto:` only on success; on failure there is no mail and an error is shown. This holds for RFQs and nominations. B3-R05/R06/R12 and the B5 nomination confidentiality tests pass unchanged. |
+| B7b-R02 | Offer on a draft RFQ (B7-D2) | Creating an offer on a draft RFQ freezes its text exactly as Mark sent would, sets `sent_at`, moves the inquiry Draft → RFQ sent → Offers received through `can_transition`, and writes the audit entries in one transaction. Missing ETA/ETD or a passed deadline gives 422 and stores nothing. Withdrawn and declined RFQs give 409. |
+| B7b-R03 | Price table (B7-D3, B7-D13, B7-D14, B7-D19, B7-D22) | Columns are every draft and sent RFQ. The selected-winner column is read-only, and so are draft columns once a winner is selected. The density cells appear exactly for m³ lines without inquiry density. Live totals equal the engine's for the shared vectors. The valid-until prefill follows B7-D13 (tested across time zones and the "already passed" case). Save sends one request per changed column. A version conflict or 422 in one column keeps that column's edits and shows the error while the others are saved. The unsaved-changes prompt works. |
+| B7b-R04 | Step budgets (E10) | Send five RFQs in ≤ 5 interactions from the RFQ log. Enter prices for 3 suppliers × 2 lines + 1 barging cost each, and save, in ≤ 13 interactions. Asserted by scripted tests, alongside the B4 budgets. |
+| B7b-R05 | Screens and accessibility | New and changed screens have Storybook stories with visual baselines and axe checks, light and dark, as B1-R13. The price table is keyboard-navigable, and every cell has a label naming its supplier and row. |
+| B7b-R06 | Gates inherited | All S0–B6 gates are green, coverage ≥ 90 % line and branch, and `tools/trace.py --check` is green with every B7 requirement covered. |
+
+### B7c
+
+| ID | Requirement | Acceptance criterion |
+|---|---|---|
+| B7c-R01 | Stems report (B7-D15, B7-D17) | Exact figures for a seeded set covering several entities and months, an inquiry nominated twice (counted once, by first send), an m³ line without density (excluded and counted in `mt_excluded_lines`), and month boundaries in UTC. Figures equal the dashboard's for the current month. Operator gets 403. RLS isolates organizations. |
+| B7c-R02 | CSV export (B7-D16, B7-D17) | Columns, BOM, quoting (commas, quotes, line breaks, non-ASCII), decimals and timestamps exactly as specified. Phase and search filters apply. Operator gets 403. No field outside the listed columns appears, so internal comments and rationale never do (marker test). |
+| B7c-R03 | Screens and accessibility | New and changed screens have Storybook stories with visual baselines and axe checks, light and dark, as B1-R13. The price table is keyboard-navigable, and every cell has a label naming its supplier and row. |
+| B7c-R04 | Gates inherited | All S0–B6 gates are green, coverage ≥ 90 % line and branch, and `tools/trace.py --check` is green with every B7 requirement covered. |
 
 ## 7. Delivery (owner choice A, 2026-11-26)
 
@@ -142,9 +160,9 @@ Three PRs, each deployable and live on its own:
 
 | Part | Content | Requirements |
 |---|---|---|
-| B7a | Phase tabs, prominent search, Duplicate removed, operator as name, two-role pilot users | R01–R04, R11, R12–R13 for its screens |
-| B7b | One-click Send (RFQ, nomination), offer on a draft RFQ, editable price table | R05–R08, R12–R13 for its screens |
-| B7c | Stems report and CSV export | R09–R10, R12–R13 for its screens |
+| B7a | Phase tabs, prominent search, Duplicate removed, operator as name, two-role pilot users | B7a-R01–R07 |
+| B7b | One-click Send (RFQ, nomination), offer on a draft RFQ, editable price table | B7b-R01–R06 |
+| B7c | Stems report and CSV export | B7c-R01–R04 |
 
 After B7a is deployed, her account gets the admin role (§5).
 
