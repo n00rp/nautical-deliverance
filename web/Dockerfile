@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # The build stage runs on the build host (dist/ does not depend on the CPU), so a multi-arch build
 # emulates only the nginx runtime stage under QEMU.
-FROM --platform=$BUILDPLATFORM node:24.22.0-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS build
+FROM --platform=$BUILDPLATFORM node:26.13.0-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216 AS build
 RUN npm install --global pnpm@12.15.0
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
