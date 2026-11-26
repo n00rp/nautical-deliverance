@@ -37,6 +37,21 @@ function setup(rows: InquiryListItem[] = [item("1")], roles: Role[] = ["admin"])
 const lastParams = (f: ReturnType<typeof setup>) => f.mock.lastCall?.[0] as unknown;
 
 describe("WorkList", () => {
+  it("[B7a-R06] work list tabs are keyboard reachable and labelled", async () => {
+    const user = userEvent.setup();
+    setup();
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((t) => t.getAttribute("aria-selected"))).toContain("true");
+    const names = tabs.map((t) => t.textContent);
+    expect(names).toEqual(
+      expect.arrayContaining(["On the list (1)", "In the market (2)", "Stemmed (3)"]),
+    );
+    for (let i = 0; i < 10 && !tabs.includes(document.activeElement as HTMLElement); i++) {
+      await user.tab();
+    }
+    expect(tabs).toContain(document.activeElement);
+  });
+
   it("[B2-R12] renders the columns and a row", async () => {
     setup([item("1", { status: "rfq_sent" })]);
     const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent);

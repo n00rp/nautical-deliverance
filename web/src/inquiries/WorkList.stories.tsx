@@ -37,3 +37,10 @@ type Story = StoryObj<typeof meta>;
 
 export const AsBuyer: Story = { render: () => <Page roles={["bunker_buyer"]} /> };
 export const AsViewer: Story = { render: () => <Page roles={["viewer"]} /> };
+export const StemmedTab: Story = {
+  name: "Stemmed tab",
+  render: () => {
+    window.location.hash = "#/inquiries?phase=stemmed";
+    return <Page roles={["bunker_buyer"]} />;
+  },
+};
