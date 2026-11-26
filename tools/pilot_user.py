@@ -116,7 +116,7 @@ def create_user(args: argparse.Namespace, admin_password: str) -> str:
         raise Refused(msg) from None
     admin, token = _login(args, admin_password)
     q = urllib.parse.quote(args.email, safe="")
-    roles = _role_reps(admin, token, args.role)
+    roles = _role_reps(admin, token, list(dict.fromkeys(args.role)))
     if _call("GET", f"{admin}/users?email={q}&exact=true", token) or _call(
         "GET", f"{admin}/users?username={q}&exact=true", token
     ):
@@ -162,7 +162,7 @@ def add_roles(args: argparse.Namespace, admin_password: str) -> None:
     if len(users) != 1:
         msg = f"no user with e-mail {args.email}"
         raise Refused(msg)
-    roles = _role_reps(admin, token, args.role)
+    roles = _role_reps(admin, token, list(dict.fromkeys(args.role)))
     _call("POST", f"{admin}/users/{users[0]['id']}/role-mappings/realm", token, roles)
 
 

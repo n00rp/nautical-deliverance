@@ -364,13 +364,23 @@ python3 tools/pilot_user.py --admin-user admin --email buyer@pilot.test --first 
 EOF
 ```
 
-Several roles: repeat `--role`. To give an existing user more roles (the password is not touched):
+Several roles: repeat `--role`.
 
 ```
 ubuntu$ sudo -u deploy -H bash <<'EOF'
 cd ~/nd
 export ND_KC_ADMIN_PASSWORD="$(grep '^ND_KEYCLOAK_ADMIN_PASSWORD=' infra/.env.prod | cut -d= -f2-)"
 python3 tools/pilot_user.py --admin-user admin --email buyer@pilot.test --first Bea --last Buyer --role bunker_buyer --role admin
+EOF
+```
+
+To give an existing user more roles (the password is not touched), replace `<her e-mail>` with the
+account's e-mail first:
+
+```
+ubuntu$ sudo -u deploy -H bash <<'EOF'
+cd ~/nd
+export ND_KC_ADMIN_PASSWORD="$(grep '^ND_KEYCLOAK_ADMIN_PASSWORD=' infra/.env.prod | cut -d= -f2-)"
 python3 tools/pilot_user.py --admin-user admin --email <her e-mail> --add-role --role admin
 EOF
 ```
@@ -382,7 +392,8 @@ The pilot sends no e-mail, so the address is only the sign-in name: an invented 
 Roles: `admin`, `bunker_buyer`, `operator`, `viewer`. The organisation is Pilot Demo Shipping by
 default. The script prints a **temporary password once** (on stdout, nowhere else): send it to the
 user over a different channel than the one that carries the e-mail address. A repeat for an existing
-e-mail is refused (exit code 2) and changes nothing; an unknown role is refused; `--add-role` for an e-mail with no user exits 2. The user must set
+e-mail is refused (exit code 2) and changes nothing; an unknown role is refused.
+`--add-role` for an e-mail with no user also exits 2. The user must set
 a new password at the first sign-in.
 
 ## 13. The e2e users

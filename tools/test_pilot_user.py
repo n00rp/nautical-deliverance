@@ -193,6 +193,22 @@ def test_password_appears_once_and_in_no_log(
     assert password not in caplog.text
 
 
+def _run_bare(
+    kc: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    *argv: str,
+) -> tuple[int, str, str]:
+    """Run with exactly these arguments (no shared ARGS); argparse exits count as exit codes."""
+    monkeypatch.setenv("ND_KC_ADMIN_PASSWORD", ADMIN_PW)
+    try:
+        code = pilot_user.main(["--url", kc, "--admin-user", "admin", *argv])
+    except SystemExit as exit_:
+        code = int(exit_.code or 0)
+    out = capsys.readouterr()
+    return code, out.out, out.err
+
+
 def _realm_roles(admin: str, tok: str, uid: str) -> set[str]:
     roles = _json(f"{admin}/users/{uid}/role-mappings/realm", tok)
     return {r["name"] for r in roles} - {"default-roles-nautical-deliverance"}
@@ -224,8 +240,8 @@ def test_add_role_to_existing_user(
     (before,) = _json(f"{admin}/users?email=addrole@pilot.example&exact=true", tok)
     creds = _json(f"{admin}/users/{before['id']}/credentials", tok)
 
-    code, out, err = _run(
-        kc, "ADDROLE@pilot.example", capsys, monkeypatch, "--add-role", "--role", "admin"
+    code, out, err = _run_bare(
+        kc, capsys, monkeypatch, "--email", "ADDROLE@pilot.example", "--add-role", "--role", "admin"
     )
     assert code == 0
     assert err == ""
@@ -245,13 +261,30 @@ def test_add_role_unknown_email_exits_2(
 ) -> None:
     tok, admin = _admin(kc)
     before = len(_users(admin, tok))
-    code, out, err = _run(
-        kc, "nobody@pilot.example", capsys, monkeypatch, "--add-role", "--role", "admin"
+    code, out, err = _run_bare(
+        kc, capsys, monkeypatch, "--email", "nobody@pilot.example", "--add-role", "--role", "admin"
     )
     assert code == EXIT_REFUSED
     assert out == ""
     assert "no user with e-mail nobody@pilot.example" in err
     assert len(_users(admin, tok)) == before
+
+
+@needs_kc
+@pytest.mark.req("B7a-R05")
+@pytest.mark.parametrize("missing", ["--first", "--last"])
+def test_create_without_name_exits_2(
+    missing: str, kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    names = {"--first": "Ada", "--last": "Buyer"}
+    given = [x for k, v in names.items() if k != missing for x in (k, v)]
+    email = f"noname{missing[2:]}@pilot.example"
+    code, out, err = _run_bare(kc, capsys, monkeypatch, "--email", email, "--role", "admin", *given)
+    assert code == EXIT_REFUSED
+    assert out == ""
+    assert missing in err
+    tok, admin = _admin(kc)
+    assert _json(f"{admin}/users?email={email}&exact=true", tok) == []
 
 
 @needs_kc
