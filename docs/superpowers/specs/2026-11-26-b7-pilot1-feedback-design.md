@@ -131,7 +131,7 @@ Send (B7-D1, B7-D11) needs **no new endpoint**. The web calls the existing `mark
 | B7a-R03 | Duplicate removed (B7-D5) | The endpoint returns 404/405, no UI shows Duplicate, B2-D10 is marked withdrawn in the B2 spec, and the seed still works. |
 | B7a-R04 | Operator as name (B7-D10) | Migration up/down is tested on a seeded database. The inquiry and vessel APIs accept and return names (≤ 120, trimmed, optional). The vessel prefill works. No endpoint references `operator_id` any more. The Operator role's B2–B5 permission and confidentiality tests (E4) still pass. |
 | B7a-R05 | Pilot users with two roles (§5) | `pilot_user.py` creates a user with two roles and adds a role to an existing user. Tested in the existing `pilot-user` CI job. The runbook is updated. |
-| B7a-R06 | Screens and accessibility | New and changed screens have Storybook stories with visual baselines and axe checks, light and dark, as B1-R13. The price table is keyboard-navigable, and every cell has a label naming its supplier and row. |
+| B7a-R06 | Screens and accessibility | New and changed screens (work list, dashboard, inquiry page) have Storybook stories with visual baselines and axe checks, light and dark (B1-R13). The work-list tabs are keyboard-reachable and each tab's accessible name includes its count. |
 | B7a-R07 | Gates inherited | All S0–B6 gates are green, coverage ≥ 90 % line and branch, and `tools/trace.py --check` is green with every B7 requirement covered. |
 
 ### B7b
@@ -142,7 +142,7 @@ Send (B7-D1, B7-D11) needs **no new endpoint**. The web calls the existing `mark
 | B7b-R02 | Offer on a draft RFQ (B7-D2) | Creating an offer on a draft RFQ freezes its text exactly as Mark sent would, sets `sent_at`, moves the inquiry Draft → RFQ sent → Offers received through `can_transition`, and writes the audit entries in one transaction. Missing ETA/ETD or a passed deadline gives 422 and stores nothing. Withdrawn and declined RFQs give 409. |
 | B7b-R03 | Price table (B7-D3, B7-D13, B7-D14, B7-D19, B7-D22) | Columns are every draft and sent RFQ. The selected-winner column is read-only, and so are draft columns once a winner is selected. The density cells appear exactly for m³ lines without inquiry density. Live totals equal the engine's for the shared vectors. The valid-until prefill follows B7-D13 (tested across time zones and the "already passed" case). Save sends one request per changed column. A version conflict or 422 in one column keeps that column's edits and shows the error while the others are saved. The unsaved-changes prompt works. |
 | B7b-R04 | Step budgets (E10) | Send five RFQs in ≤ 5 interactions from the RFQ log. Enter prices for 3 suppliers × 2 lines + 1 barging cost each, and save, in ≤ 13 interactions. Asserted by scripted tests, alongside the B4 budgets. |
-| B7b-R05 | Screens and accessibility | New and changed screens have Storybook stories with visual baselines and axe checks, light and dark, as B1-R13. The price table is keyboard-navigable, and every cell has a label naming its supplier and row. |
+| B7b-R05 | Screens and accessibility | New and changed screens (work list, dashboard, inquiry page) have Storybook stories with visual baselines and axe checks, light and dark (B1-R13). The work-list tabs are keyboard-reachable and each tab's accessible name includes its count. |
 | B7b-R06 | Gates inherited | All S0–B6 gates are green, coverage ≥ 90 % line and branch, and `tools/trace.py --check` is green with every B7 requirement covered. |
 
 ### B7c
@@ -151,7 +151,7 @@ Send (B7-D1, B7-D11) needs **no new endpoint**. The web calls the existing `mark
 |---|---|---|
 | B7c-R01 | Stems report (B7-D15, B7-D17) | Exact figures for a seeded set covering several entities and months, an inquiry nominated twice (counted once, by first send), an m³ line without density (excluded and counted in `mt_excluded_lines`), and month boundaries in UTC. Figures equal the dashboard's for the current month. Operator gets 403. RLS isolates organizations. |
 | B7c-R02 | CSV export (B7-D16, B7-D17) | Columns, BOM, quoting (commas, quotes, line breaks, non-ASCII), decimals and timestamps exactly as specified. Phase and search filters apply. Operator gets 403. No field outside the listed columns appears, so internal comments and rationale never do (marker test). |
-| B7c-R03 | Screens and accessibility | New and changed screens have Storybook stories with visual baselines and axe checks, light and dark, as B1-R13. The price table is keyboard-navigable, and every cell has a label naming its supplier and row. |
+| B7c-R03 | Screens and accessibility | New and changed screens (work list, dashboard, inquiry page) have Storybook stories with visual baselines and axe checks, light and dark (B1-R13). The work-list tabs are keyboard-reachable and each tab's accessible name includes its count. |
 | B7c-R04 | Gates inherited | All S0–B6 gates are green, coverage ≥ 90 % line and branch, and `tools/trace.py --check` is green with every B7 requirement covered. |
 
 ## 7. Delivery (owner choice A, 2026-11-26)

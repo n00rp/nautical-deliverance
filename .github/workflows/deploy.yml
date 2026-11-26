@@ -102,5 +102,4 @@ jobs:
           ND_E2E_PASSWORD: ${{ secrets.ND_E2E_PASSWORD }}
           ND_E2E_OPERATOR_USER: ${{ secrets.ND_E2E_OPERATOR_USER }}
           ND_E2E_OPERATOR_PASSWORD: ${{ secrets.ND_E2E_OPERATOR_PASSWORD }}
-          ND_E2E_OPERATOR_NAME: ${{ vars.ND_E2E_OPERATOR_NAME }}
         run: bash web/scripts/e2e-docker.sh

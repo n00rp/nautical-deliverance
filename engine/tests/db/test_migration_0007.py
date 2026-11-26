@@ -89,6 +89,8 @@ def _seed_at_0006(conn: Connection, org: uuid.UUID) -> tuple[uuid.UUID, uuid.UUI
 def test_0007_copies_operator_names(owner_engine: Engine) -> None:
     """Names (else e-mails) survive the upgrade; the downgrade brings back a nullable id."""
     cfg, org = _cfg(), uuid.uuid4()
+    # Safe on the shared DB only because the suite runs serially (no xdist) and the finally
+    # re-upgrades to head; other modules seed their own data. Unsafe if tests ran in parallel.
     command.downgrade(cfg, "0006")
     try:
         with owner_engine.begin() as conn:

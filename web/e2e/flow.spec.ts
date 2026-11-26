@@ -2,13 +2,10 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 
 // B6-R08. Environment: ND_E2E_BASE_URL (default http://localhost:8080), ND_E2E_USER and
 // ND_E2E_PASSWORD (a bunker_buyer whose password is already permanent), and optionally
-// ND_E2E_OPERATOR_USER / ND_E2E_OPERATOR_PASSWORD for the Operator check. ND_E2E_OPERATOR_NAME is the
-// name (or part of it) of the operator picked in the inquiry form; the default matches the demo
-// operators ("Olle Operator", "Ola Operator (demo)"), never a real colleague on the pilot.
+// ND_E2E_OPERATOR_USER / ND_E2E_OPERATOR_PASSWORD for the Operator check.
 const env = (name: string) => process.env[name] ?? "";
 const BUYER = { user: env("ND_E2E_USER"), password: env("ND_E2E_PASSWORD") };
 const OPERATOR = { user: env("ND_E2E_OPERATOR_USER"), password: env("ND_E2E_OPERATOR_PASSWORD") };
-const OPERATOR_NAME = env("ND_E2E_OPERATOR_NAME") || "Operator";
 const PREFIX = "E2E-";
 const DAY_MS = 86_400_000;
 /** The value of a datetime-local input (UTC) for now + days. */
@@ -66,8 +63,7 @@ test.describe("[B6-R08] pilot 1 purchase flow", () => {
       await page.getByRole("button", { name: "New inquiry" }).click();
       await pick(page, /^Vessel/);
       await page.getByRole("textbox", { name: "Voyage" }).fill(voyage);
-      // The seeded vessels have no default operator, so one is chosen.
-      await pick(page, /^Operator/, OPERATOR_NAME);
+      await page.getByRole("textbox", { name: "Operator" }).fill("E2E Operator");
       await pick(page, /^Port/, "Rotterdam");
       await page.getByLabel(/^ETA/).fill(inDays(10));
       await page.getByLabel(/^ETD/).fill(inDays(11));

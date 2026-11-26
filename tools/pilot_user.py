@@ -159,7 +159,10 @@ def add_roles(args: argparse.Namespace, admin_password: str) -> None:
     admin, token = _login(args, admin_password)
     q = urllib.parse.quote(args.email, safe="")
     users = _call("GET", f"{admin}/users?email={q}&exact=true", token)
-    if len(users) != 1:
+    if len(users) > 1:
+        msg = f"several users with e-mail {args.email}"
+        raise Refused(msg)
+    if not users:
         msg = f"no user with e-mail {args.email}"
         raise Refused(msg)
     roles = _role_reps(admin, token, list(dict.fromkeys(args.role)))

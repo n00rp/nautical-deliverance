@@ -222,7 +222,6 @@ Settings > Secrets and variables > Actions. Nothing else is read by `.github/wor
 | `ND_E2E_OPERATOR_USER` | secret | e-mail of the e2e operator (optional: the Operator check is skipped without it) |
 | `ND_E2E_OPERATOR_PASSWORD` | secret | that user's permanent password |
 | `ND_DEPLOY_ENABLED` | variable (Variables tab) | `true`, set **after** the first manual deploy and sections 11 to 13 (section 10). It switches on only the automatic deploy after each green merge; a manual "Run workflow" deploy never needs it |
-| `ND_E2E_OPERATOR_NAME` | variable (optional) | display name of the e2e operator as shown in the inquiry form's Operator list (section 13). Unset: the demo operator |
 
 Strict host checking stays on: the workflow connects only to the key in `ND_DEPLOY_KNOWN_HOSTS`.
 After a rebuild the host key changes, so update that secret.
@@ -393,6 +392,7 @@ Roles: `admin`, `bunker_buyer`, `operator`, `viewer`. The organisation is Pilot 
 default. The script prints a **temporary password once** (on stdout, nowhere else): send it to the
 user over a different channel than the one that carries the e-mail address. A repeat for an existing
 e-mail is refused (exit code 2) and changes nothing; an unknown role is refused.
+No `operator` accounts are issued in the pilot (B7-D7): the role exists only in code.
 `--add-role` for an e-mail with no user also exits 2. The user must set
 a new password at the first sign-in.
 
@@ -405,10 +405,7 @@ Create them like any pilot user (section 12), for example `e2e-buyer@<your domai
 **Each one must sign in once in a browser and set a permanent password before E2E can use them.**
 The temporary password forces an "update password" screen that the test cannot pass. After setting
 the permanent password, store the e-mail and password as `ND_E2E_USER`/`ND_E2E_PASSWORD` and
-`ND_E2E_OPERATOR_USER`/`ND_E2E_OPERATOR_PASSWORD` (section 8). The inquiry form lists operators by
-name, and the pilot also has real colleagues in that list: set the variable `ND_E2E_OPERATOR_NAME`
-to the e2e operator's first and last name so the test picks exactly that one (unset, it picks the
-demo operator). The inquiries the test creates have a voyage starting with `E2E-` and are cancelled
+`ND_E2E_OPERATOR_USER`/`ND_E2E_OPERATOR_PASSWORD` (section 8). The inquiries the test creates have a voyage starting with `E2E-` and are cancelled
 at the end, even when the test aborts.
 
 Re-run the deploy workflow (a new manual run of a commit on `main`): smoke and E2E must now pass.
