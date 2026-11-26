@@ -156,7 +156,7 @@ def _planned_repo(root: Path, *, planned: bool) -> None:
     _write(root, "engine/tests/x.py", _test_file("B9a-R01"))
 
 
-@pytest.mark.req("B7a-R06")
+@pytest.mark.req("S0-R09")
 def test_planned_requirement_needs_no_test(tmp_path: Path) -> None:
     _planned_repo(tmp_path, planned=True)
     result = _run(tmp_path)
@@ -166,7 +166,7 @@ def test_planned_requirement_needs_no_test(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.req("B7a-R06")
+@pytest.mark.req("S0-R09")
 def test_unplanned_requirement_still_needs_a_test(tmp_path: Path) -> None:
     _planned_repo(tmp_path, planned=False)
     result = _run(tmp_path)
