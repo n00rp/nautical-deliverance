@@ -46,6 +46,7 @@ from nautical_deliverance.persistence.inquiry_repo import (
     line_text,
     list_rows,
     next_reference,
+    phase_counts,
 )
 from nautical_deliverance.persistence.models import (
     AppUser,
@@ -300,13 +301,14 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     q: str | None = None,
     mine: bool = False,  # noqa: FBT001, FBT002
     sort: Literal["eta", "reference"] = "eta",
+    phase: Literal["list", "market", "stemmed", "cancelled"] | None = None,
 ) -> object:
-    """Work list: all but cancelled by default, `status=all` for everything."""
+    """Work list: all but cancelled by default, `status=all` for everything; `phase` wins."""
     if state not in (None, "all", *(s.value for s in Status)):
         _reject("status", "Unknown status")
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
-        rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
+        rows = list_rows(s, status=state, phase=phase, q=q, buyer=buyer, sort=sort)
         hide = (
             {}
             if sees_rfqs(principal)
@@ -318,6 +320,18 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
             )
             for r in rows
         ]
+
+
+@router.get("/phase-counts")
+def get_phase_counts(
+    principal: Reader,
+    engine: Eng,
+    q: str | None = None,
+    mine: bool = False,  # noqa: FBT001, FBT002
+) -> dict[str, int]:
+    """Inquiries per work-list phase for the tab badges, honouring `q` and `mine`."""
+    with scope(principal, engine) as s:
+        return phase_counts(s, q=q, buyer=principal.user_id if mine else None)
 
 
 @router.get("/{inquiry_id}", response_model=InquiryOut)

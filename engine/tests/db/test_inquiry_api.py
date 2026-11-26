@@ -18,7 +18,7 @@ from nautical_deliverance.api.inquiries import get_now
 from nautical_deliverance.api.inquiry_models import InquiryPatch
 from nautical_deliverance.api.users import get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import PATCHABLE_FIELDS
+from nautical_deliverance.domain.inquiry import PATCHABLE_FIELDS, PHASES, Status
 from nautical_deliverance.main import create_app
 from nautical_deliverance.persistence.db import org_session
 from nautical_deliverance.persistence.models import (
@@ -948,3 +948,61 @@ def test_other_organizations_ids_are_422_on_their_field_and_404_as_inquiry(
         admin.http.get(f"{path}/history"),
     ]
     assert [r.status_code for r in calls] == [NOT_FOUND] * 6
+
+
+# --- B7a-R01/R02: work-list phases and phase counts ---------------------------------------------
+
+PHASE_LIST = ("list", "market", "stemmed", "cancelled")
+
+
+def _one_per_status(admin: Client) -> dict[str, str]:
+    """One inquiry in every status, keyed by status."""
+    made = {}
+    for st in Status:
+        inq = admin.create()
+        if st is not Status.DRAFT:
+            admin.set_status(inq["id"], st.value)
+        made[st.value] = inq["id"]
+    return made
+
+
+@pytest.mark.req("B7a-R01")
+@pytest.mark.parametrize("phase", PHASE_LIST)
+def test_phase_returns_exactly_its_statuses(admin: Client, phase: str) -> None:
+    """A phase filter returns exactly the inquiries in the phase's statuses."""
+    _one_per_status(admin)
+    got = {i["status"] for i in admin.listing(phase=phase)}
+    assert got == {s.value for s in PHASES[phase]}
+    assert {i["status"] for i in admin.listing(phase=phase, status="draft")} == got  # beats status
+
+
+@pytest.mark.req("B7a-R01")
+@pytest.mark.req("B7a-R02")
+def test_phase_counts_follow_search(admin: Client, world: SimpleNamespace) -> None:
+    """Counts include only inquiries matching q; a lone cancelled match counts as cancelled."""
+    _one_per_status(admin)  # all on Vessel A
+    b = admin.create(vessel_id=str(world.v2), port_id=str(world.port2))
+    admin.set_status(b["id"], "cancelled")
+    r = admin.http.get(f"{URL}/phase-counts")
+    assert r.json() == {"list": 1, "market": 3, "stemmed": 1, "cancelled": 2}
+    r = admin.http.get(f"{URL}/phase-counts", params={"q": "vessel b"})
+    assert r.json() == {"list": 0, "market": 0, "stemmed": 0, "cancelled": 1}
+
+
+@pytest.mark.req("B7a-R01")
+def test_unknown_phase_is_422(admin: Client) -> None:
+    """An unknown phase is rejected on the phase field."""
+    assert "phase" in errors(admin.http.get(URL, params={"phase": "bogus"}))
+
+
+@pytest.mark.req("B7a-R01")
+@pytest.mark.parametrize("role", list(Role))
+def test_phase_counts_every_role_and_org_isolation(
+    settings: Settings, app_engine: Engine, world: SimpleNamespace, admin: Client, role: Role
+) -> None:
+    """Every role may read the counts; another organization's inquiries are not counted."""
+    Client(settings, app_engine, make_world(app_engine, "o")).create()
+    admin.create()
+    r = Client(settings, app_engine, world, role).http.get(f"{URL}/phase-counts")
+    assert r.status_code == OK
+    assert r.json() == {"list": 1, "market": 0, "stemmed": 0, "cancelled": 0}
