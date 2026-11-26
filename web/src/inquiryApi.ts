@@ -14,9 +14,13 @@ export const STATUS_LABEL = {
 
 export type InquiryStatus = keyof typeof STATUS_LABEL;
 
+export type Phase = "list" | "market" | "stemmed" | "cancelled";
+
 export type ListParams = {
   /** Omitted: everything but cancelled. */
   status?: InquiryStatus | "all";
+  /** Overrides `status` (B7-D4). */
+  phase?: Phase;
   q?: string;
   mine?: boolean;
   sort?: "eta" | "reference";
@@ -177,11 +181,22 @@ export function createInquiryApi(auth: TokenSource) {
     listInquiries: (params: ListParams) => {
       const query = new URLSearchParams();
       if (params.status) query.set("status", params.status);
+      if (params.phase) query.set("phase", params.phase);
       if (params.q) query.set("q", params.q);
       if (params.mine) query.set("mine", "true");
       if (params.sort) query.set("sort", params.sort);
       const qs = query.toString();
       return call<InquiryListItem[]>("GET", qs ? `inquiries?${qs}` : "inquiries");
+    },
+    phaseCounts: (params: { q?: string; mine?: boolean }) => {
+      const query = new URLSearchParams();
+      if (params.q) query.set("q", params.q);
+      if (params.mine) query.set("mine", "true");
+      const qs = query.toString();
+      return call<Record<Phase, number>>(
+        "GET",
+        qs ? `inquiries/phase-counts?${qs}` : "inquiries/phase-counts",
+      );
     },
     getInquiry: (id: string) => call<Inquiry>("GET", path(id)),
     createInquiry: (body: Partial<InquiryBody>) => call<Inquiry>("POST", "inquiries", body),

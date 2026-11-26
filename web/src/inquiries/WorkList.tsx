@@ -6,8 +6,8 @@ import {
   SUPPLIER_STATES,
   type InquiryApi,
   type InquiryListItem,
-  type InquiryStatus,
   type ListParams,
+  type Phase,
 } from "../inquiryApi";
 import { Button } from "../ui/Button/Button";
 import { Checkbox } from "../ui/Checkbox/Checkbox";
@@ -22,18 +22,18 @@ import { TextField } from "../ui/TextField/TextField";
 import { useToast } from "../ui/Toast/Toast";
 import css from "./WorkList.module.css";
 
-export type WorkListProps = { api: Pick<InquiryApi, "listInquiries">; roles: Role[] };
+export type WorkListProps = {
+  api: Pick<InquiryApi, "listInquiries" | "phaseCounts">;
+  roles: Role[];
+};
 
-type Filter = InquiryStatus | "open" | "all";
 type Sort = NonNullable<ListParams["sort"]>;
+type Tab = Exclude<Phase, "cancelled">;
 
-const STATUS_OPTIONS: { value: Filter; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "all", label: "All" },
-  ...(Object.entries(STATUS_LABEL) as [InquiryStatus, string][]).map(([value, label]) => ({
-    value,
-    label,
-  })),
+const TABS: { phase: Tab; label: string }[] = [
+  { phase: "list", label: "On the list" },
+  { phase: "market", label: "In the market" },
+  { phase: "stemmed", label: "Stemmed" },
 ];
 const SORT_OPTIONS: { value: Sort; label: string }[] = [
   { value: "eta", label: "ETA" },
@@ -107,10 +107,18 @@ const COLUMNS = [
   },
 ];
 
+/** `#/inquiries?phase=stemmed` selects a tab; anything else opens In the market. */
+function phaseFromHash(): Tab {
+  const p = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("phase");
+  return TABS.find((t) => t.phase === p)?.phase ?? "market";
+}
+
 /** The start page: every inquiry the caller may see, filtered and sorted by the engine (B2-R12). */
 export function WorkList({ api, roles }: WorkListProps) {
   const toast = useToast();
-  const [filter, setFilter] = useState<Filter>("open");
+  const [tab, setTab] = useState<Tab>(phaseFromHash);
+  const [cancelled, setCancelled] = useState(false);
+  const [counts, setCounts] = useState<Record<Phase, number> | null>(null);
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   const [mine, setMine] = useState(false);
@@ -130,7 +138,7 @@ export function WorkList({ api, roles }: WorkListProps) {
   useEffect(() => {
     let live = true;
     const params: ListParams = { sort };
-    if (filter !== "open") params.status = filter;
+    params.phase = cancelled ? "cancelled" : tab;
     if (q) params.q = q;
     if (mine) params.mine = true;
     void (async () => {
@@ -149,7 +157,20 @@ export function WorkList({ api, roles }: WorkListProps) {
     return () => {
       live = false;
     };
-  }, [api, filter, q, mine, sort, toast]);
+  }, [api, tab, cancelled, q, mine, sort, toast]);
+
+  useEffect(() => {
+    let live = true;
+    api
+      .phaseCounts(mine ? { q, mine } : { q })
+      .then((c) => {
+        if (live) setCounts(c);
+      })
+      .catch(() => undefined); // the rows request reports the failure
+    return () => {
+      live = false;
+    };
+  }, [api, q, mine]);
 
   const create = (
     <RoleGate allow={["admin", "bunker_buyer", "operator"]} roles={roles}>
@@ -167,18 +188,44 @@ export function WorkList({ api, roles }: WorkListProps) {
   return (
     <Panel title="Inquiries" actions={create}>
       <div className={css.filters}>
-        <Select
-          id="status"
-          label="Status"
-          value={filter}
-          options={STATUS_OPTIONS}
-          onChange={setFilter}
+        <TextField
+          id="search"
+          label="Search"
+          hint="Reference, vessel or port"
+          value={text}
+          onChange={setText}
         />
-        <TextField id="search" label="Search" value={text} onChange={setText} />
         <Select id="sort" label="Sort" value={sort} options={SORT_OPTIONS} onChange={setSort} />
         <RoleGate allow={["admin", "bunker_buyer"]} roles={roles}>
           <Checkbox id="mine" label="Mine" checked={mine} onChange={setMine} />
         </RoleGate>
+        <Checkbox
+          id="cancelled"
+          label="Show cancelled"
+          checked={cancelled}
+          onChange={setCancelled}
+        />
+      </div>
+      <div role="tablist" aria-label="Phase" className={css.tabs}>
+        {TABS.map((t) => {
+          const selected = !cancelled && tab === t.phase;
+          return (
+            <button
+              key={t.phase}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              className={css.tab}
+              onClick={() => {
+                setTab(t.phase);
+                setCancelled(false);
+                history.replaceState(null, "", `#/inquiries?phase=${t.phase}`);
+              }}
+            >
+              {counts ? `${t.label} (${String(counts[t.phase])})` : t.label}
+            </button>
+          );
+        })}
       </div>
       <Table
         caption="Inquiries"
@@ -195,7 +242,10 @@ export function WorkList({ api, roles }: WorkListProps) {
               body="Change the filter or reload the page to try again."
             />
           ) : (
-            <EmptyState title="No inquiries" body="Nothing matches this filter." />
+            <EmptyState
+              title="No inquiries"
+              body={q ? "Nothing matches this search in this tab." : "Nothing matches this filter."}
+            />
           )
         }
         columns={COLUMNS}

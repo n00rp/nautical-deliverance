@@ -17,7 +17,10 @@ const rows = [
   }),
   item("4", { vessel_name: "Blue Demo", eta: null }),
 ];
-const api = { listInquiries: () => Promise.resolve(rows) };
+const api = {
+  listInquiries: () => Promise.resolve(rows),
+  phaseCounts: () => Promise.resolve({ list: 1, market: 2, stemmed: 1, cancelled: 0 }),
+};
 
 function Page({ roles }: { roles: Role[] }) {
   return (

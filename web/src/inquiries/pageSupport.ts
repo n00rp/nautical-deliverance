@@ -128,6 +128,7 @@ export function inquiryApi(
   const same = () => Promise.resolve(current);
   return {
     listInquiries: () => Promise.resolve([]),
+    phaseCounts: () => Promise.resolve({ list: 0, market: 0, stemmed: 0, cancelled: 0 }),
     getInquiry: same,
     createInquiry: same,
     patchInquiry: same,
