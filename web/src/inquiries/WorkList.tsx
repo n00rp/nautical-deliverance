@@ -239,12 +239,12 @@ export function WorkList({ api, roles }: WorkListProps) {
           failed ? (
             <EmptyState
               title="Could not load inquiries"
-              body="Change the filter or reload the page to try again."
+              body="Change the tab or search, or reload the page to try again."
             />
           ) : (
             <EmptyState
               title="No inquiries"
-              body={q ? "Nothing matches this search in this tab." : "Nothing matches this filter."}
+              body={q ? "Nothing matches this search in this tab." : "Nothing in this tab."}
             />
           )
         }

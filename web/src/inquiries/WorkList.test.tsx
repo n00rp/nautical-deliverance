@@ -260,10 +260,15 @@ describe("WorkList", () => {
   });
 
   it("[B7a-R02] a search with no hits in the tab says so", async () => {
-    phaseCounts.mockResolvedValueOnce({ list: 0, market: 0, stemmed: 0, cancelled: 0 });
+    // A search that matches only cancelled inquiries: every tab reads (0).
+    phaseCounts
+      .mockResolvedValueOnce({ list: 1, market: 2, stemmed: 3, cancelled: 4 })
+      .mockResolvedValueOnce({ list: 0, market: 0, stemmed: 0, cancelled: 1 });
     setup([]);
     await userEvent.type(await screen.findByRole("textbox", { name: "Search" }), "zzz");
     expect(await screen.findByText("Nothing matches this search in this tab.")).toBeTruthy();
+    for (const name of ["On the list (0)", "In the market (0)", "Stemmed (0)"])
+      expect(await screen.findByRole("tab", { name })).toBeTruthy();
   });
 
   it("[B2-R12] search is debounced by 250 ms", async () => {
