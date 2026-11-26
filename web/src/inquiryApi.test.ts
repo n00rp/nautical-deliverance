@@ -27,6 +27,20 @@ describe("inquiry API client", () => {
       `${B}/inquiries?status=all&q=a+b&mine=true&sort=reference`,
       undefined,
     ],
+    [
+      "[B7a-R01] list by phase",
+      () => api.listInquiries({ phase: "stemmed", q: "a" }),
+      "GET",
+      `${B}/inquiries?phase=stemmed&q=a`,
+      undefined,
+    ],
+    [
+      "[B7a-R02] phase counts",
+      () => api.phaseCounts({ q: "a", mine: true }),
+      "GET",
+      `${B}/inquiries/phase-counts?q=a&mine=true`,
+      undefined,
+    ],
     ["get", () => api.getInquiry("i1"), "GET", `${B}/inquiries/i1`, undefined],
     [
       "create",
@@ -49,13 +63,6 @@ describe("inquiry API client", () => {
       "POST",
       `${B}/inquiries/i1/cancel`,
       { version: 2, reason: "Changed plan" },
-    ],
-    [
-      "duplicate",
-      () => api.duplicateInquiry("i1", 2),
-      "POST",
-      `${B}/inquiries/i1/duplicate`,
-      { version: 2 },
     ],
     ["users", () => api.listUsers(), "GET", `${B}/users`, undefined],
     [

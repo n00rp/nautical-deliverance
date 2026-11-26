@@ -74,9 +74,11 @@ curl -sf -o /dev/null -H "Authorization: Bearer $adm" -H 'Content-Type: applicat
   && ok "probe user created in Keycloak" || fail "could not create the probe user"
 buyer="$(token bunker_buyer@acme.test bunker_buyer@acme.test)"
 src="$(api "$buyer" inquiries | json "d[0]['id']")"
-ver="$(api "$buyer" "inquiries/$src" | json "d['version']")"
-new="$(curl -sf -X POST -H "Authorization: Bearer $buyer" -H 'Content-Type: application/json' \
-  "http://localhost:8080/api/v1/inquiries/$src/duplicate" -d "{\"version\": $ver}" | json "d['id'] + ' ' + d['reference']")"
+# a one-line inquiry built from the master data of an existing one (Duplicate no longer exists)
+body="$(api "$buyer" "inquiries/$src" | json "__import__('json').dumps({'vessel_id': d['vessel_id'], 'port_id': d['port_id'],
+  'bunkering_reason_id': d['bunkering_reason_id'], 'eta': '2030-01-10T08:00:00Z', 'etd': '2030-01-11T08:00:00Z',
+  'lines': [{'product_id': l['product_id'], 'quantity': '100', 'unit': 'mt', 'iso_spec_version_id': l['iso_spec_version_id']} for l in d['lines'][:1]]})")"
+new="$(curl -sf -X POST -H "Authorization: Bearer $buyer" -H 'Content-Type: application/json'   http://localhost:8080/api/v1/inquiries -d "$body" | json "d['id'] + ' ' + d['reference']")"
 new_id="${new% *}"
 new_ref="${new#* }"
 [[ -n "$new_id" ]] && ok "inquiry $new_ref created ($new_id)" || fail "inquiry not created"

@@ -444,6 +444,22 @@ def test_cross_org_references_are_422_for_every_composite_fk(admin: Api, other: 
 # --- optimistic concurrency, audit --------------------------------------------------------------
 
 
+@pytest.mark.req("B7a-R04")
+def test_vessel_default_operator_name_roundtrip(admin: Api) -> None:
+    """The vessel's default operator is a trimmed free-text name; blank means none."""
+    le = entity(admin)
+    v = admin.post("vessels", {**vessel_body(le["id"]), "default_operator_name": " Per Ops "})
+    assert v["default_operator_name"] == "Per Ops"
+    assert "default_operator" not in v
+    assert admin.get(f"vessels/{v['id']}")["default_operator_name"] == "Per Ops"
+    v = admin.patch(f"vessels/{v['id']}", {"version": 1, "default_operator_name": "   "})
+    assert v["default_operator_name"] is None
+    r = admin.http.patch(
+        f"{BASE}/vessels/{v['id']}", json={"version": 2, "default_operator_name": "x" * 121}
+    )
+    assert "default_operator_name" in fields(r)
+
+
 @pytest.mark.req("B1-R07")
 def test_patch_bumps_version_and_stale_write_is_409_without_audit(admin: Api) -> None:
     """Version +1 per update; stale version is 409 with the fixed body and no audit entry."""

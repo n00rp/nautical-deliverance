@@ -1,4 +1,4 @@
-"""Create a pilot user in Keycloak (B6-R05): temporary password, forced change, org_id, one role.
+"""Create a pilot user in Keycloak (B6-R05): temporary password, forced change, org_id, roles.
 
 Talks only to the Keycloak admin REST API. In production that API is loopback-only, so run this on
 the server (default --url) or through a tunnel: `ssh -L 8081:127.0.0.1:8081 <server>`.
@@ -70,17 +70,13 @@ def _rollback(admin: str, token: str, email: str, uid: str | None) -> None:
         _err("Created user was rolled back.")
 
 
-def create_user(args: argparse.Namespace, admin_password: str) -> str:
-    """Create the user; return the temporary password. Rolls the user back if a later step fails."""
-    base = args.url.rstrip("/")
-    if args.role not in ROLES:
-        msg = f"unknown role: {args.role} (allowed: {', '.join(ROLES)})"
+def _login(args: argparse.Namespace, admin_password: str) -> tuple[str, str]:
+    """Validate roles and URL, sign in; return (realm admin URL, token). Nothing is changed."""
+    bad = [r for r in args.role if r not in ROLES]
+    if bad:
+        msg = f"unknown role: {', '.join(bad)} (allowed: {', '.join(ROLES)})"
         raise Refused(msg)
-    try:
-        uuid.UUID(args.org)
-    except ValueError:
-        msg = f"--org is not a UUID: {args.org}"
-        raise Refused(msg) from None
+    base = args.url.rstrip("/")
     url = urllib.parse.urlsplit(base)
     if url.scheme != "https" and not (url.scheme == "http" and url.hostname in LOOPBACK):
         msg = "use https, or http only for a loopback host (127.0.0.1, localhost, ::1)"
@@ -95,15 +91,32 @@ def create_user(args: argparse.Namespace, admin_password: str) -> str:
             "password": admin_password,
         },
     )["access_token"]
-    admin = f"{base}/admin/realms/{urllib.parse.quote(args.realm)}"
-    q = urllib.parse.quote(args.email, safe="")
+    return f"{base}/admin/realms/{urllib.parse.quote(args.realm)}", token
+
+
+def _role_reps(admin: str, token: str, names: list[str]) -> list[Any]:
+    reps = []
+    for name in names:
+        try:
+            reps.append(_call("GET", f"{admin}/roles/{urllib.parse.quote(name)}", token))
+        except urllib.error.HTTPError as err:
+            if err.code == HTTP_NOT_FOUND:
+                msg = f"unknown role: {name}"
+                raise Refused(msg) from None
+            raise
+    return reps
+
+
+def create_user(args: argparse.Namespace, admin_password: str) -> str:
+    """Create the user; return the temporary password. Rolls the user back if a later step fails."""
     try:
-        role = _call("GET", f"{admin}/roles/{urllib.parse.quote(args.role)}", token)
-    except urllib.error.HTTPError as err:
-        if err.code == HTTP_NOT_FOUND:
-            msg = f"unknown role: {args.role}"
-            raise Refused(msg) from None
-        raise
+        uuid.UUID(args.org)
+    except ValueError:
+        msg = f"--org is not a UUID: {args.org}"
+        raise Refused(msg) from None
+    admin, token = _login(args, admin_password)
+    q = urllib.parse.quote(args.email, safe="")
+    roles = _role_reps(admin, token, list(dict.fromkeys(args.role)))
     if _call("GET", f"{admin}/users?email={q}&exact=true", token) or _call(
         "GET", f"{admin}/users?username={q}&exact=true", token
     ):
@@ -134,11 +147,26 @@ def create_user(args: argparse.Namespace, admin_password: str) -> str:
             token,
             {"type": "password", "value": password, "temporary": True},
         )
-        _call("POST", f"{admin}/users/{uid}/role-mappings/realm", token, [role])
+        _call("POST", f"{admin}/users/{uid}/role-mappings/realm", token, roles)
     except Exception:
         _rollback(admin, token, args.email, uid)
         raise
     return password
+
+
+def add_roles(args: argparse.Namespace, admin_password: str) -> None:
+    """Add realm roles to the existing user with this exact e-mail; nothing else is touched."""
+    admin, token = _login(args, admin_password)
+    q = urllib.parse.quote(args.email, safe="")
+    users = _call("GET", f"{admin}/users?email={q}&exact=true", token)
+    if len(users) > 1:
+        msg = f"several users with e-mail {args.email}"
+        raise Refused(msg)
+    if not users:
+        msg = f"no user with e-mail {args.email}"
+        raise Refused(msg)
+    roles = _role_reps(admin, token, list(dict.fromkeys(args.role)))
+    _call("POST", f"{admin}/users/{users[0]['id']}/role-mappings/realm", token, roles)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,16 +178,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--realm", default="nautical-deliverance")
     p.add_argument("--admin-user", required=True)
     p.add_argument("--email", required=True)
-    p.add_argument("--first", required=True)
-    p.add_argument("--last", required=True)
-    p.add_argument("--role", required=True, help=" / ".join(ROLES))
+    p.add_argument("--first")
+    p.add_argument("--last")
+    p.add_argument(
+        "--role", action="append", required=True, help=f"{' / '.join(ROLES)} (repeat for several)"
+    )
+    p.add_argument("--add-role", action="store_true", help="add the roles to an existing user")
     p.add_argument("--org", default=DEFAULT_ORG)
     args = p.parse_args(argv)
+    if not args.add_role and not (args.first and args.last):
+        p.error("--first and --last are required to create a user")
     admin_password = os.environ.get("ND_KC_ADMIN_PASSWORD") or getpass.getpass(
         "Keycloak admin password: "
     )
     try:
-        password = create_user(args, admin_password)
+        if args.add_role:
+            add_roles(args, admin_password)
+        else:
+            password = create_user(args, admin_password)
     except Refused as err:
         _err(f"refused: {err}")
         return EXIT_REFUSED
@@ -172,8 +208,12 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as err:  # noqa: BLE001 - report the type only, never values
         _err(f"failed: {type(err).__name__}")
         return 1
+    if args.add_role:
+        print(f"Added {', '.join(args.role)} to {args.email}.")  # noqa: T201
+        return 0
     print(  # noqa: T201
-        f"Created {args.email} ({args.role}). Temporary password (shown once): {password}"
+        f"Created {args.email} ({', '.join(args.role)}). "
+        f"Temporary password (shown once): {password}"
     )
     return 0
 

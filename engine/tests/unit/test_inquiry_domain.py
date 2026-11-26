@@ -106,7 +106,7 @@ def test_field_sets() -> None:
         "bunkering_reason_id",
         "lines",
         "voyage",
-        "operator_id",
+        "operator_name",
         "requester_id",
         "eta",
         "etd",

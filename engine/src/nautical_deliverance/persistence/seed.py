@@ -390,12 +390,16 @@ def _product(db: _Org, name: str) -> uuid.UUID:
     return db.one("SELECT id FROM product WHERE name = :n", n=name)
 
 
+OPERATOR_NAMES = ("Olga Operator", "Per Ops")  # invented (R6); the operator is a name (B7-D10)
+
+
 def _seed_vessels(db: _Org, d: dict[str, Any]) -> None:
-    for name, imo, vtype, dwt, flag, entity, fuels in d["vessels"]:
+    for n, (name, imo, vtype, dwt, flag, entity, fuels) in enumerate(d["vessels"]):
         db.put(
             "INSERT INTO vessel (organization_id, name, imo, vessel_type, dwt, flag,"
-            " legal_entity_id) VALUES (:o, :n, :i, :t, :d, :f,"
-            " (SELECT id FROM legal_entity WHERE code = :e)) ON CONFLICT DO NOTHING",
+            " legal_entity_id, default_operator_name) VALUES (:o, :n, :i, :t, :d, :f,"
+            " (SELECT id FROM legal_entity WHERE code = :e), :op) ON CONFLICT DO NOTHING",
+            op=OPERATOR_NAMES[n % 2],
             n=name,
             i=imo,
             t=vtype,
@@ -522,11 +526,12 @@ def _seed_inquiry(  # noqa: PLR0913, PLR0917
     vessel = next(v for v in vessels if "B24" not in v[6]) if pick == "bio_less" else vessels[pick]
     iid = db.one(
         "INSERT INTO inquiry (organization_id, reference, status, vessel_id, legal_entity_id,"
-        " port_id, bunkering_reason_id, voyage, operator_id, requester_id, buyer_id, eta, etd,"
+        " port_id, bunkering_reason_id, voyage, operator_name, requester_id, buyer_id, eta, etd,"
         " cancel_reason, created_by, created_at, updated_at) VALUES (:o, :ref, :st,"
         " (SELECT id FROM vessel WHERE imo = :imo),"
         " (SELECT id FROM legal_entity WHERE code = :le), (SELECT id FROM port WHERE locode = :lc),"
-        " (SELECT id FROM bunkering_reason WHERE name = :br), :v, :op, :op, :by, :eta, :etd,"
+        " (SELECT id FROM bunkering_reason WHERE name = :br), :v,"
+        " (SELECT default_operator_name FROM vessel WHERE imo = :imo), :op, :by, :eta, :etd,"
         " :cr, :op, :now, :now) RETURNING id",
         ref=next_reference(s, db.org, now),
         st=status,
@@ -589,7 +594,7 @@ def _seed_rfqs(db: _Org, s: Session, now: datetime, users: dict[str, uuid.UUID])
     for voyage, statuses in _RFQS.items():
         row = db.conn.execute(
             text(
-                # The oldest inquiry with the marker is the seeded one: Duplicate copies the voyage.
+                # The oldest inquiry with the marker is the seeded one (old Duplicates kept it).
                 "SELECT id, port_id, version, eta FROM inquiry WHERE voyage = :v"
                 " ORDER BY created_at, reference LIMIT 1"
             ),

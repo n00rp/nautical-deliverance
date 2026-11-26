@@ -20,7 +20,7 @@ const SCALARS = [
   "vessel_id",
   "legal_entity_id",
   "voyage",
-  "operator_id",
+  "operator_name",
   "buyer_id",
   "port_id",
   "eta",
@@ -59,7 +59,7 @@ export function initialValues(rec: Inquiry | null): Values {
     vessel_id: rec.vessel_id,
     legal_entity_id: rec.legal_entity_id,
     voyage: rec.voyage ?? "",
-    operator_id: rec.operator_id,
+    operator_name: rec.operator_name ?? "",
     buyer_id: rec.buyer_id ?? "",
     port_id: rec.port_id,
     eta: instant(rec.eta),
@@ -92,7 +92,10 @@ const toLine = (l: LineValues) => ({
   iso_spec_version_id: l.iso_spec_version_id,
 });
 
-/** Legal entity, operator and buyer left empty are omitted, so the engine fills its defaults. */
+/**
+ * Legal entity and buyer left empty are omitted, so the engine fills its defaults. The operator
+ * name is prefilled from the vessel in the form, so an empty one means the user cleared it: null.
+ */
 export function createBody(v: Values): InquiryBody {
   const body: InquiryBody = {
     vessel_id: v.vessel_id,
@@ -101,12 +104,13 @@ export function createBody(v: Values): InquiryBody {
     etd: v.etd,
     bunkering_reason_id: v.bunkering_reason_id,
     voyage: orNull(v.voyage),
+    operator_name: orNull(v.operator_name),
     agent_name: orNull(v.agent_name),
     agent_email: orNull(v.agent_email),
     internal_comments: orNull(v.internal_comments),
     lines: v.lines.map(toLine),
   };
-  for (const k of ["legal_entity_id", "operator_id", "buyer_id"] as const) {
+  for (const k of ["legal_entity_id", "buyer_id"] as const) {
     if (v[k]) body[k] = v[k];
   }
   return body;
@@ -127,7 +131,7 @@ export function patchBody(v: Values, base: Values): Partial<InquiryBody> {
 const text = (x: unknown) => (typeof x === "string" ? x : "");
 
 /**
- * Review Focus 4: a new vessel brings its legal entity and default operator, but only into
+ * Review Focus 4: a new vessel brings its legal entity and default operator name, but only into
  * fields that are empty or still hold the previous vessel's defaults.
  */
 export function pickVessel(v: Values, vessels: Rec[], id: string): Values {
@@ -139,7 +143,11 @@ export function pickVessel(v: Values, vessels: Rec[], id: string): Values {
     ...v,
     vessel_id: id,
     legal_entity_id: refill(v.legal_entity_id, prev?.legal_entity_id, next?.legal_entity_id),
-    operator_id: refill(v.operator_id, prev?.default_operator, next?.default_operator),
+    operator_name: refill(
+      v.operator_name,
+      prev?.default_operator_name,
+      next?.default_operator_name,
+    ),
   };
 }
 

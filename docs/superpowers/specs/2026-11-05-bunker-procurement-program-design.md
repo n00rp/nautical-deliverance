@@ -30,6 +30,7 @@ Build an internal web application for bunker (marine fuel) procurement that supp
 | D-079 | License allow-list extended with CC-BY-4.0 (build-time data packages such as caniuse-lite), with attribution in THIRD_PARTY_NOTICES.md. D-061 (0BSD, Zlib) applies on main too. GPL/AGPL remain blocked. |
 | D-080 | Clarifies D-079 (confirmed by the owner 2026-11-07): the GPL/AGPL block applies to our code's library dependencies (pip, pnpm), which the licence check covers. Unmodified tools and system components that we only run, never link or distribute (CI tools such as ShellCheck and QEMU, PostGIS, OS packages), are allowed when they are recorded in docs/versions.md. |
 | D-081 | The pilot's Oracle account is upgraded to Pay As You Go (owner's choice 2026-11-07, confirmed by the owner 2026-11-09), because free-trial accounts rarely get Ampere A1 capacity. Only Always Free eligible resources are created, and a budget alert at actual spend above 1 (billing currency) warns of any charge. Rejected: Hetzner CAX11 (about 5 EUR a month) and home hosting through Cloudflare Tunnel. Replaces the runbook's "do not upgrade to Pay As You Go"; the resources stay free, only the account type changes. |
+| D-082 | B7 is a pilot-1 feedback round (owner's choice and confirmation 2026-11-26), built after B6 and before pilot 2, which moves to B8+. A simple reporting slice — stems and spend per month and legal entity, CSV export of inquiries — moves from pilot 2 into B7. Amends D-069 (pilot 2 keeps full reporting) and D-076 (build order). Spec: [B7](2026-11-26-b7-pilot1-feedback-design.md). |
 
 ## 3. Evaluation criteria
 
@@ -71,7 +72,8 @@ Build an internal web application for bunker (marine fuel) procurement that supp
 | B4 | Offers and decision | Manual offer entry, comparison, winner with rationale. |
 | B5 | Nomination and dashboard | Nomination, dashboard. |
 | B6 | Deployment | Free cloud environment (D-068), HTTPS, backups, accounts — **pilot 1 goes live**. |
-| B7+ | Pilot 2 | Delivery, invoice matching, claims, reporting, Accounting/AP role. |
+| B7 | Pilot 1 feedback round (D-082) | Phase tabs, one-click Send, editable price table, operator as name, simple stems report and CSV export. |
+| B8+ | Pilot 2 | Delivery, invoice matching, claims, full reporting, Accounting/AP role. |
 
 Each step has its own spec → plan → implementation → review cycle; the next starts when the previous is complete and verified.
 

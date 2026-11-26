@@ -8,6 +8,7 @@ from types import NoneType
 from typing import Annotated, Any, get_args
 
 from pydantic import (
+    AfterValidator,
     AwareDatetime,
     BaseModel,
     ConfigDict,
@@ -32,6 +33,11 @@ AgentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1
 Comments = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=4000)]
 SpecNotes = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 Email = Annotated[str, _Trim, check(email_ok, "Invalid e-mail address")]
+OperatorName = Annotated[  # a blank name is no name (B7-D10)
+    str,
+    StringConstraints(strip_whitespace=True, max_length=120),
+    AfterValidator(lambda v: v or None),
+]
 
 
 class LineIn(Strict):
@@ -72,7 +78,7 @@ class InquiryIn(Strict):
     vessel_id: uuid.UUID
     legal_entity_id: uuid.UUID | None = None
     voyage: Voyage | None = None
-    operator_id: uuid.UUID | None = None
+    operator_name: OperatorName | None = None
     buyer_id: uuid.UUID | None = None
     requester_id: uuid.UUID | None = None
     port_id: uuid.UUID
@@ -87,7 +93,7 @@ class InquiryIn(Strict):
 
 def _patch_model() -> type[BaseModel]:
     """Every InquiryIn field optional; the ones the database requires may not be null."""
-    never_null = {"legal_entity_id", "operator_id", "requester_id"}
+    never_null = {"legal_entity_id", "requester_id"}
     optional: dict[str, Any] = {}
     for name, field in InquiryIn.model_fields.items():
         kind = field.annotation
@@ -106,7 +112,7 @@ InquiryPatch = _patch_model()
 
 
 class VersionIn(Strict):
-    """Body of take and duplicate."""
+    """Body of take."""
 
     version: int = Field(ge=1)
 
@@ -184,8 +190,7 @@ class InquiryOut(BaseModel):
     legal_entity_name: str
     legal_entity_inactive: bool
     voyage: str | None
-    operator_id: uuid.UUID
-    operator_name: str
+    operator_name: str | None
     buyer_id: uuid.UUID | None
     buyer_name: str | None
     requester_id: uuid.UUID

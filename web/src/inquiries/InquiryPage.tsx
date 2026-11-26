@@ -46,7 +46,7 @@ async function loadRefs(
     list("bunkering-reasons"),
     api.listUsers(),
   ]);
-  // The engine accepts an admin as operator or buyer too (inquiries.py _check_refs).
+  // The engine accepts an admin as buyer too (inquiries.py _check_refs).
   const has = (...roles: Role[]) => users.filter((u) => u.roles.some((r) => roles.includes(r)));
   return {
     vessels,
@@ -56,7 +56,6 @@ async function loadRefs(
     isos,
     reasons,
     users,
-    operators: has("operator", "admin"),
     buyers: has("bunker_buyer", "admin"),
   };
 }
@@ -237,19 +236,6 @@ export function InquiryPage({ id, api, master, roles }: InquiryPageProps) {
                       {rec.status === "nominated" ? "Amend nomination" : "Create nomination"}
                     </Button>
                   )}
-                  <Button
-                    variant="secondary"
-                    disabled={pending}
-                    onClick={() => {
-                      act(async (r) => {
-                        const copy = await api.duplicateInquiry(r.id, r.version);
-                        toast("Duplicated as a new Draft", "ok");
-                        goInquiry(copy.id);
-                      });
-                    }}
-                  >
-                    Duplicate
-                  </Button>
                 </div>
                 {rec.status !== "cancelled" && (
                   <CancelAction

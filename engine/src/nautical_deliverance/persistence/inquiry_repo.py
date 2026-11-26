@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import aliased
 
-from nautical_deliverance.domain.inquiry import format_reference
+from nautical_deliverance.domain.inquiry import PHASES, format_reference
 from nautical_deliverance.domain.rfq import RfqStatus
 from nautical_deliverance.persistence.models import (
     AppUser,
@@ -94,10 +94,44 @@ def _winner(column: Any) -> Any:  # noqa: ANN401
     )
 
 
-def list_rows(
-    session: Session, *, status: str | None, q: str | None, buyer: uuid.UUID | None, sort: str
+def _search(stmt: Any, q: str | None) -> Any:  # noqa: ANN401
+    """Restrict a statement joined to Vessel and Port to inquiries matching the search text."""
+    if not q:
+        return stmt
+    return stmt.where(
+        Inquiry.reference.icontains(q, autoescape=True)
+        | Vessel.name.icontains(q, autoescape=True)
+        | Port.name.icontains(q, autoescape=True)
+    )
+
+
+def phase_counts(session: Session, *, q: str | None, buyer: uuid.UUID | None) -> dict[str, int]:
+    """Inquiries per work-list phase, honouring the search text and the buyer filter."""
+    stmt = (
+        select(Inquiry.status, func.count())
+        .join(Vessel, Vessel.id == Inquiry.vessel_id)
+        .join(Port, Port.id == Inquiry.port_id)
+        .group_by(Inquiry.status)
+    )
+    if buyer is not None:
+        stmt = stmt.where(Inquiry.buyer_id == buyer)
+    per_status = dict(session.execute(_search(stmt, q)).all())
+    return {
+        phase: sum(per_status.get(s.value, 0) for s in statuses)
+        for phase, statuses in PHASES.items()
+    }
+
+
+def list_rows(  # noqa: PLR0913
+    session: Session,
+    *,
+    status: str | None,
+    phase: str | None = None,
+    q: str | None,
+    buyer: uuid.UUID | None,
+    sort: str,
 ) -> Sequence[Row[Any]]:
-    """Work-list rows. `status` None = all but cancelled; "all" = everything."""
+    """Work-list rows. `phase` beats `status`; `status` None = all but cancelled, "all" = all."""
     stmt = (
         select(
             Inquiry.id,
@@ -120,18 +154,15 @@ def list_rows(
         .join(Port, Port.id == Inquiry.port_id)
         .outerjoin(AppUser, AppUser.id == Inquiry.buyer_id)
     )
-    if status is None:
+    if phase is not None:
+        stmt = stmt.where(Inquiry.status.in_([s.value for s in PHASES[phase]]))
+    elif status is None:
         stmt = stmt.where(Inquiry.status != "cancelled")
     elif status != "all":
         stmt = stmt.where(Inquiry.status == status)
     if buyer is not None:
         stmt = stmt.where(Inquiry.buyer_id == buyer)
-    if q:
-        stmt = stmt.where(
-            Inquiry.reference.icontains(q, autoescape=True)
-            | Vessel.name.icontains(q, autoescape=True)
-            | Port.name.icontains(q, autoescape=True)
-        )
+    stmt = _search(stmt, q)
     # ponytail: unpaginated; reference sorts as text, so INQ-yymm-1000 sorts before -999.
     order = Inquiry.reference if sort == "reference" else Inquiry.eta.asc().nulls_last()
     return session.execute(stmt.order_by(order, Inquiry.id)).all()
@@ -195,7 +226,7 @@ def decision(session: Session, inq: Inquiry) -> dict[str, Any] | None:
 
 def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
     """Return the full inquiry record: columns, names, inactive flags, lines, warnings."""
-    operator, buyer, requester = (aliased(AppUser) for _ in range(3))
+    buyer, requester = (aliased(AppUser) for _ in range(2))
     names = (
         session.execute(
             select(
@@ -209,7 +240,6 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
                 (~Port.active).label("port_inactive"),
                 BunkeringReason.name.label("bunkering_reason_name"),
                 (~BunkeringReason.active).label("bunkering_reason_inactive"),
-                _shown(operator).label("operator_name"),
                 _shown(buyer).label("buyer_name"),
                 _shown(requester).label("requester_name"),
                 _rfq_count(is_active_rfq()).label("rfq_total"),
@@ -222,7 +252,6 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
             .join(LegalEntity, LegalEntity.id == Inquiry.legal_entity_id)
             .join(Port, Port.id == Inquiry.port_id)
             .join(BunkeringReason, BunkeringReason.id == Inquiry.bunkering_reason_id)
-            .join(operator, operator.id == Inquiry.operator_id)
             .join(requester, requester.id == Inquiry.requester_id)
             .outerjoin(buyer, buyer.id == Inquiry.buyer_id)
             .where(Inquiry.id == inq.id)

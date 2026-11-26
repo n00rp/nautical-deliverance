@@ -70,10 +70,8 @@ def test_pilot_has_full_demo_coverage(seeded: Engine) -> None:
     assert all(
         r["email"].endswith(".example") for r in q(seeded, PILOT, "SELECT email FROM contact")
     )
-    owners = q(seeded, PILOT, "SELECT DISTINCT operator_id FROM inquiry")
-    assert {r["operator_id"] for r in owners} <= {
-        r["id"] for r in q(seeded, PILOT, "SELECT id FROM app_user")
-    }
+    operators = q(seeded, PILOT, "SELECT DISTINCT operator_name FROM inquiry")
+    assert {r["operator_name"] for r in operators} <= {"Olga Operator", "Per Ops"}
     with seeded.begin() as conn:
         conn.execute(text("SELECT set_config('app.organization_id', :o, true)"), {"o": str(PILOT)})
         s = Session(conn)

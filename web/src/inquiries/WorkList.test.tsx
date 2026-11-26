@@ -16,15 +16,18 @@ beforeAll(() => {
 });
 afterEach(() => {
   cleanup();
+  phaseCounts.mockClear();
   window.location.hash = "";
   vi.useRealTimers();
 });
+
+const phaseCounts = vi.fn().mockResolvedValue({ list: 1, market: 2, stemmed: 3, cancelled: 4 });
 
 function setup(rows: InquiryListItem[] = [item("1")], roles: Role[] = ["admin"]) {
   const listInquiries = vi.fn().mockResolvedValue(rows);
   render(
     <ToastProvider>
-      <WorkList api={{ listInquiries }} roles={roles} />
+      <WorkList api={{ listInquiries, phaseCounts }} roles={roles} />
       <ToastHost />
     </ToastProvider>,
   );
@@ -34,6 +37,21 @@ function setup(rows: InquiryListItem[] = [item("1")], roles: Role[] = ["admin"])
 const lastParams = (f: ReturnType<typeof setup>) => f.mock.lastCall?.[0] as unknown;
 
 describe("WorkList", () => {
+  it("[B7a-R06] work list tabs are keyboard reachable and labelled", async () => {
+    const user = userEvent.setup();
+    setup();
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((t) => t.getAttribute("aria-selected"))).toContain("true");
+    const names = tabs.map((t) => t.textContent);
+    expect(names).toEqual(
+      expect.arrayContaining(["On the list (1)", "In the market (2)", "Stemmed (3)"]),
+    );
+    for (let i = 0; i < 10 && !tabs.includes(document.activeElement as HTMLElement); i++) {
+      await user.tab();
+    }
+    expect(tabs).toContain(document.activeElement);
+  });
+
   it("[B2-R12] renders the columns and a row", async () => {
     setup([item("1", { status: "rfq_sent" })]);
     const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent);
@@ -208,24 +226,64 @@ describe("WorkList", () => {
     expect(await screen.findByText("Former Buyer")).toBeTruthy();
   });
 
-  it("[B2-R12] the default query has no status filter, so cancelled is excluded", async () => {
+  it("[B7a-R01] shows three tabs with counts and opens In the market", async () => {
     const f = setup();
-    await screen.findByText("INQ-2611-001");
-    expect(f).toHaveBeenCalledWith({ sort: "eta" });
+    expect(await screen.findByRole("tab", { name: "On the list (1)" })).toBeTruthy();
+    expect(
+      screen.getByRole("tab", { name: "In the market (2)" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.getByRole("tab", { name: "Stemmed (3)" })).toBeTruthy();
+    expect(f.mock.calls[0]?.[0]).toEqual({ phase: "market", sort: "eta" });
   });
 
-  it("[B2-R12] the status filter sends status", async () => {
+  it("[B7a-R01] clicking a tab loads that phase and updates the hash", async () => {
     const f = setup();
-    await userEvent.click(await screen.findByRole("combobox", { name: "Status" }));
-    await userEvent.click(await screen.findByRole("option", { name: "Cancelled" }));
+    await userEvent.click(await screen.findByRole("tab", { name: "Stemmed (3)" }));
     await waitFor(() => {
-      expect(lastParams(f)).toEqual({ status: "cancelled", sort: "eta" });
+      expect(lastParams(f)).toEqual({ phase: "stemmed", sort: "eta" });
     });
-    await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
-    await userEvent.click(await screen.findByRole("option", { name: "All" }));
+    expect(window.location.hash).toBe("#/inquiries?phase=stemmed");
+  });
+
+  it("[B7a-R01] the hash selects the tab", async () => {
+    window.location.hash = "#/inquiries?phase=list";
+    setup();
+    const tab = await screen.findByRole("tab", { name: "On the list (1)" });
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("[B7a-R01] Show cancelled lists only cancelled", async () => {
+    const f = setup();
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Show cancelled" }));
     await waitFor(() => {
-      expect(lastParams(f)).toEqual({ status: "all", sort: "eta" });
+      expect(lastParams(f)).toEqual({ phase: "cancelled", sort: "eta" });
     });
+    for (const t of screen.getAllByRole("tab"))
+      expect(t.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("[B7a-R02] search is the first filter and filters within the tab", async () => {
+    const f = setup();
+    const search = await screen.findByRole("textbox", { name: "Search" });
+    expect(search.closest("div")?.parentElement?.firstElementChild?.contains(search)).toBe(true);
+    expect(screen.getByText("Reference, vessel or port")).toBeTruthy();
+    await userEvent.type(search, "rott");
+    await waitFor(() => {
+      expect(lastParams(f)).toEqual({ phase: "market", q: "rott", sort: "eta" });
+      expect(phaseCounts).toHaveBeenLastCalledWith({ q: "rott" });
+    });
+  });
+
+  it("[B7a-R02] a search with no hits in the tab says so", async () => {
+    // A search that matches only cancelled inquiries: every tab reads (0).
+    phaseCounts
+      .mockResolvedValueOnce({ list: 1, market: 2, stemmed: 3, cancelled: 4 })
+      .mockResolvedValueOnce({ list: 0, market: 0, stemmed: 0, cancelled: 1 });
+    setup([]);
+    await userEvent.type(await screen.findByRole("textbox", { name: "Search" }), "zzz");
+    expect(await screen.findByText("Nothing matches this search in this tab.")).toBeTruthy();
+    for (const name of ["On the list (0)", "In the market (0)", "Stemmed (0)"])
+      expect(await screen.findByRole("tab", { name })).toBeTruthy();
   });
 
   it("[B2-R12] search is debounced by 250 ms", async () => {
@@ -234,7 +292,7 @@ describe("WorkList", () => {
     await userEvent.type(screen.getByRole("textbox", { name: "Search" }), "rott");
     expect(f).toHaveBeenCalledTimes(1);
     await waitFor(() => {
-      expect(lastParams(f)).toEqual({ q: "rott", sort: "eta" });
+      expect(lastParams(f)).toEqual({ phase: "market", q: "rott", sort: "eta" });
     });
     expect(f).toHaveBeenCalledTimes(2);
   });
@@ -244,7 +302,7 @@ describe("WorkList", () => {
     await userEvent.click(await screen.findByRole("combobox", { name: "Sort" }));
     await userEvent.click(await screen.findByRole("option", { name: "Reference" }));
     await waitFor(() => {
-      expect(lastParams(f)).toEqual({ sort: "reference" });
+      expect(lastParams(f)).toEqual({ phase: "market", sort: "reference" });
     });
   });
 
@@ -252,7 +310,7 @@ describe("WorkList", () => {
     const f = setup();
     await userEvent.click(await screen.findByRole("checkbox", { name: "Mine" }));
     await waitFor(() => {
-      expect(lastParams(f)).toEqual({ mine: true, sort: "eta" });
+      expect(lastParams(f)).toEqual({ phase: "market", mine: true, sort: "eta" });
     });
     cleanup();
     setup([item("1")], ["operator"]);
@@ -286,7 +344,7 @@ describe("WorkList", () => {
     const listInquiries = vi.fn().mockRejectedValue(new Error("boom"));
     render(
       <ToastProvider>
-        <WorkList api={{ listInquiries }} roles={["admin"]} />
+        <WorkList api={{ listInquiries, phaseCounts }} roles={["admin"]} />
         <ToastHost />
       </ToastProvider>,
     );

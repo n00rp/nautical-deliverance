@@ -14,11 +14,21 @@ YAML_REF = re.compile(r"#\s*req:(.*)")
 MATRIX = "docs/traceability.md"
 # Specs verified by owner review, not code (design documents), opt out in their header.
 MANUAL_MARKER = "- **Traceability:** manual"
+# Parts not yet built list their id prefix in the header; their requirements need no test yet.
+PLANNED_MARKER = "- **Planned:** "
 
 
 def _is_manual(spec: Path) -> bool:
     head = spec.read_text(encoding="utf-8").splitlines()[:20]
     return MANUAL_MARKER in head
+
+
+def _planned(spec: Path) -> tuple[str, ...]:
+    """Return the requirement id prefixes (e.g. B7b) the spec header lists as planned."""
+    for line in spec.read_text(encoding="utf-8").splitlines()[:20]:
+        if line.startswith(PLANNED_MARKER):
+            return tuple(p.strip() for p in line[len(PLANNED_MARKER) :].split(","))
+    return ()
 
 
 def _files(root: Path, pattern: str) -> list[Path]:
@@ -49,9 +59,12 @@ def collect_refs(root: Path) -> dict[str, set[str]]:
     return refs
 
 
-def render(requirements: list[str], refs: dict[str, set[str]]) -> str:
+def render(requirements: list[str], refs: dict[str, set[str]], planned: set[str]) -> str:
     """Render the traceability matrix, sorted by id then location."""
-    rows = [f"| {r} | {', '.join(sorted(refs[r]))} |" for r in requirements]
+    rows = [
+        f"| {r} | {', '.join(sorted(refs[r])) or ('planned' if r in planned else '')} |"
+        for r in requirements
+    ]
     head = ["# Traceability", "", "| Requirement | Referenced by |", "|---|---|"]
     return "\n".join([*head, *rows, ""])
 
@@ -64,18 +77,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     root: Path = args.root
 
-    requirements = sorted(
-        {
-            m
-            for spec in _files(root, "docs/superpowers/specs/*.md")
-            if not _is_manual(spec)
-            for m in SPEC_ROW.findall(spec.read_text(encoding="utf-8"))
-        }
-    )
+    found: set[str] = set()
+    planned: set[str] = set()
+    for spec in _files(root, "docs/superpowers/specs/*.md"):
+        if _is_manual(spec):
+            continue
+        ids = SPEC_ROW.findall(spec.read_text(encoding="utf-8"))
+        found.update(ids)
+        prefixes = _planned(spec)
+        planned.update(r for r in ids if r.split("-R")[0] in prefixes)
+    requirements = sorted(found)
     refs = collect_refs(root)
-    errors = [f"{r}: no test" for r in requirements if r not in refs]
+    errors = [f"{r}: no test" for r in requirements if r not in refs and r not in planned]
     errors += [f"{r}: unknown requirement" for r in sorted(refs) if r not in requirements]
-    matrix = render(requirements, refs)
+    matrix = render(requirements, refs, planned)
     target = root / MATRIX
     if args.check and (not target.exists() or target.read_text(encoding="utf-8") != matrix):
         errors.append(f"{MATRIX} is out of date; run `python tools/trace.py`")

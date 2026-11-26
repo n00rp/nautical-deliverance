@@ -40,12 +40,12 @@ from nautical_deliverance.domain.inquiry import (
 from nautical_deliverance.persistence.audit import history, record_change
 from nautical_deliverance.persistence.inquiry_repo import (
     DECISION_COLUMNS,
-    dec,
     detail,
     line_rows,
     line_text,
     list_rows,
     next_reference,
+    phase_counts,
 )
 from nautical_deliverance.persistence.models import (
     AppUser,
@@ -68,28 +68,15 @@ if TYPE_CHECKING:
 router = APIRouter(prefix="/inquiries")
 
 LOCKED_MESSAGE = "Locked after Draft"
-OPERATOR_ROLES = frozenset({Role.OPERATOR, Role.ADMIN})
 BUYER_ROLES = frozenset({Role.BUNKER_BUYER, Role.ADMIN})
 RFQ_FIELDS = ("rfq_deadline", "rfq_total", "rfq_sent")  # null for everyone else (R6)
-USER_ROLES = {"operator_id": OPERATOR_ROLES, "buyer_id": BUYER_ROLES}  # requester: any user
+USER_ROLES = {"buyer_id": BUYER_ROLES}  # requester: any user
 MASTER: dict[str, tuple[Any, str]] = {
     "vessel_id": (Vessel, "vessel"),
     "legal_entity_id": (LegalEntity, "legal entity"),
     "port_id": (Port, "port"),
     "bunkering_reason_id": (BunkeringReason, "bunkering reason"),
 }
-
-DUPLICATED = (
-    "vessel_id",
-    "legal_entity_id",
-    "voyage",
-    "operator_id",
-    "requester_id",
-    "port_id",
-    "agent_name",
-    "agent_email",
-    "bunkering_reason_id",
-)  # fmt: skip  (B2-D10)
 
 
 def get_now() -> datetime:
@@ -142,7 +129,7 @@ def _check_refs(session: Session, values: dict[str, Any]) -> None:
                 _reject(field, f"Unknown {noun}")
             if not row.active:
                 _reject(field, f"Inactive {noun}")
-    for field in ("operator_id", "buyer_id", "requester_id"):
+    for field in ("buyer_id", "requester_id"):
         if values.get(field) is None:
             continue
         user = session.get(AppUser, values[field])
@@ -207,17 +194,6 @@ def _resolve_lines(
         for r in rows
     ]
     return rows, texts
-
-
-def _default_operator(session: Session, vessel: Vessel, principal: Principal) -> uuid.UUID:
-    """Return the vessel's default operator (an operator/admin of the org), else the caller."""
-    if vessel.default_operator is not None:
-        user = session.get(AppUser, vessel.default_operator)
-        if user is not None and OPERATOR_ROLES & set(user.roles):
-            return vessel.default_operator
-    if Role.OPERATOR in principal.roles:
-        return principal.user_id
-    _reject("operator_id", "Required: the vessel has no default operator")
 
 
 def _load(session: Session, inquiry_id: uuid.UUID, *, lock: bool = False) -> Inquiry:
@@ -300,13 +276,14 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
     q: str | None = None,
     mine: bool = False,  # noqa: FBT001, FBT002
     sort: Literal["eta", "reference"] = "eta",
+    phase: Literal["list", "market", "stemmed", "cancelled"] | None = None,
 ) -> object:
-    """Work list: all but cancelled by default, `status=all` for everything."""
+    """Work list: all but cancelled by default, `status=all` for everything; `phase` wins."""
     if state not in (None, "all", *(s.value for s in Status)):
         _reject("status", "Unknown status")
     buyer = principal.user_id if mine else None
     with scope(principal, engine) as s:
-        rows = list_rows(s, status=state, q=q, buyer=buyer, sort=sort)
+        rows = list_rows(s, status=state, phase=phase, q=q, buyer=buyer, sort=sort)
         hide = (
             {}
             if sees_rfqs(principal)
@@ -320,6 +297,18 @@ def list_inquiries(  # noqa: PLR0913, PLR0917
         ]
 
 
+@router.get("/phase-counts")
+def get_phase_counts(
+    principal: Reader,
+    engine: Eng,
+    q: str | None = None,
+    mine: bool = False,  # noqa: FBT001, FBT002
+) -> dict[str, int]:
+    """Inquiries per work-list phase for the tab badges, honouring `q` and `mine`."""
+    with scope(principal, engine) as s:
+        return phase_counts(s, q=q, buyer=principal.user_id if mine else None)
+
+
 @router.get("/{inquiry_id}", response_model=InquiryOut)
 def get_inquiry(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object:
     """One inquiry with lines, warnings and display names."""
@@ -327,13 +316,11 @@ def get_inquiry(inquiry_id: uuid.UUID, principal: Reader, engine: Eng) -> object
         return _out(s, _load(s, inquiry_id), principal)
 
 
-def _create(  # noqa: PLR0913, PLR0917
+def _create(
     s: Session,
     principal: Principal,
     now: datetime,
     body: InquiryIn,
-    action: Literal["create", "duplicate"] = "create",
-    extra: dict[str, Any] | None = None,
 ) -> InquiryOut:
     """Validate and insert a Draft with its lines and one audit entry."""
     _check_lines(body.lines)
@@ -343,7 +330,8 @@ def _create(  # noqa: PLR0913, PLR0917
         _reject("vessel_id", "Unknown vessel")
     values = {k: getattr(body, k) for k in InquiryIn.model_fields if k != "lines"}
     values["legal_entity_id"] = body.legal_entity_id or vessel.legal_entity_id
-    values["operator_id"] = body.operator_id or _default_operator(s, vessel, principal)
+    if "operator_name" not in body.model_fields_set:
+        values["operator_name"] = vessel.default_operator_name
     values["requester_id"] = body.requester_id or principal.user_id
     if "buyer_id" not in body.model_fields_set:
         is_buyer = bool(BUYER_ROLES & principal.roles)
@@ -372,14 +360,13 @@ def _create(  # noqa: PLR0913, PLR0917
         actor=principal.user_id,
         entity_type="inquiry",
         entity_id=inq.id,
-        action=action,
+        action="create",
         before=None,
         after={
             **values,
             "reference": inq.reference,
             "status": inq.status,
             "lines": texts,
-            **(extra or {}),
         },
     )
     return _out(s, inq, principal)
@@ -491,31 +478,6 @@ def cancel_inquiry(
         inq = _lock_open(s, inquiry_id, body.version)
         values = {**_transition(inq, Status.CANCELLED), "cancel_reason": body.reason}
         return _change(s, principal, now, inq, "cancel", values)
-
-
-@router.post("/{inquiry_id}/duplicate", response_model=InquiryOut, status_code=201)
-def duplicate_inquiry(
-    inquiry_id: uuid.UUID, body: VersionIn, principal: Editor, engine: Eng, now: Now
-) -> object:
-    """Create a Draft from the B2-D10 fields; ETA/ETD start empty (R5)."""
-    with scope(principal, engine) as s:
-        src = _load(s, inquiry_id)
-        if src.version != body.version:
-            raise conflict()
-        lines = [
-            LineIn(
-                product_id=r.InquiryLine.product_id,
-                quantity=cast("str", dec(r.InquiryLine.quantity)),
-                unit=r.InquiryLine.unit,
-                density=dec(r.InquiryLine.density),
-                spec_notes=r.InquiryLine.spec_notes,
-                iso_spec_version_id=r.InquiryLine.iso_spec_version_id,
-            )
-            for r in line_rows(s, src.id)
-        ]
-        copied = {k: getattr(src, k) for k in DUPLICATED}
-        new = InquiryIn.model_construct(**copied, eta=None, etd=None, lines=lines)
-        return _create(s, principal, now, new, "duplicate", {"duplicate_of": src.reference})
 
 
 @router.get("/{inquiry_id}/history", response_model=list[HistoryOut])

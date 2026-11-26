@@ -111,4 +111,14 @@ describe("Dashboard", () => {
     expect(await screen.findByText("Could not load the dashboard")).toBeTruthy();
     expect(await screen.findByText("boom")).toBeTruthy();
   });
+
+  it("[B7a-R01] dashboard status tiles link to their tab", async () => {
+    setup(full);
+    const href = async (label: string) =>
+      (await screen.findByText(label)).closest("div")?.querySelector("dd a")?.getAttribute("href");
+    expect(await href("Winner selected")).toBe("#/inquiries?phase=market");
+    expect(await href("Nominated")).toBe("#/inquiries?phase=stemmed");
+    expect(await href("Draft")).toBe("#/inquiries?phase=list");
+    expect((await screen.findByText("Cancelled")).closest("div")?.querySelector("dd a")).toBeNull();
+  });
 });

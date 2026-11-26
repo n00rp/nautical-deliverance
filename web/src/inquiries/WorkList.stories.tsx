@@ -17,7 +17,10 @@ const rows = [
   }),
   item("4", { vessel_name: "Blue Demo", eta: null }),
 ];
-const api = { listInquiries: () => Promise.resolve(rows) };
+const api = {
+  listInquiries: () => Promise.resolve(rows),
+  phaseCounts: () => Promise.resolve({ list: 1, market: 2, stemmed: 1, cancelled: 0 }),
+};
 
 function Page({ roles }: { roles: Role[] }) {
   return (
@@ -34,3 +37,10 @@ type Story = StoryObj<typeof meta>;
 
 export const AsBuyer: Story = { render: () => <Page roles={["bunker_buyer"]} /> };
 export const AsViewer: Story = { render: () => <Page roles={["viewer"]} /> };
+export const StemmedTab: Story = {
+  name: "Stemmed tab",
+  render: () => {
+    window.location.hash = "#/inquiries?phase=stemmed";
+    return <Page roles={["bunker_buyer"]} />;
+  },
+};

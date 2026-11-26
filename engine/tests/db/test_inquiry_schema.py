@@ -65,7 +65,7 @@ def _inquiry(s: Session, org: uuid.UUID, ids: Ids, **over: Any) -> uuid.UUID:  #
         "legal_entity_id": ids["legal_entity"],
         "port_id": ids["port"],
         "bunkering_reason_id": ids["reason"],
-        "operator_id": ids["user"],
+        "operator_name": "Olga Operator",
         "requester_id": ids["user"],
         "eta": ETA,
         "etd": ETA + timedelta(days=1),
@@ -203,7 +203,7 @@ def test_foreign_keys_cannot_cross_organizations(
     ids_b = _setup(app_engine, org_b)
     for col, key, name in (
         ("vessel_id", "vessel", "inquiry_vessel_fk"),
-        ("operator_id", "user", "inquiry_operator_fk"),
+        ("requester_id", "user", "inquiry_requester_fk"),
     ):
         with pytest.raises(IntegrityError, match=name), org_session(org_b, app_engine) as s:
             _inquiry(s, org_b, ids_b, **{col: ids_a[key]})
@@ -214,6 +214,21 @@ def test_foreign_keys_cannot_cross_organizations(
         org_session(org_b, app_engine) as s,
     ):
         _line(s, org_b, ids_b, inq_b, product_id=ids_a["product"])
+
+
+@pytest.mark.req("B7a-R04")
+def test_operator_name_is_at_most_120_characters(
+    app_engine: Engine, org: tuple[uuid.UUID, Ids]
+) -> None:
+    """The operator is a free-text name of at most 120 characters (B7-D10)."""
+    o, ids = org
+    with org_session(o, app_engine) as s:
+        _inquiry(s, o, ids, reference="R120", operator_name="x" * 120)
+    with (
+        pytest.raises(IntegrityError, match="inquiry_operator_name_len"),
+        org_session(o, app_engine) as s,
+    ):
+        _inquiry(s, o, ids, reference="R121", operator_name="x" * 121)
 
 
 @pytest.mark.req("B2-R02")

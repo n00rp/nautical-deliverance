@@ -193,6 +193,115 @@ def test_password_appears_once_and_in_no_log(
     assert password not in caplog.text
 
 
+def _run_bare(
+    kc: str,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    *argv: str,
+) -> tuple[int, str, str]:
+    """Run with exactly these arguments (no shared ARGS); argparse exits count as exit codes."""
+    monkeypatch.setenv("ND_KC_ADMIN_PASSWORD", ADMIN_PW)
+    try:
+        code = pilot_user.main(["--url", kc, "--admin-user", "admin", *argv])
+    except SystemExit as exit_:
+        code = int(exit_.code or 0)
+    out = capsys.readouterr()
+    return code, out.out, out.err
+
+
+def _realm_roles(admin: str, tok: str, uid: str) -> set[str]:
+    roles = _json(f"{admin}/users/{uid}/role-mappings/realm", tok)
+    return {r["name"] for r in roles} - {"default-roles-nautical-deliverance"}
+
+
+def _users(admin: str, tok: str) -> list[Any]:
+    return _json(f"{admin}/users?max=1000", tok)  # type: ignore[no-any-return]
+
+
+@needs_kc
+@pytest.mark.req("B7a-R05")
+def test_create_with_two_roles(
+    kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, _, _ = _run(kc, "two@pilot.example", capsys, monkeypatch, "--role", "admin")
+    assert code == 0
+    tok, admin = _admin(kc)
+    (user,) = _json(f"{admin}/users?email=two@pilot.example&exact=true", tok)
+    assert _realm_roles(admin, tok, user["id"]) == {"bunker_buyer", "admin"}
+
+
+@needs_kc
+@pytest.mark.req("B7a-R05")
+def test_add_role_to_existing_user(
+    kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _run(kc, "addrole@pilot.example", capsys, monkeypatch)[0] == 0
+    tok, admin = _admin(kc)
+    (before,) = _json(f"{admin}/users?email=addrole@pilot.example&exact=true", tok)
+    creds = _json(f"{admin}/users/{before['id']}/credentials", tok)
+
+    code, out, err = _run_bare(
+        kc, capsys, monkeypatch, "--email", "ADDROLE@pilot.example", "--add-role", "--role", "admin"
+    )
+    assert code == 0
+    assert err == ""
+    assert "password" not in out.lower()
+    (after,) = _json(f"{admin}/users?email=addrole@pilot.example&exact=true", tok)
+    assert _realm_roles(admin, tok, after["id"]) == {"bunker_buyer", "admin"}
+    assert after["requiredActions"] == before["requiredActions"]
+    after_creds = _json(f"{admin}/users/{before['id']}/credentials", tok)
+    assert len(after_creds) == len(creds) == 1
+    assert [c["id"] for c in after_creds] == [c["id"] for c in creds]
+
+
+@needs_kc
+@pytest.mark.req("B7a-R05")
+def test_add_role_unknown_email_exits_2(
+    kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tok, admin = _admin(kc)
+    before = len(_users(admin, tok))
+    code, out, err = _run_bare(
+        kc, capsys, monkeypatch, "--email", "nobody@pilot.example", "--add-role", "--role", "admin"
+    )
+    assert code == EXIT_REFUSED
+    assert out == ""
+    assert "no user with e-mail nobody@pilot.example" in err
+    assert len(_users(admin, tok)) == before
+
+
+@needs_kc
+@pytest.mark.req("B7a-R05")
+@pytest.mark.parametrize("missing", ["--first", "--last"])
+def test_create_without_name_exits_2(
+    missing: str, kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    names = {"--first": "Ada", "--last": "Buyer"}
+    given = [x for k, v in names.items() if k != missing for x in (k, v)]
+    email = f"noname{missing[2:]}@pilot.example"
+    code, out, err = _run_bare(kc, capsys, monkeypatch, "--email", email, "--role", "admin", *given)
+    assert code == EXIT_REFUSED
+    assert out == ""
+    assert missing in err
+    tok, admin = _admin(kc)
+    assert _json(f"{admin}/users?email={email}&exact=true", tok) == []
+
+
+@needs_kc
+@pytest.mark.req("B7a-R05")
+def test_unknown_role_in_list_is_refused(
+    kc: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, out, err = _run(
+        kc, "badlist@pilot.example", capsys, monkeypatch, "--role", "admin", "--role", "nope"
+    )
+    assert code != 0
+    assert out == ""
+    assert "unknown role" in err
+    tok, admin = _admin(kc)
+    assert _json(f"{admin}/users?email=badlist@pilot.example&exact=true", tok) == []
+
+
 # --- rollback, no Docker: _call is stubbed -------------------------------------------------
 
 TOKEN = "tok-secret-value"  # noqa: S105

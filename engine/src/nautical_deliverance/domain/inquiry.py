@@ -25,6 +25,14 @@ class Status(StrEnum):
     CANCELLED = "cancelled"
 
 
+PHASES: dict[str, frozenset[Status]] = {
+    "list": frozenset({Status.DRAFT}),
+    "market": frozenset({Status.RFQ_SENT, Status.OFFERS_RECEIVED, Status.WINNER_SELECTED}),
+    "stemmed": frozenset({Status.NOMINATED}),
+    "cancelled": frozenset({Status.CANCELLED}),
+}  # work-list tabs (B7a-R01)
+
+
 TRANSITIONS: Mapping[Status, frozenset[Status]] = {
     Status.DRAFT: frozenset({Status.RFQ_SENT, Status.CANCELLED}),
     Status.RFQ_SENT: frozenset({Status.OFFERS_RECEIVED, Status.CANCELLED}),
@@ -42,7 +50,7 @@ LOCKED_AFTER_DRAFT = frozenset(
         "bunkering_reason_id",
         "lines",
         "voyage",
-        "operator_id",
+        "operator_name",
         "requester_id",
     }
 )

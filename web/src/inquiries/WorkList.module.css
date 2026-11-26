@@ -16,3 +16,26 @@
   gap: var(--space-1);
   align-items: flex-start;
 }
+
+.tabs {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--color-line);
+  margin-bottom: var(--space-3);
+}
+
+.tab {
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--color-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--color-accent);
+  color: inherit;
+  font-weight: 600;
+}

@@ -1,6 +1,6 @@
 import { useLoaded } from "../admin/useLoaded";
 import type { AttentionItem, AttentionKind, DashboardApi, MonthFigures } from "../dashboardApi";
-import { STATUS_LABEL, type InquiryStatus } from "../inquiryApi";
+import { STATUS_LABEL, type InquiryStatus, type Phase } from "../inquiryApi";
 import { formatMt, formatUsd } from "../money";
 import { formatInstant } from "../ui/DateTimeField/format";
 import { EmptyState } from "../ui/EmptyState/EmptyState";
@@ -76,6 +76,15 @@ function Month({ month }: { month: MonthFigures }) {
   );
 }
 
+/** The work-list tab each status lives in (B7-D21); cancelled has none. */
+const STATUS_PHASE: Partial<Record<InquiryStatus, Phase>> = {
+  draft: "list",
+  rfq_sent: "market",
+  offers_received: "market",
+  winner_selected: "market",
+  nominated: "stemmed",
+};
+
 /** The start page: what needs attention, inquiries per status and the month's figures (B5-R11). */
 export function Dashboard({ api }: DashboardProps) {
   const { data, failed } = useLoaded(true, () => api.getDashboard(), [api]);
@@ -101,7 +110,15 @@ export function Dashboard({ api }: DashboardProps) {
               <dt>
                 <StatusPill status={STATUS_LABEL[s]} />
               </dt>
-              <dd>{String(data.status_counts[s])}</dd>
+              <dd>
+                {STATUS_PHASE[s] ? (
+                  <a href={`#/inquiries?phase=${STATUS_PHASE[s]}`}>
+                    {String(data.status_counts[s])}
+                  </a>
+                ) : (
+                  String(data.status_counts[s])
+                )}
+              </dd>
             </div>
           ))}
         </dl>

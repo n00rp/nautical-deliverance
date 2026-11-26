@@ -1,30 +1,26 @@
-"""Inquiry take, cancel, duplicate and history (B2-R06, R08, R11)."""
+"""Inquiry take, cancel and history (B2-R06, R08, R11); Duplicate is gone (B7a-R03)."""
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from sqlalchemy import Engine, update
 
 from nautical_deliverance.domain import inquiry as inquiry_domain
 from nautical_deliverance.domain.identity import Role
 from nautical_deliverance.domain.inquiry import Status
-from nautical_deliverance.persistence.db import org_session
-from nautical_deliverance.persistence.models import Vessel
 from tests.db.test_inquiry_api import (
     CONFLICT,
-    CREATED,
-    FORBIDDEN,
     OK,
     URL,
     Client,
     errors,
-    line,
     make_world,
 )
 
 if TYPE_CHECKING:
     from types import SimpleNamespace
+
+    from sqlalchemy import Engine
 
     from nautical_deliverance.settings import Settings
 
@@ -94,10 +90,10 @@ def test_cancelled_inquiry_rejects_take_cancel_and_patch(admin: Client) -> None:
 
 @pytest.mark.req("B2-R06")
 def test_stale_version_is_409_for_every_action(admin: Client) -> None:
-    """A stale version conflicts on take, cancel and duplicate."""
+    """A stale version conflicts on take and cancel."""
     inq = admin.create()
     admin.patch(inq, voyage="V")
-    for verb, extra in (("take", {}), ("cancel", {"reason": "r"}), ("duplicate", {})):
+    for verb, extra in (("take", {}), ("cancel", {"reason": "r"})):
         assert act(admin, inq, verb, **extra).status_code == CONFLICT, verb
 
 
@@ -135,74 +131,6 @@ def test_two_concurrent_takes_with_the_same_version(
     assert [e.action for e in clients[0].entries(inq["id"])] == ["create", "take"]
 
 
-@pytest.mark.req("B2-R08")
-def test_duplicate_copies_exactly_the_b2_d10_fields(
-    settings: Settings, app_engine: Engine, world: SimpleNamespace, admin: Client
-) -> None:
-    """Copied: vessel, legal entity, voyage, operator, requester, port, agent, reason, lines."""
-    buyer = Client(settings, app_engine, world, Role.BUNKER_BUYER)
-    src = buyer.create(
-        legal_entity_id=str(world.le2),
-        voyage="V9",
-        requester_id=str(world.users[Role.VIEWER].user_id),
-        agent_name="Agent",
-        agent_email="a@x.example",
-        internal_comments="secret",
-        port_id=str(world.port2),
-        bunkering_reason_id=str(world.reason2),
-        lines=[
-            line(world, quantity="12.5", spec_notes="low sulphur"),
-            line(world, product_id=str(world.mgo), unit="m3", quantity="7", density="850.5"),
-        ],
-    )
-    act(buyer, src, "cancel", reason="scope")  # duplicate is allowed from any status
-    src = buyer.get(src["id"])
-    r = act(admin, src, "duplicate")
-    assert r.status_code == CREATED, r.text
-    new = r.json()
-    for f in (
-        "vessel_id", "legal_entity_id", "voyage", "operator_id", "requester_id", "port_id",
-        "agent_name", "agent_email", "bunkering_reason_id",
-    ):  # fmt: skip
-        assert new[f] == src[f], f
-    keys = ("product_id", "quantity", "unit", "density", "spec_notes", "iso_spec_version_id")
-    assert [{k: ln[k] for k in keys} for ln in new["lines"]] == [
-        {k: ln[k] for k in keys} for ln in src["lines"]
-    ]
-    assert new["id"] != src["id"]
-    assert (new["status"], new["version"], new["cancel_reason"]) == ("draft", 1, None)
-    assert new["reference"] != src["reference"]
-    assert new["internal_comments"] is None
-    assert new["buyer_id"] == str(world.users[Role.ADMIN].user_id)  # the create default
-    assert (new["eta"], new["etd"]) == (None, None)
-    [entry] = admin.entries(new["id"])
-    assert entry.action == "duplicate"
-    assert entry.changes["duplicate_of"]["after"] == src["reference"]
-    assert [e.action for e in admin.entries(src["id"])] == ["create", "cancel"]
-
-
-@pytest.mark.req("B2-R08")
-def test_duplicate_by_an_operator_is_forbidden(
-    settings: Settings, app_engine: Engine, world: SimpleNamespace, admin: Client
-) -> None:
-    """Duplicate is for admin and bunker buyer only (B2-D12)."""
-    src = admin.create()
-    op = Client(settings, app_engine, world, Role.OPERATOR)
-    r = act(op, src, "duplicate")
-    assert r.status_code == FORBIDDEN
-
-
-@pytest.mark.req("B2-R08")
-def test_duplicate_of_an_inquiry_with_an_inactive_vessel_is_422(
-    admin: Client, world: SimpleNamespace
-) -> None:
-    """The create checks apply: copied references must still be active."""
-    src = admin.create()
-    with org_session(world.org, admin.engine) as s:
-        s.execute(update(Vessel).where(Vessel.id == world.v1).values(active=False))
-    assert errors(act(admin, src, "duplicate")) == {"vessel_id": "Inactive vessel"}
-
-
 @pytest.mark.req("B2-R11")
 def test_each_action_writes_one_entry_and_history_is_newest_first(admin: Client) -> None:
     """Create, update, take, cancel: one entry each, newest first."""
@@ -219,22 +147,6 @@ def test_each_action_writes_one_entry_and_history_is_newest_first(admin: Client)
     )
 
 
-@pytest.mark.req("B2-R08")
-def test_duplicate_can_be_dated_by_patch_and_cancelled_while_undated(admin: Client) -> None:
-    """A dated-less duplicate takes ETA/ETD by PATCH; the list sorts it last without warning."""
-    src = admin.create()
-    dup = act(admin, src, "duplicate").json()
-    other = act(admin, src, "duplicate").json()
-    rows = admin.listing()
-    assert rows[0]["id"] == src["id"]
-    assert {r["id"]: (r["eta"], r["eta_warning"]) for r in rows}[dup["id"]] == (None, False)
-    done = admin.patch(dup, eta="2026-11-22T08:00:00Z", etd="2026-11-23T08:00:00Z")
-    assert done["eta"].startswith("2026-11-22")
-    other = admin.patch(other, voyage="v")
-    assert other["eta"] is None
-    assert act(admin, other, "cancel", reason="r").status_code == OK
-
-
 @pytest.mark.req("B2-R06")
 def test_cancel_goes_through_can_transition(admin: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """A move the domain table forbids is 409 and writes nothing."""
@@ -247,3 +159,12 @@ def test_cancel_goes_through_can_transition(admin: Client, monkeypatch: pytest.M
     )
     assert admin.get(inq["id"])["status"] == "draft"
     assert [e.action for e in admin.entries(inq["id"])] == ["create"]
+
+
+@pytest.mark.req("B7a-R03")
+@pytest.mark.req("B2-R08")
+def test_duplicate_endpoint_is_gone(admin: Client) -> None:
+    """Duplicate was removed (B7-D5, withdraws B2-D10): the route no longer exists."""
+    inq = admin.create()
+    r = admin.http.post(f"{URL}/{inq['id']}/duplicate", json={"version": 1})
+    assert r.status_code in {404, 405}, r.text

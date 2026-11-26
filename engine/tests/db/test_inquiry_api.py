@@ -1,11 +1,13 @@
 """Inquiry API: create, read, list, edit; references, edit lock, warnings, audit, work list."""
 
+import re
 import statistics
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
@@ -18,7 +20,7 @@ from nautical_deliverance.api.inquiries import get_now
 from nautical_deliverance.api.inquiry_models import InquiryPatch
 from nautical_deliverance.api.users import get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
-from nautical_deliverance.domain.inquiry import PATCHABLE_FIELDS
+from nautical_deliverance.domain.inquiry import PATCHABLE_FIELDS, PHASES, Status
 from nautical_deliverance.main import create_app
 from nautical_deliverance.persistence.db import org_session
 from nautical_deliverance.persistence.models import (
@@ -124,11 +126,7 @@ def make_world(engine: Engine, name: str = "") -> SimpleNamespace:
         w.v2 = _add(
             s, Vessel, organization_id=org, name="Vessel B", imo=_imo("907473"),
             vessel_type="t", dwt=1, flag="PA", legal_entity_id=w.le2,
-            default_operator=w.users[Role.OPERATOR].user_id,
-        )  # fmt: skip
-        w.v3 = _add(  # default operator that is not a user of the org
-            s, Vessel, organization_id=org, name="Vessel C", imo=_imo("907474"),
-            vessel_type="t", dwt=1, flag="PA", legal_entity_id=w.le, default_operator=uuid.uuid4(),
+            default_operator_name="Olga Operator",
         )  # fmt: skip
         s.flush()
         _add(s, VesselApprovedFuel, organization_id=org, vessel_id=w.v1, product_id=w.hsfo)
@@ -216,7 +214,6 @@ def body(w: SimpleNamespace, **over: Any) -> dict[str, Any]:  # noqa: ANN401
     """Body."""
     return {
         "vessel_id": str(w.v1),
-        "operator_id": str(w.users[Role.OPERATOR].user_id),
         "port_id": str(w.port),
         "eta": "2026-11-20T08:00:00Z",
         "etd": "2026-11-21T08:00:00Z",
@@ -315,12 +312,11 @@ def test_defaults_on_create(admin: Client, settings: Settings, app_engine: Engin
     assert made["status"] == "draft"
     assert made["version"] == 1
     assert made["created_by"] == str(users[Role.ADMIN].user_id)
-    # operator: not a buyer -> unassigned; vessel default operator wins (Vessel B)
+    # operator: not a buyer -> unassigned
     op = Client(settings, app_engine, world, Role.OPERATOR)
-    made = op.create(vessel_id=str(world.v2), operator_id=None)
+    made = op.create(vessel_id=str(world.v2))
     assert made["buyer_id"] is None
     assert made["buyer_name"] is None
-    assert made["operator_id"] == str(users[Role.OPERATOR].user_id)
     assert made["requester_name"] == "User operator"
     # explicit null buyer stays unassigned for a buyer caller
     buyer = Client(settings, app_engine, world, Role.BUNKER_BUYER)
@@ -328,25 +324,51 @@ def test_defaults_on_create(admin: Client, settings: Settings, app_engine: Engin
     assert buyer.create(buyer_id=None)["buyer_id"] is None
 
 
-@pytest.mark.req("B2-R02")
-def test_operator_fallbacks(admin: Client, settings: Settings, app_engine: Engine,
-                            world: SimpleNamespace) -> None:  # fmt: skip
-    # no default operator, admin caller: 422 on operator_id
-    """Operator fallbacks."""
-    r = admin.http.post(URL, json=body(world, operator_id=None))
-    assert "operator_id" in errors(r)
-    # default operator that is not a user of the org counts as absent -> caller operator
-    op = Client(settings, app_engine, world, Role.OPERATOR)
-    made = op.create(vessel_id=str(world.v3), operator_id=None)
-    assert made["operator_id"] == str(world.users[Role.OPERATOR].user_id)
-    r = admin.http.post(URL, json=body(world, vessel_id=str(world.v3), operator_id=None))
-    assert "operator_id" in errors(r)
-    # a default operator without the operator/admin role falls back too
-    with org_session(world.org, app_engine) as s:
-        s.execute(update(Vessel).where(Vessel.id == world.v3)
-                  .values(default_operator=world.users[Role.VIEWER].user_id))  # fmt: skip
-    r = admin.http.post(URL, json=body(world, vessel_id=str(world.v3), operator_id=None))
-    assert "operator_id" in errors(r)
+@pytest.mark.req("B7a-R04")
+def test_create_prefills_operator_from_vessel(admin: Client, world: SimpleNamespace) -> None:
+    """No operator_name in the body: the vessel's default name; an explicit null stays null."""
+    assert admin.create(vessel_id=str(world.v2))["operator_name"] == "Olga Operator"
+    assert admin.create(vessel_id=str(world.v2), operator_name=None)["operator_name"] is None
+    assert admin.create()["operator_name"] is None  # Vessel A has no default
+    assert admin.create(operator_name="Per Ops")["operator_name"] == "Per Ops"
+
+
+@pytest.mark.req("B7a-R04")
+def test_operator_name_validation(admin: Client, world: SimpleNamespace) -> None:
+    """At most 120 characters; surrounding blanks are trimmed and a blank name is null."""
+    r = admin.http.post(URL, json=body(world, operator_name="x" * 121))
+    assert "operator_name" in errors(r)
+    made = admin.create(operator_name="  Per Ops  ")
+    assert made["operator_name"] == "Per Ops"
+    assert admin.patch(made, operator_name="   ")["operator_name"] is None
+    assert admin.create(operator_name="   ")["operator_name"] is None
+
+
+@pytest.mark.req("B7a-R04")
+def test_operator_name_locked_after_draft(admin: Client) -> None:
+    """The operator is locked once the RFQ is sent."""
+    inq = admin.create(operator_name="Per Ops")
+    admin.set_status(inq["id"], "rfq_sent")
+    r = admin.http.patch(f"{URL}/{inq['id']}", json={"version": 1, "operator_name": "Olga"})
+    assert errors(r) == {"operator_name": LOCKED}
+
+
+@pytest.mark.req("B7a-R04")
+def test_operator_id_is_gone(admin: Client, world: SimpleNamespace) -> None:
+    """operator_id is an unknown field in and absent out; the engine never names it."""
+    op = str(world.users[Role.OPERATOR].user_id)
+    assert "operator_id" in errors(admin.http.post(URL, json=body(world, operator_id=op)))
+    made = admin.create()
+    assert "operator_id" not in admin.get(made["id"])
+    src = Path(__file__).parents[2] / "src"
+    hits = [
+        f"{p}:{n}"
+        for p in src.rglob("*.py")
+        if "migrations" not in p.parts
+        for n, text_line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+        if re.search(r"operator_id|default_operator\b", text_line)
+    ]
+    assert hits == []
 
 
 @pytest.mark.req("B2-R02")
@@ -357,7 +379,7 @@ def test_references_must_exist_be_active_and_users_have_the_role(
     users = world.users
     ghost = str(uuid.uuid4())
     for field in ("vessel_id", "legal_entity_id", "port_id", "bunkering_reason_id",
-                  "operator_id", "buyer_id", "requester_id"):  # fmt: skip
+                  "buyer_id", "requester_id"):  # fmt: skip
         assert field in errors(admin.http.post(URL, json=body(world, **{field: ghost})))
     lines_bad = [line(world, product_id=ghost), line(world, product_id=str(world.mgo),
                                                      iso_spec_version_id=ghost)]  # fmt: skip
@@ -365,9 +387,8 @@ def test_references_must_exist_be_active_and_users_have_the_role(
         "lines[0].product_id",
         "lines[1].iso_spec_version_id",
     }
-    # roles: a viewer cannot be operator or buyer, an operator cannot be buyer
+    # roles: an operator cannot be buyer
     viewer, op = str(users[Role.VIEWER].user_id), str(users[Role.OPERATOR].user_id)
-    assert "operator_id" in errors(admin.http.post(URL, json=body(world, operator_id=viewer)))
     assert "buyer_id" in errors(admin.http.post(URL, json=body(world, buyer_id=op)))
     assert admin.create(requester_id=viewer)["requester_id"] == viewer  # any user may request
     # inactive master data is rejected
@@ -455,7 +476,6 @@ ALLOWED = {
     "patch": {Role.ADMIN, Role.BUNKER_BUYER},
     "take": {Role.ADMIN, Role.BUNKER_BUYER},
     "cancel": {Role.ADMIN, Role.BUNKER_BUYER},
-    "duplicate": {Role.ADMIN, Role.BUNKER_BUYER},
     "history": set(Role),
 }
 
@@ -484,13 +504,11 @@ def test_role_matrix(
         "cancel": lambda: c.http.post(
             f"{URL}/{inq['id']}/cancel", json={"version": live(), "reason": "r"}
         ),
-        "duplicate": lambda: c.http.post(f"{URL}/{inq['id']}/duplicate", json={"version": live()}),
         "history": lambda: c.http.get(f"{URL}/{inq['id']}/history"),
     }
     for name, call in calls.items():
         r = call()
-        created = name in {"create", "duplicate"}
-        want = (CREATED if created else OK) if role in ALLOWED[name] else FORBIDDEN
+        want = (CREATED if name == "create" else OK) if role in ALLOWED[name] else FORBIDDEN
         assert r.status_code == want, (name, role, r.text)
 
 
@@ -553,7 +571,7 @@ LOCKED_CHANGES: dict[str, Callable[[SimpleNamespace], Any]] = {
     "bunkering_reason_id": lambda w: str(w.reason2),
     "lines": lambda w: [line(w, quantity="1")],
     "voyage": lambda _: "NEW",
-    "operator_id": lambda w: str(w.users[Role.ADMIN].user_id),
+    "operator_name": lambda _: "Per Ops",
     "requester_id": lambda w: str(w.users[Role.OPERATOR].user_id),
 }
 EDITABLE_CHANGES: dict[str, Callable[[SimpleNamespace], Any]] = {
@@ -707,7 +725,7 @@ def test_changing_the_vessel_on_a_draft_recomputes_warnings(
     assert moved["vessel_name"] == "Vessel B"
     # operator and legal entity are not silently rewritten by the API
     assert moved["legal_entity_id"] == made["legal_entity_id"]
-    assert moved["operator_id"] == made["operator_id"]
+    assert moved["operator_name"] == made["operator_name"]
     # a deactivated approval no longer counts
     with org_session(world.org, admin.engine) as s:
         s.execute(update(VesselApprovedFuel).values(active=False))
@@ -888,7 +906,7 @@ def test_work_list_of_200_inquiries_answers_fast(
                 legal_entity_id=world.le,
                 port_id=world.port,
                 bunkering_reason_id=world.reason,
-                operator_id=me,
+                operator_name="Per Ops",
                 requester_id=me,
                 buyer_id=me,
                 eta=NOW + timedelta(hours=n),
@@ -926,7 +944,6 @@ def test_other_organizations_ids_are_422_on_their_field_and_404_as_inquiry(
         "port_id": other.port,
         "legal_entity_id": other.le,
         "bunkering_reason_id": other.reason,
-        "operator_id": other.users[Role.OPERATOR].user_id,
         "buyer_id": other.users[Role.BUNKER_BUYER].user_id,
         "requester_id": other.users[Role.ADMIN].user_id,
     }.items():
@@ -944,7 +961,64 @@ def test_other_organizations_ids_are_422_on_their_field_and_404_as_inquiry(
         admin.http.patch(path, json={"version": 1, "voyage": "x"}),
         admin.http.post(f"{path}/take", json={"version": 1}),
         admin.http.post(f"{path}/cancel", json={"version": 1, "reason": "r"}),
-        admin.http.post(f"{path}/duplicate", json={"version": 1}),
         admin.http.get(f"{path}/history"),
     ]
-    assert [r.status_code for r in calls] == [NOT_FOUND] * 6
+    assert [r.status_code for r in calls] == [NOT_FOUND] * 5
+
+
+# --- B7a-R01/R02: work-list phases and phase counts ---------------------------------------------
+
+PHASE_LIST = ("list", "market", "stemmed", "cancelled")
+
+
+def _one_per_status(admin: Client) -> dict[str, str]:
+    """One inquiry in every status, keyed by status."""
+    made = {}
+    for st in Status:
+        inq = admin.create()
+        if st is not Status.DRAFT:
+            admin.set_status(inq["id"], st.value)
+        made[st.value] = inq["id"]
+    return made
+
+
+@pytest.mark.req("B7a-R01")
+@pytest.mark.parametrize("phase", PHASE_LIST)
+def test_phase_returns_exactly_its_statuses(admin: Client, phase: str) -> None:
+    """A phase filter returns exactly the inquiries in the phase's statuses."""
+    _one_per_status(admin)
+    got = {i["status"] for i in admin.listing(phase=phase)}
+    assert got == {s.value for s in PHASES[phase]}
+    assert {i["status"] for i in admin.listing(phase=phase, status="draft")} == got  # beats status
+
+
+@pytest.mark.req("B7a-R01")
+@pytest.mark.req("B7a-R02")
+def test_phase_counts_follow_search(admin: Client, world: SimpleNamespace) -> None:
+    """Counts include only inquiries matching q; a lone cancelled match counts as cancelled."""
+    _one_per_status(admin)  # all on Vessel A
+    b = admin.create(vessel_id=str(world.v2), port_id=str(world.port2))
+    admin.set_status(b["id"], "cancelled")
+    r = admin.http.get(f"{URL}/phase-counts")
+    assert r.json() == {"list": 1, "market": 3, "stemmed": 1, "cancelled": 2}
+    r = admin.http.get(f"{URL}/phase-counts", params={"q": "vessel b"})
+    assert r.json() == {"list": 0, "market": 0, "stemmed": 0, "cancelled": 1}
+
+
+@pytest.mark.req("B7a-R01")
+def test_unknown_phase_is_422(admin: Client) -> None:
+    """An unknown phase is rejected on the phase field."""
+    assert "phase" in errors(admin.http.get(URL, params={"phase": "bogus"}))
+
+
+@pytest.mark.req("B7a-R01")
+@pytest.mark.parametrize("role", list(Role))
+def test_phase_counts_every_role_and_org_isolation(
+    settings: Settings, app_engine: Engine, world: SimpleNamespace, admin: Client, role: Role
+) -> None:
+    """Every role may read the counts; another organization's inquiries are not counted."""
+    Client(settings, app_engine, make_world(app_engine, "o")).create()
+    admin.create()
+    r = Client(settings, app_engine, world, role).http.get(f"{URL}/phase-counts")
+    assert r.status_code == OK
+    assert r.json() == {"list": 1, "market": 0, "stemmed": 0, "cancelled": 0}

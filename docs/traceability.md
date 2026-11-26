@@ -86,6 +86,23 @@
 | B6-R09 | tools/test_deploy_docs.py |
 | B6-R10 | tools/test_deploy_docs.py |
 | B6-R11 | .github/workflows/ci.yml |
+| B7a-R01 | engine/tests/db/test_inquiry_api.py, web/src/dashboard/Dashboard.test.tsx, web/src/inquiries/WorkList.test.tsx, web/src/inquiryApi.test.ts |
+| B7a-R02 | engine/tests/db/test_inquiry_api.py, web/src/inquiries/WorkList.test.tsx, web/src/inquiryApi.test.ts |
+| B7a-R03 | engine/tests/db/test_inquiry_actions.py, web/src/inquiries/InquiryPage.test.tsx |
+| B7a-R04 | engine/tests/db/test_inquiry_api.py, engine/tests/db/test_inquiry_schema.py, engine/tests/db/test_master_api.py, engine/tests/db/test_migration_0007.py, web/src/admin/MasterDataPage.test.tsx, web/src/inquiries/InquiryPage.test.tsx |
+| B7a-R05 | tools/test_pilot_user.py |
+| B7a-R06 | web/src/inquiries/WorkList.test.tsx |
+| B7a-R07 | .github/workflows/ci.yml |
+| B7b-R01 | planned |
+| B7b-R02 | planned |
+| B7b-R03 | planned |
+| B7b-R04 | planned |
+| B7b-R05 | planned |
+| B7b-R06 | planned |
+| B7c-R01 | planned |
+| B7c-R02 | planned |
+| B7c-R03 | planned |
+| B7c-R04 | planned |
 | S0-R01 | .github/workflows/ci.yml |
 | S0-R02 | engine/tests/unit/test_health.py |
 | S0-R03 | engine/tests/db/test_me.py, engine/tests/unit/test_auth.py, web/src/App.test.tsx, web/src/api.test.ts, web/src/auth.test.ts |

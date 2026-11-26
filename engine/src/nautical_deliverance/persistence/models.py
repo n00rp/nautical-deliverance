@@ -102,7 +102,7 @@ class BunkeringReason(_Master, Base):
 
 
 class Vessel(_Master, Base):
-    """A vessel; default_operator is a Keycloak user id (no FK)."""
+    """A vessel; default_operator_name is free text (B7-D10)."""
 
     __tablename__ = "vessel"
 
@@ -112,7 +112,7 @@ class Vessel(_Master, Base):
     dwt: Mapped[int]
     flag: Mapped[str] = mapped_column(Text)
     legal_entity_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("legal_entity.id"))
-    default_operator: Mapped[uuid.UUID | None]
+    default_operator_name: Mapped[str | None] = mapped_column(Text)
 
 
 class VesselApprovedFuel(_Master, Base):
@@ -177,7 +177,7 @@ class Inquiry(Base):
     port_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("port.id"))
     bunkering_reason_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bunkering_reason.id"))
     voyage: Mapped[str | None] = mapped_column(Text)
-    operator_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
+    operator_name: Mapped[str | None] = mapped_column(Text)
     requester_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("app_user.id"))
     buyer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("app_user.id"))
     eta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

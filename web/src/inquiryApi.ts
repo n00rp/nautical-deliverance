@@ -14,9 +14,13 @@ export const STATUS_LABEL = {
 
 export type InquiryStatus = keyof typeof STATUS_LABEL;
 
+export type Phase = "list" | "market" | "stemmed" | "cancelled";
+
 export type ListParams = {
   /** Omitted: everything but cancelled. */
   status?: InquiryStatus | "all";
+  /** Overrides `status` (B7-D4). */
+  phase?: Phase;
   q?: string;
   mine?: boolean;
   sort?: "eta" | "reference";
@@ -43,7 +47,7 @@ export type Decision = {
   currency: string;
 };
 
-/** A work-list row. `eta` is null on a duplicated draft that has none yet. */
+/** A work-list row. `eta` is null on a draft that has none yet. */
 export type InquiryListItem = {
   id: string;
   reference: string;
@@ -81,7 +85,7 @@ export type InquiryBody = {
   vessel_id: string;
   legal_entity_id?: string | null;
   voyage?: string | null;
-  operator_id?: string | null;
+  operator_name?: string | null;
   buyer_id?: string | null;
   requester_id?: string | null;
   port_id: string;
@@ -125,8 +129,7 @@ export type Inquiry = {
   legal_entity_name: string;
   legal_entity_inactive: boolean;
   voyage: string | null;
-  operator_id: string;
-  operator_name: string;
+  operator_name: string | null;
   buyer_id: string | null;
   buyer_name: string | null;
   requester_id: string;
@@ -177,11 +180,22 @@ export function createInquiryApi(auth: TokenSource) {
     listInquiries: (params: ListParams) => {
       const query = new URLSearchParams();
       if (params.status) query.set("status", params.status);
+      if (params.phase) query.set("phase", params.phase);
       if (params.q) query.set("q", params.q);
       if (params.mine) query.set("mine", "true");
       if (params.sort) query.set("sort", params.sort);
       const qs = query.toString();
       return call<InquiryListItem[]>("GET", qs ? `inquiries?${qs}` : "inquiries");
+    },
+    phaseCounts: (params: { q?: string; mine?: boolean }) => {
+      const query = new URLSearchParams();
+      if (params.q) query.set("q", params.q);
+      if (params.mine) query.set("mine", "true");
+      const qs = query.toString();
+      return call<Record<Phase, number>>(
+        "GET",
+        qs ? `inquiries/phase-counts?${qs}` : "inquiries/phase-counts",
+      );
     },
     getInquiry: (id: string) => call<Inquiry>("GET", path(id)),
     createInquiry: (body: Partial<InquiryBody>) => call<Inquiry>("POST", "inquiries", body),
@@ -190,7 +204,6 @@ export function createInquiryApi(auth: TokenSource) {
     takeInquiry: (id: string, version: number) => post(id, "/take", { version }),
     cancelInquiry: (id: string, version: number, reason: string) =>
       post(id, "/cancel", { version, reason }),
-    duplicateInquiry: (id: string, version: number) => post(id, "/duplicate", { version }),
     inquiryHistory: async (id: string) =>
       toHistory(await call<RawHistory[]>("GET", path(id, "/history"))),
     listUsers: (role?: Role) => call<DirectoryUser[]>("GET", role ? `users?role=${role}` : "users"),

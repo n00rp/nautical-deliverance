@@ -33,7 +33,6 @@ export type Refs = {
   reasons: Rec[];
   /** Everyone in the directory, for names of users who no longer fit a picker. */
   users: DirectoryUser[];
-  operators: DirectoryUser[];
   buyers: DirectoryUser[];
 };
 
@@ -162,7 +161,7 @@ export function InquiryForm({ rec, refs, roles, onCreate, onPatch, onFail }: Inq
       {!canWrite ? (
         <LockedNote what="edit controls" />
       ) : (
-        locked && <LockedNote message="Locked after Draft — duplicate to change scope" />
+        locked && <LockedNote message="Locked after Draft — create a new inquiry to change scope" />
       )}
       <Panel title="Vessel & voyage">
         <div className={css.stack}>
@@ -186,11 +185,17 @@ export function InquiryForm({ rec, refs, roles, onCreate, onPatch, onFail }: Inq
               withCurrent(names(refs.legalEntities), rec?.legal_entity_id, rec?.legal_entity_name),
             )}
             {text("voyage", "Voyage", scopeOff)}
-            {sel(
-              "operator_id",
-              "Operator",
-              withCurrent(people(refs.operators), rec?.operator_id, rec?.operator_name),
-            )}
+            <TextField
+              id={fieldId("operator_name")}
+              label="Operator"
+              value={values.operator_name}
+              maxLength={120}
+              disabled={scopeOff}
+              error={err("operator_name")}
+              onChange={(v) => {
+                set("operator_name", v);
+              }}
+            />
             {sel(
               "buyer_id",
               "Buyer",
