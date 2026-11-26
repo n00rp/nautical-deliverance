@@ -29,6 +29,7 @@ from nautical_deliverance.api.common import (
     scope,
     unprocessable,
 )
+from nautical_deliverance.api.inquiry_models import OperatorName  # noqa: TC001  (pydantic runtime)
 from nautical_deliverance.api.users import current_user, get_users_engine
 from nautical_deliverance.domain.identity import Principal, Role
 from nautical_deliverance.domain.master import (
@@ -121,7 +122,7 @@ class VesselIn(Strict):
     dwt: Dwt
     flag: Short
     legal_entity_id: uuid.UUID
-    default_operator: uuid.UUID | None = None
+    default_operator_name: OperatorName | None = None
 
 
 class PortIn(Strict):

@@ -50,7 +50,7 @@ LOCKED_AFTER_DRAFT = frozenset(
         "bunkering_reason_id",
         "lines",
         "voyage",
-        "operator_id",
+        "operator_name",
         "requester_id",
     }
 )

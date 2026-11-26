@@ -226,7 +226,7 @@ def decision(session: Session, inq: Inquiry) -> dict[str, Any] | None:
 
 def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
     """Return the full inquiry record: columns, names, inactive flags, lines, warnings."""
-    operator, buyer, requester = (aliased(AppUser) for _ in range(3))
+    buyer, requester = (aliased(AppUser) for _ in range(2))
     names = (
         session.execute(
             select(
@@ -240,7 +240,6 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
                 (~Port.active).label("port_inactive"),
                 BunkeringReason.name.label("bunkering_reason_name"),
                 (~BunkeringReason.active).label("bunkering_reason_inactive"),
-                _shown(operator).label("operator_name"),
                 _shown(buyer).label("buyer_name"),
                 _shown(requester).label("requester_name"),
                 _rfq_count(is_active_rfq()).label("rfq_total"),
@@ -253,7 +252,6 @@ def detail(session: Session, inq: Inquiry) -> dict[str, Any]:
             .join(LegalEntity, LegalEntity.id == Inquiry.legal_entity_id)
             .join(Port, Port.id == Inquiry.port_id)
             .join(BunkeringReason, BunkeringReason.id == Inquiry.bunkering_reason_id)
-            .join(operator, operator.id == Inquiry.operator_id)
             .join(requester, requester.id == Inquiry.requester_id)
             .outerjoin(buyer, buyer.id == Inquiry.buyer_id)
             .where(Inquiry.id == inq.id)

@@ -161,7 +161,7 @@ def test_duplicate_copies_exactly_the_b2_d10_fields(
     assert r.status_code == CREATED, r.text
     new = r.json()
     for f in (
-        "vessel_id", "legal_entity_id", "voyage", "operator_id", "requester_id", "port_id",
+        "vessel_id", "legal_entity_id", "voyage", "operator_name", "requester_id", "port_id",
         "agent_name", "agent_email", "bunkering_reason_id",
     ):  # fmt: skip
         assert new[f] == src[f], f

@@ -69,10 +69,9 @@ if TYPE_CHECKING:
 router = APIRouter(prefix="/inquiries")
 
 LOCKED_MESSAGE = "Locked after Draft"
-OPERATOR_ROLES = frozenset({Role.OPERATOR, Role.ADMIN})
 BUYER_ROLES = frozenset({Role.BUNKER_BUYER, Role.ADMIN})
 RFQ_FIELDS = ("rfq_deadline", "rfq_total", "rfq_sent")  # null for everyone else (R6)
-USER_ROLES = {"operator_id": OPERATOR_ROLES, "buyer_id": BUYER_ROLES}  # requester: any user
+USER_ROLES = {"buyer_id": BUYER_ROLES}  # requester: any user
 MASTER: dict[str, tuple[Any, str]] = {
     "vessel_id": (Vessel, "vessel"),
     "legal_entity_id": (LegalEntity, "legal entity"),
@@ -84,7 +83,7 @@ DUPLICATED = (
     "vessel_id",
     "legal_entity_id",
     "voyage",
-    "operator_id",
+    "operator_name",
     "requester_id",
     "port_id",
     "agent_name",
@@ -143,7 +142,7 @@ def _check_refs(session: Session, values: dict[str, Any]) -> None:
                 _reject(field, f"Unknown {noun}")
             if not row.active:
                 _reject(field, f"Inactive {noun}")
-    for field in ("operator_id", "buyer_id", "requester_id"):
+    for field in ("buyer_id", "requester_id"):
         if values.get(field) is None:
             continue
         user = session.get(AppUser, values[field])
@@ -208,17 +207,6 @@ def _resolve_lines(
         for r in rows
     ]
     return rows, texts
-
-
-def _default_operator(session: Session, vessel: Vessel, principal: Principal) -> uuid.UUID:
-    """Return the vessel's default operator (an operator/admin of the org), else the caller."""
-    if vessel.default_operator is not None:
-        user = session.get(AppUser, vessel.default_operator)
-        if user is not None and OPERATOR_ROLES & set(user.roles):
-            return vessel.default_operator
-    if Role.OPERATOR in principal.roles:
-        return principal.user_id
-    _reject("operator_id", "Required: the vessel has no default operator")
 
 
 def _load(session: Session, inquiry_id: uuid.UUID, *, lock: bool = False) -> Inquiry:
@@ -357,7 +345,8 @@ def _create(  # noqa: PLR0913, PLR0917
         _reject("vessel_id", "Unknown vessel")
     values = {k: getattr(body, k) for k in InquiryIn.model_fields if k != "lines"}
     values["legal_entity_id"] = body.legal_entity_id or vessel.legal_entity_id
-    values["operator_id"] = body.operator_id or _default_operator(s, vessel, principal)
+    if "operator_name" not in body.model_fields_set:
+        values["operator_name"] = vessel.default_operator_name
     values["requester_id"] = body.requester_id or principal.user_id
     if "buyer_id" not in body.model_fields_set:
         is_buyer = bool(BUYER_ROLES & principal.roles)
