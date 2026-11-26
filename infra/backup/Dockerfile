@@ -29,7 +29,7 @@ RUN curl -fsSLo rclone.tgz "https://github.com/rclone/rclone/archive/refs/tags/v
     && go get golang.org/x/net@v0.62.0 \
     && go build -ldflags "-s -w -X github.com/rclone/rclone/fs.Version=v$RCLONE_VERSION" -o /out/rclone .
 
-FROM --platform=$BUILDPLATFORM postgres:17.11-trixie@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3 AS fetch
+FROM --platform=$BUILDPLATFORM postgres:17.12-trixie@sha256:87c8b42f423b45d5247e6aa8fdb2e7762fec164c68a50fe3eb07e7bfcaf4dbcf AS fetch
 ARG TARGETARCH
 ARG SUPERCRONIC_VERSION=0.2.51
 ARG SUPERCRONIC_SHA256_AMD64=cc232108374e8e2b537045f2d5eaa1229f619db314c3ba6a14d38b35dc0aa123
@@ -46,13 +46,12 @@ RUN set -eu; \
     echo "$SHA  /usr/local/bin/supercronic" | sha256sum -c -; \
     chmod 0755 /usr/local/bin/supercronic
 
-FROM postgres:17.11-trixie@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3
+FROM postgres:17.12-trixie@sha256:87c8b42f423b45d5247e6aa8fdb2e7762fec164c68a50fe3eb07e7bfcaf4dbcf
 # gosu is a Go binary with fixable stdlib CVEs and this image never needs it (no entrypoint switch).
 RUN rm -f /usr/local/bin/gosu
-# zlib1g: CVE-2026-85091 / CVE-2026-76844 fixed in 1:1.3.dfsg+really1.3.1-1+deb13u1; remove once the
-# postgres base digest ships it.
+# zstd: CVE-2026-124851 fixed in 1.5.7+dfsg-1+deb13u1; remove once the postgres base digest ships it.
 RUN apt-get update \
-    && apt-get install -y --only-upgrade --no-install-recommends zlib1g \
+    && apt-get install -y --only-upgrade --no-install-recommends zstd libzstd1 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=gobuild /out/age /out/age-keygen /out/rclone /usr/local/bin/
 COPY --from=fetch /usr/local/bin/supercronic /usr/local/bin/
