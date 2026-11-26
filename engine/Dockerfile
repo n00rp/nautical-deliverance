@@ -12,8 +12,9 @@ ENV PATH=/app/.venv/bin:$PATH PYTHONPATH=/app/src PYTHONUNBUFFERED=1
 # R16: CVE-2026-109518 (apt < 3.0.4) is fixed in Debian but not yet in this base digest;
 # remove this targeted upgrade once the python base image ships apt >= 3.0.4.
 # zlib1g: CVE-2026-85091 / CVE-2026-76844 fixed in 1:1.3.dfsg+really1.3.1-1+deb13u1; same rule.
+# libzstd1: CVE-2026-124851 fixed in 1.5.7+dfsg-1+deb13u1; same rule.
 RUN apt-get update \
-    && apt-get install -y --only-upgrade --no-install-recommends apt libapt-pkg7.0 zlib1g \
+    && apt-get install -y --only-upgrade --no-install-recommends apt libapt-pkg7.0 zlib1g libzstd1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --no-create-home nd \
     && rm -rf /usr/local/lib/python3.14/site-packages/pip* /usr/local/lib/python3.14/ensurepip /usr/local/bin/pip*

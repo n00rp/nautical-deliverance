@@ -17,6 +17,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   window.location.hash = "";
+  vi.useRealTimers();
 });
 
 function setup(rows: InquiryListItem[] = [item("1")], roles: Role[] = ["admin"]) {
@@ -182,6 +183,9 @@ describe("WorkList", () => {
   });
 
   it("[B2-R12] the warning shows only when eta_warning is set", async () => {
+    // Before the fixture's ETA (2026-11-12), so the text is the 48 h one, not "ETA passed".
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-11T12:00:00Z"));
     setup([item("1", { eta_warning: true }), item("2")]);
     const warned = within(await screen.findByRole("row", { name: /INQ-2611-001/ }));
     expect(warned.getByText("ETA in < 48 h, not nominated")).toBeTruthy();

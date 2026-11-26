@@ -9,6 +9,9 @@ const index = JSON.parse(readFileSync("storybook-static/index.json", "utf8")) as
 const stories = Object.values(index.entries).filter((e) => e.type === "story");
 
 const open = async (page: import("@playwright/test").Page, id: string) => {
+  // The work-list fixture's ETA (2026-11-12) must stay in the future, or "< 48 h" turns into
+  // "ETA passed" and the baseline drifts with the calendar.
+  if (id.startsWith("inquiries-worklist")) await page.clock.setFixedTime("2026-11-11T12:00:00Z");
   await page.goto(`/iframe.html?id=${id}&viewMode=story`);
   await page.locator("#storybook-root > *").first().waitFor();
   await page.evaluate(async () => {
